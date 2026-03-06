@@ -1,0 +1,34 @@
+{
+  "generated_at": "2026-03-06T17:31:55.795797+00:00",
+  "status": "success",
+  "manifest": "/home/danny/Jarvis/seed/restore_manifest.json",
+  "admin_api_base": "http://localhost:8200",
+  "live": {
+    "pause_admin": false,
+    "keep_digest_worker": false,
+    "skip_home_start": false
+  },
+  "options": {
+    "hard": true,
+    "reseed_blueprints": true,
+    "reseed_skills": true,
+    "pull_images": false,
+    "keep_protocol": false,
+    "keep_csv": false,
+    "skip_graph": false,
+    "smoke_test": false,
+    "dry_run": false
+  },
+  "results": {
+    "blueprints_seeded_count": 4,
+    "graph_sync_count": 20260306173150,
+    "skills_added": 3,
+    "skills_verified": 0,
+    "skills_missing": [],
+    "images_pulled": 0,
+    "trion_home_container_id": "474c776ad60d0e8211304cf8b7f2e31c5a6da0ab7a9560ec12a1878934245ae6",
+    "smoke_status": "skipped",
+    "smoke_failures": 0
+  },
+  "errors": []
+}
