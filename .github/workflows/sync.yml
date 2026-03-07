@@ -1,0 +1,26 @@
+name: Sync Repository
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Runs daily
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Sync Upstream
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          git remote add upstream https://github.com/danny094/Jarvis.git
+          git fetch upstream
+          mkdir -p /tmp/backup
+          cp .github/workflows/sync.yml /tmp/backup/sync.yml
+          git reset --hard upstream/main
+          mkdir -p .github/workflows
+          cp /tmp/backup/sync.yml .github/workflows/sync.yml
+          git add .github/workflows/sync.yml
+          git commit -m "Add sync workflow"
+          git push origin main --force
