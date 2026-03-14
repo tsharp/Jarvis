@@ -743,32 +743,73 @@ class TestReplayKnownFailures:
     def test_rc02_context_loss_needs_chat_history(self):
         """
         RC-02: Follow-up 'neuer Container bitte' verliert den Blueprint-Kontext.
-        Thinking setzt needs_chat_history=False für kurze Follow-ups.
+
+        A3 Fix (2026-03-14): Orchestrator setzt needs_chat_history=True
+        und extrahiert Blueprint-Hint aus Chat-History, wenn request_container
+        vorgeschlagen wird und needs_chat_history=False war.
+
+        Testet _extract_blueprint_hint_from_history aus orchestrator_sync_flow_utils.
         """
-        # Simuliert was Thinking für "neuer Container bitte" produziert
-        simulated_thinking_output = {
+        from core.orchestrator_sync_flow_utils import _extract_blueprint_hint_from_history
+
+        # Thinking produziert (noch) needs_chat_history=False für kurze Follow-ups
+        thinking_plan = {
             "intent": "Container-Erstellung anfordern",
             "needs_memory": False,
-            "needs_chat_history": False,  # ← DAS IST DER BUG
-            "hallucination_risk": "low",
+            "needs_chat_history": False,
             "suggested_tools": ["request_container"],
         }
         chat_history = [
             {"role": "user", "content": "Gaming Station installieren?"},
             {"role": "assistant", "content": "Blueprint gaming-station verfügbar..."},
         ]
+        user_text = "neuer Container bitte"
 
-        needs_history = simulated_thinking_output["needs_chat_history"]
-        has_history = len(chat_history) > 0
-        suggested_container_tool = "request_container" in simulated_thinking_output["suggested_tools"]
+        # Orchestrator-A3-Fix: wenn request_container + needs_chat_history=False
+        if "request_container" in thinking_plan["suggested_tools"] and not thinking_plan["needs_chat_history"]:
+            thinking_plan["needs_chat_history"] = True
+            bp_hint = _extract_blueprint_hint_from_history(chat_history, user_text)
+            if bp_hint:
+                thinking_plan["intent"] = f"{thinking_plan['intent']} {bp_hint}".strip()
 
-        if suggested_container_tool and has_history and not needs_history:
-            pytest.xfail(
-                "DRIFT A3 AKTIV: 'neuer Container bitte' als Follow-up hat "
-                "needs_chat_history=False. Thinking verliert Blueprint-Kontext. "
-                "Fix: Thinking muss Follow-up-Turns mit Container-Kontext erkennen "
-                "und needs_chat_history=True setzen."
-            )
+        # Nach dem Fix: needs_chat_history muss True sein
+        assert thinking_plan["needs_chat_history"] is True, (
+            "A3 Fix fehlt: needs_chat_history bleibt False für request_container Follow-up"
+        )
+        # Blueprint-Hint muss aus History extrahiert worden sein
+        assert "gaming-station" in thinking_plan["intent"], (
+            f"A3 Fix fehlt: 'gaming-station' nicht im Intent injiziert. "
+            f"Intent='{thinking_plan['intent']}'"
+        )
+
+    def test_rc02_blueprint_hint_extraction(self):
+        """A3: _extract_blueprint_hint_from_history findet Blueprint-Namen in History."""
+        from core.orchestrator_sync_flow_utils import _extract_blueprint_hint_from_history
+
+        history = [
+            {"role": "user", "content": "Gaming Station installieren?"},
+            {"role": "assistant", "content": "Blueprint gaming-station ist verfügbar und bereit."},
+        ]
+        hint = _extract_blueprint_hint_from_history(history, "neuer Container bitte")
+        assert hint == "gaming-station", f"Hint nicht gefunden oder falsch: '{hint}'"
+
+    def test_rc02_no_hint_when_name_already_in_text(self):
+        """A3: Kein Hint wenn Blueprint-Name schon im user_text."""
+        from core.orchestrator_sync_flow_utils import _extract_blueprint_hint_from_history
+
+        history = [
+            {"role": "assistant", "content": "gaming-station Blueprint bereit."},
+        ]
+        # Blueprint name is already in user_text → no injection needed
+        hint = _extract_blueprint_hint_from_history(history, "starte gaming-station bitte")
+        assert hint == "", f"Fälschlich Hint zurückgegeben: '{hint}'"
+
+    def test_rc02_no_hint_when_no_history(self):
+        """A3: Kein Hint wenn keine Chat-History vorhanden."""
+        from core.orchestrator_sync_flow_utils import _extract_blueprint_hint_from_history
+
+        hint = _extract_blueprint_hint_from_history([], "neuer Container bitte")
+        assert hint == ""
 
     def test_rc03_pending_approval_response_type(self):
         """RC-03: pending_approval → Response soll Approval beschreiben, nicht Fallback."""
