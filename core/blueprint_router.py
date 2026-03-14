@@ -158,6 +158,21 @@ class BlueprintSemanticRouter:
                 f"(strict={MATCH_THRESHOLD_STRICT}, suggest={MATCH_THRESHOLD_SUGGEST})"
             )
 
+            # Exact-name bypass: wenn Blueprint-ID explizit im user_text oder intent genannt,
+            # direkt auto-routen unabhängig vom Semantic-Score.
+            _combined_lower = f"{user_text} {intent}".lower()
+            if best_id and best_id.lower() in _combined_lower and best_score >= MATCH_THRESHOLD_SUGGEST:
+                log_info(
+                    f"[BlueprintRouter] EXACT-NAME BYPASS → '{best_id}' "
+                    f"(explizit genannt, score={best_score:.3f})"
+                )
+                return BlueprintRouterDecision(
+                    decision="use_blueprint",
+                    blueprint_id=best_id,
+                    score=best_score,
+                    reason=f"Explizit genannt + Semantic-Match ({best_score:.2f}) → auto-route '{best_id}'",
+                )
+
             if best_score >= MATCH_THRESHOLD_STRICT:
                 log_info(f"[BlueprintRouter] AUTO-ROUTE → '{best_id}' (score={best_score:.3f} >= {MATCH_THRESHOLD_STRICT})")
                 return BlueprintRouterDecision(
