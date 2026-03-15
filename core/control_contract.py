@@ -307,6 +307,13 @@ def control_decision_from_plan(
         # Exclude request_container — gate block makes it unexecutable regardless.
         effective = [t for t in current_allowed if t != "request_container"]
         gate_reason = str(plan.get("_blueprint_gate_reason") or "blueprint_routing_required")
+
+        # _blueprint_no_match: no exact blueprint found — allow blueprint_list so the
+        # Control Layer LLM can show available alternatives instead of silently blocking.
+        _no_match = bool(plan.get("_blueprint_no_match"))
+        if _no_match and "blueprint_list" not in effective:
+            effective = effective + ["blueprint_list"]
+
         if effective:
             # Other tools remain approved; only request_container is excluded.
             cd = cd.with_tools_allowed(effective)

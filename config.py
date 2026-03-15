@@ -40,6 +40,44 @@ def get_thinking_model():
 def get_control_model():
     return settings.get("CONTROL_MODEL", os.getenv("CONTROL_MODEL", "ministral-3:8b"))
 
+
+def _normalize_provider(raw: str, default: str = "ollama") -> str:
+    provider = str(raw or "").strip().lower()
+    return provider if provider in {"ollama", "ollama_cloud", "openai", "anthropic"} else default
+
+
+def get_thinking_provider() -> str:
+    raw = settings.get("THINKING_PROVIDER", None)
+    if str(raw or "").strip() == "":
+        raw = os.getenv("THINKING_PROVIDER", "")
+    default_provider = get_output_provider()
+    return _normalize_provider(raw, default=default_provider)
+
+
+def get_control_provider() -> str:
+    raw = settings.get("CONTROL_PROVIDER", None)
+    if str(raw or "").strip() == "":
+        raw = os.getenv("CONTROL_PROVIDER", "")
+    default_provider = get_output_provider()
+    return _normalize_provider(raw, default=default_provider)
+
+
+def get_output_provider() -> str:
+    return _normalize_provider(
+        settings.get("OUTPUT_PROVIDER", os.getenv("OUTPUT_PROVIDER", "ollama")),
+        default="ollama",
+    )
+
+
+def get_control_model_deep():
+    """
+    Optional dedicated Control model for deep-mode requests.
+    Falls back to CONTROL_MODEL when not set.
+    """
+    val = str(settings.get("CONTROL_MODEL_DEEP", os.getenv("CONTROL_MODEL_DEEP", ""))).strip()
+    return val or get_control_model()
+
+
 def get_output_model():
     return settings.get("OUTPUT_MODEL", os.getenv("OUTPUT_MODEL", "ministral-3:3b"))
 
@@ -180,6 +218,255 @@ def get_response_mode_sequential_threshold() -> int:
     return max(1, min(10, val))
 
 
+def get_query_budget_enable() -> bool:
+    """
+    Enable lightweight query preclassification + budget policy.
+    """
+    return str(settings.get(
+        "QUERY_BUDGET_ENABLE",
+        os.getenv("QUERY_BUDGET_ENABLE", "true")
+    )).lower() == "true"
+
+
+def get_query_budget_embedding_enable() -> bool:
+    """
+    Allow optional embedding refinement for low-confidence query classification.
+    """
+    return str(settings.get(
+        "QUERY_BUDGET_EMBEDDING_ENABLE",
+        os.getenv("QUERY_BUDGET_EMBEDDING_ENABLE", "true")
+    )).lower() == "true"
+
+
+def get_query_budget_skip_thinking_enable() -> bool:
+    """
+    Allow classifier-driven ThinkingLayer skip for low-complexity turns.
+    Enabled by default behind a high confidence threshold.
+    """
+    return str(settings.get(
+        "QUERY_BUDGET_SKIP_THINKING_ENABLE",
+        os.getenv("QUERY_BUDGET_SKIP_THINKING_ENABLE", "true")
+    )).lower() == "true"
+
+
+def get_query_budget_skip_thinking_min_confidence() -> float:
+    """
+    Minimum classifier confidence required for skip-thinking candidate.
+    """
+    try:
+        val = float(settings.get(
+            "QUERY_BUDGET_SKIP_THINKING_MIN_CONFIDENCE",
+            os.getenv("QUERY_BUDGET_SKIP_THINKING_MIN_CONFIDENCE", "0.90")
+        ))
+    except Exception:
+        val = 0.90
+    return max(0.0, min(1.0, val))
+
+
+def get_query_budget_max_tools_factual_low() -> int:
+    """
+    Tool cap for low-complexity factual turns.
+    """
+    try:
+        val = int(settings.get(
+            "QUERY_BUDGET_MAX_TOOLS_FACTUAL_LOW",
+            os.getenv("QUERY_BUDGET_MAX_TOOLS_FACTUAL_LOW", "1")
+        ))
+    except Exception:
+        val = 1
+    return max(0, min(5, val))
+
+
+def get_domain_router_enable() -> bool:
+    """
+    Enable deterministic CRON/SKILL domain routing before tool execution.
+    """
+    return str(settings.get(
+        "DOMAIN_ROUTER_ENABLE",
+        os.getenv("DOMAIN_ROUTER_ENABLE", "true")
+    )).lower() == "true"
+
+
+def get_domain_router_embedding_enable() -> bool:
+    """
+    Enable embedding refinement for ambiguous domain routing decisions.
+    """
+    return str(settings.get(
+        "DOMAIN_ROUTER_EMBEDDING_ENABLE",
+        os.getenv("DOMAIN_ROUTER_EMBEDDING_ENABLE", "true")
+    )).lower() == "true"
+
+
+def get_domain_router_lock_min_confidence() -> float:
+    """
+    Minimum confidence needed to lock a non-generic domain decision.
+    """
+    try:
+        val = float(settings.get(
+            "DOMAIN_ROUTER_LOCK_MIN_CONFIDENCE",
+            os.getenv("DOMAIN_ROUTER_LOCK_MIN_CONFIDENCE", "0.72")
+        ))
+    except Exception:
+        val = 0.72
+    return max(0.0, min(1.0, val))
+
+
+def get_policy_conflict_resolver_enable() -> bool:
+    """
+    Enable deterministic pre-control policy conflict resolution.
+    """
+    return str(settings.get(
+        "POLICY_CONFLICT_RESOLVER_ENABLE",
+        os.getenv("POLICY_CONFLICT_RESOLVER_ENABLE", "true")
+    )).lower() == "true"
+
+
+def get_policy_conflict_resolver_rollout_pct() -> int:
+    """
+    Rollout percentage (0-100) for policy conflict resolver.
+    """
+    try:
+        val = int(settings.get(
+            "POLICY_CONFLICT_RESOLVER_ROLLOUT_PCT",
+            os.getenv("POLICY_CONFLICT_RESOLVER_ROLLOUT_PCT", "100")
+        ))
+    except Exception:
+        val = 100
+    return max(0, min(100, val))
+
+
+def get_context_memory_fallback_recall_only_enable() -> bool:
+    """
+    Limit ContextManager memory fallback keys to explicit recall/personal-memory turns.
+    """
+    return str(settings.get(
+        "CONTEXT_MEMORY_FALLBACK_RECALL_ONLY_ENABLE",
+        os.getenv("CONTEXT_MEMORY_FALLBACK_RECALL_ONLY_ENABLE", "true")
+    )).lower() == "true"
+
+
+def get_context_memory_fallback_recall_only_rollout_pct() -> int:
+    """
+    Rollout percentage (0-100) for recall-only memory fallback behavior.
+    """
+    try:
+        val = int(settings.get(
+            "CONTEXT_MEMORY_FALLBACK_RECALL_ONLY_ROLLOUT_PCT",
+            os.getenv("CONTEXT_MEMORY_FALLBACK_RECALL_ONLY_ROLLOUT_PCT", "100")
+        ))
+    except Exception:
+        val = 100
+    return max(0, min(100, val))
+
+
+def get_followup_tool_reuse_enable() -> bool:
+    """
+    Enable deterministic follow-up tool reuse for short fact-query follow-ups.
+    """
+    return str(settings.get(
+        "FOLLOWUP_TOOL_REUSE_ENABLE",
+        os.getenv("FOLLOWUP_TOOL_REUSE_ENABLE", "true")
+    )).lower() == "true"
+
+
+def get_followup_tool_reuse_ttl_turns() -> int:
+    """
+    Maximum turn distance (user+assistant pairs) for follow-up tool reuse state.
+    """
+    try:
+        val = int(settings.get(
+            "FOLLOWUP_TOOL_REUSE_TTL_TURNS",
+            os.getenv("FOLLOWUP_TOOL_REUSE_TTL_TURNS", "3")
+        ))
+    except Exception:
+        val = 3
+    return max(1, min(12, val))
+
+
+def get_followup_tool_reuse_ttl_s() -> int:
+    """
+    Time-to-live (seconds) for conversation-local follow-up grounding state.
+    """
+    try:
+        val = int(settings.get(
+            "FOLLOWUP_TOOL_REUSE_TTL_S",
+            os.getenv("FOLLOWUP_TOOL_REUSE_TTL_S", "1200")
+        ))
+    except Exception:
+        val = 1200
+    return max(30, min(86400, val))
+
+
+def get_grounding_auto_recovery_enable() -> bool:
+    """
+    Enable one-shot auto-recovery tool re-run when fact grounding is missing.
+    """
+    return str(settings.get(
+        "GROUNDING_AUTO_RECOVERY_ENABLE",
+        os.getenv("GROUNDING_AUTO_RECOVERY_ENABLE", "true")
+    )).lower() == "true"
+
+
+def get_grounding_auto_recovery_timeout_s() -> float:
+    """
+    Timeout budget in seconds for one-shot grounding auto-recovery.
+    """
+    try:
+        val = float(settings.get(
+            "GROUNDING_AUTO_RECOVERY_TIMEOUT_S",
+            os.getenv("GROUNDING_AUTO_RECOVERY_TIMEOUT_S", "8")
+        ))
+    except Exception:
+        val = 8.0
+    return max(1.0, min(60.0, val))
+
+
+def get_grounding_auto_recovery_whitelist() -> list:
+    """
+    Whitelisted tools that may be retried automatically for grounding recovery.
+    """
+    raw = str(settings.get(
+        "GROUNDING_AUTO_RECOVERY_WHITELIST",
+        os.getenv(
+            "GROUNDING_AUTO_RECOVERY_WHITELIST",
+            "run_skill,get_system_info,memory_graph_search,list_skills"
+        )
+    ))
+    out = []
+    seen = set()
+    for item in raw.split(","):
+        name = str(item or "").strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        out.append(name)
+    return out
+
+
+def get_daily_context_followup_enable() -> bool:
+    """
+    Enable lightweight daily-context fallback for temporal follow-up turns.
+    """
+    return str(settings.get(
+        "DAILY_CONTEXT_FOLLOWUP_ENABLE",
+        os.getenv("DAILY_CONTEXT_FOLLOWUP_ENABLE", "true")
+    )).lower() == "true"
+
+
+def get_tone_signal_override_confidence() -> float:
+    """
+    Minimum classifier confidence to override stale ThinkingLayer tone fields.
+    """
+    try:
+        val = float(settings.get(
+            "TONE_SIGNAL_OVERRIDE_CONFIDENCE",
+            os.getenv("TONE_SIGNAL_OVERRIDE_CONFIDENCE", "0.82")
+        ))
+    except Exception:
+        val = 0.82
+    return max(0.0, min(1.0, val))
+
+
 def get_sequential_timeout_s() -> int:
     """
     Max allowed runtime for non-stream sequential call before fail-open.
@@ -197,9 +484,32 @@ def get_output_char_cap_interactive() -> int:
     """
     val = int(settings.get(
         "OUTPUT_CHAR_CAP_INTERACTIVE",
-        os.getenv("OUTPUT_CHAR_CAP_INTERACTIVE", "1600")
+        os.getenv("OUTPUT_CHAR_CAP_INTERACTIVE", "2600")
     ))
     return max(0, min(50000, val))
+
+
+def get_output_char_cap_interactive_long() -> int:
+    """
+    Relaxed hard cap for interactive mode when length_hint requests long output.
+    """
+    val = int(settings.get(
+        "OUTPUT_CHAR_CAP_INTERACTIVE_LONG",
+        os.getenv("OUTPUT_CHAR_CAP_INTERACTIVE_LONG", "3600")
+    ))
+    return max(400, min(50000, val))
+
+
+def get_output_char_cap_interactive_analytical() -> int:
+    """
+    Hard output char cap for analytical turns in interactive mode.
+    Keeps latency bounded unless user explicitly switches to deep mode.
+    """
+    val = int(settings.get(
+        "OUTPUT_CHAR_CAP_INTERACTIVE_ANALYTICAL",
+        os.getenv("OUTPUT_CHAR_CAP_INTERACTIVE_ANALYTICAL", "1400")
+    ))
+    return max(300, min(50000, val))
 
 
 def get_output_char_cap_deep() -> int:
@@ -211,6 +521,50 @@ def get_output_char_cap_deep() -> int:
         os.getenv("OUTPUT_CHAR_CAP_DEEP", "12000")
     ))
     return max(0, min(200000, val))
+
+
+def get_output_char_target_interactive() -> int:
+    """
+    Soft target for interactive mode output length (prompt-level guidance).
+    Must stay below hard cap when hard cap > 0.
+    """
+    val = int(settings.get(
+        "OUTPUT_CHAR_TARGET_INTERACTIVE",
+        os.getenv("OUTPUT_CHAR_TARGET_INTERACTIVE", "1600")
+    ))
+    hard_cap = get_output_char_cap_interactive()
+    if hard_cap > 0:
+        val = min(val, max(200, hard_cap - 120))
+    return max(200, min(50000, val))
+
+
+def get_output_char_target_interactive_analytical() -> int:
+    """
+    Soft target for analytical turns in interactive mode.
+    """
+    val = int(settings.get(
+        "OUTPUT_CHAR_TARGET_INTERACTIVE_ANALYTICAL",
+        os.getenv("OUTPUT_CHAR_TARGET_INTERACTIVE_ANALYTICAL", "1000")
+    ))
+    hard_cap = get_output_char_cap_interactive_analytical()
+    if hard_cap > 0:
+        val = min(val, max(180, hard_cap - 120))
+    return max(180, min(50000, val))
+
+
+def get_output_char_target_deep() -> int:
+    """
+    Soft target for deep mode output length (prompt-level guidance).
+    Must stay below hard cap when hard cap > 0.
+    """
+    val = int(settings.get(
+        "OUTPUT_CHAR_TARGET_DEEP",
+        os.getenv("OUTPUT_CHAR_TARGET_DEEP", "9000")
+    ))
+    hard_cap = get_output_char_cap_deep()
+    if hard_cap > 0:
+        val = min(val, max(400, hard_cap - 200))
+    return max(400, min(200000, val))
 
 
 def get_output_timeout_interactive_s() -> int:
@@ -233,6 +587,259 @@ def get_output_timeout_deep_s() -> int:
         os.getenv("OUTPUT_TIMEOUT_DEEP_S", "120")
     ))
     return max(5, min(600, val))
+
+
+def get_output_stream_postcheck_mode() -> str:
+    """
+    Stream grounding postcheck behavior:
+      - tail_repair: stream immediately, append correction only if needed (default)
+      - buffered: buffer full output before emitting (legacy behavior)
+      - off: disable postcheck for streaming path
+    """
+    val = str(settings.get(
+        "OUTPUT_STREAM_POSTCHECK_MODE",
+        os.getenv("OUTPUT_STREAM_POSTCHECK_MODE", "tail_repair")
+    )).strip().lower()
+    return val if val in {"tail_repair", "buffered", "off"} else "tail_repair"
+
+
+def get_control_timeout_interactive_s() -> int:
+    """
+    HTTP timeout budget for ControlLayer in interactive mode.
+    """
+    val = int(settings.get(
+        "CONTROL_TIMEOUT_INTERACTIVE_S",
+        os.getenv("CONTROL_TIMEOUT_INTERACTIVE_S", "30")
+    ))
+    return max(5, min(300, val))
+
+
+def get_control_timeout_deep_s() -> int:
+    """
+    HTTP timeout budget for ControlLayer in deep mode.
+    """
+    val = int(settings.get(
+        "CONTROL_TIMEOUT_DEEP_S",
+        os.getenv("CONTROL_TIMEOUT_DEEP_S", "60")
+    ))
+    return max(5, min(600, val))
+
+
+def get_deep_job_timeout_s() -> int:
+    """
+    Hard timeout for /api/chat/deep-jobs worker execution (seconds).
+    """
+    val = int(settings.get(
+        "DEEP_JOB_TIMEOUT_S",
+        os.getenv("DEEP_JOB_TIMEOUT_S", "210")
+    ))
+    return max(30, min(1800, val))
+
+
+def get_deep_job_max_concurrency() -> int:
+    """
+    Max number of parallel deep jobs allowed at API layer.
+    Default is conservative for single-GPU setups.
+    """
+    val = int(settings.get(
+        "DEEP_JOB_MAX_CONCURRENCY",
+        os.getenv("DEEP_JOB_MAX_CONCURRENCY", "1")
+    ))
+    return max(1, min(8, val))
+
+
+def get_autonomy_job_timeout_s() -> int:
+    """
+    Hard timeout for /api/autonomous/jobs worker execution (seconds).
+    """
+    val = int(settings.get(
+        "AUTONOMY_JOB_TIMEOUT_S",
+        os.getenv("AUTONOMY_JOB_TIMEOUT_S", "300")
+    ))
+    return max(30, min(3600, val))
+
+
+def get_autonomy_job_max_concurrency() -> int:
+    """
+    Max number of parallel autonomous jobs allowed at API layer.
+    """
+    val = int(settings.get(
+        "AUTONOMY_JOB_MAX_CONCURRENCY",
+        os.getenv("AUTONOMY_JOB_MAX_CONCURRENCY", "1")
+    ))
+    return max(1, min(8, val))
+
+
+def get_autonomy_cron_state_path() -> str:
+    """
+    Persistent state path for autonomy cron jobs and run history.
+    """
+    return str(settings.get(
+        "AUTONOMY_CRON_STATE_PATH",
+        os.getenv("AUTONOMY_CRON_STATE_PATH", "memory_speicher/autonomy_cron_state.json")
+    ))
+
+
+def get_autonomy_cron_tick_s() -> int:
+    """
+    Scheduler tick interval (seconds) for cron matching loop.
+    """
+    val = int(settings.get(
+        "AUTONOMY_CRON_TICK_S",
+        os.getenv("AUTONOMY_CRON_TICK_S", "10")
+    ))
+    return max(5, min(60, val))
+
+
+def get_autonomy_cron_max_concurrency() -> int:
+    """
+    Max parallel cron dispatch workers (dispatch into autonomy queue).
+    """
+    val = int(settings.get(
+        "AUTONOMY_CRON_MAX_CONCURRENCY",
+        os.getenv("AUTONOMY_CRON_MAX_CONCURRENCY", "1")
+    ))
+    return max(1, min(4, val))
+
+
+def get_autonomy_cron_max_jobs() -> int:
+    """
+    Hard cap for stored cron job definitions.
+    """
+    val = int(settings.get(
+        "AUTONOMY_CRON_MAX_JOBS",
+        os.getenv("AUTONOMY_CRON_MAX_JOBS", "200")
+    ))
+    return max(1, min(2000, val))
+
+
+def get_autonomy_cron_max_jobs_per_conversation() -> int:
+    """
+    Hard cap of cron jobs per conversation_id.
+    """
+    val = int(settings.get(
+        "AUTONOMY_CRON_MAX_JOBS_PER_CONVERSATION",
+        os.getenv("AUTONOMY_CRON_MAX_JOBS_PER_CONVERSATION", "30")
+    ))
+    return max(1, min(500, val))
+
+
+def get_autonomy_cron_min_interval_s() -> int:
+    """
+    Minimum allowed schedule interval (seconds).
+    """
+    val = int(settings.get(
+        "AUTONOMY_CRON_MIN_INTERVAL_S",
+        os.getenv("AUTONOMY_CRON_MIN_INTERVAL_S", "60")
+    ))
+    return max(60, min(86400, val))
+
+
+def get_autonomy_cron_max_pending_runs() -> int:
+    """
+    Max number of pending+running cron dispatches kept in scheduler queue.
+    """
+    val = int(settings.get(
+        "AUTONOMY_CRON_MAX_PENDING_RUNS",
+        os.getenv("AUTONOMY_CRON_MAX_PENDING_RUNS", "500")
+    ))
+    return max(1, min(5000, val))
+
+
+def get_autonomy_cron_max_pending_runs_per_job() -> int:
+    """
+    Per-job cap for pending+running cron dispatches.
+    """
+    val = int(settings.get(
+        "AUTONOMY_CRON_MAX_PENDING_RUNS_PER_JOB",
+        os.getenv("AUTONOMY_CRON_MAX_PENDING_RUNS_PER_JOB", "2")
+    ))
+    return max(1, min(100, val))
+
+
+def get_autonomy_cron_manual_run_cooldown_s() -> int:
+    """
+    Cooldown for manual run-now actions per cron job.
+    """
+    val = int(settings.get(
+        "AUTONOMY_CRON_MANUAL_RUN_COOLDOWN_S",
+        os.getenv("AUTONOMY_CRON_MANUAL_RUN_COOLDOWN_S", "30")
+    ))
+    return max(0, min(3600, val))
+
+
+def get_autonomy_cron_trion_safe_mode() -> bool:
+    """
+    Enable stricter policy checks for cron jobs created by TRION.
+    """
+    return str(settings.get(
+        "AUTONOMY_CRON_TRION_SAFE_MODE",
+        os.getenv("AUTONOMY_CRON_TRION_SAFE_MODE", "true")
+    )).lower() == "true"
+
+
+def get_autonomy_cron_trion_min_interval_s() -> int:
+    """
+    Minimum allowed interval for TRION-created cron jobs.
+    """
+    val = int(settings.get(
+        "AUTONOMY_CRON_TRION_MIN_INTERVAL_S",
+        os.getenv("AUTONOMY_CRON_TRION_MIN_INTERVAL_S", "300")
+    ))
+    return max(60, min(86400, val))
+
+
+def get_autonomy_cron_trion_max_loops() -> int:
+    """
+    Max autonomy loops per TRION-created cron execution.
+    """
+    val = int(settings.get(
+        "AUTONOMY_CRON_TRION_MAX_LOOPS",
+        os.getenv("AUTONOMY_CRON_TRION_MAX_LOOPS", "12")
+    ))
+    return max(1, min(200, val))
+
+
+def get_autonomy_cron_trion_require_approval_for_risky() -> bool:
+    """
+    Require explicit user approval for risky TRION cron objectives.
+    """
+    return str(settings.get(
+        "AUTONOMY_CRON_TRION_REQUIRE_APPROVAL_FOR_RISKY",
+        os.getenv("AUTONOMY_CRON_TRION_REQUIRE_APPROVAL_FOR_RISKY", "true")
+    )).lower() == "true"
+
+
+def get_autonomy_cron_hardware_guard_enabled() -> bool:
+    """
+    Enable runtime hardware preflight guard before cron dispatch execution.
+    """
+    return str(settings.get(
+        "AUTONOMY_CRON_HARDWARE_GUARD_ENABLED",
+        os.getenv("AUTONOMY_CRON_HARDWARE_GUARD_ENABLED", "true")
+    )).lower() == "true"
+
+
+def get_autonomy_cron_hardware_cpu_max_percent() -> int:
+    """
+    Maximum allowed normalized CPU load percent before cron run is deferred.
+    """
+    val = int(settings.get(
+        "AUTONOMY_CRON_HARDWARE_CPU_MAX_PERCENT",
+        os.getenv("AUTONOMY_CRON_HARDWARE_CPU_MAX_PERCENT", "90")
+    ))
+    return max(50, min(99, val))
+
+
+def get_autonomy_cron_hardware_mem_max_percent() -> int:
+    """
+    Maximum allowed host memory usage percent before cron run is deferred.
+    """
+    val = int(settings.get(
+        "AUTONOMY_CRON_HARDWARE_MEM_MAX_PERCENT",
+        os.getenv("AUTONOMY_CRON_HARDWARE_MEM_MAX_PERCENT", "92")
+    ))
+    return max(50, min(99, val))
 
 
 def get_loop_engine_trigger_complexity() -> int:
@@ -389,6 +996,30 @@ def get_control_prompt_memory_chars() -> int:
         val = 1600
     return max(0, min(30000, val))
 
+
+def get_control_endpoint_override(response_mode: str = "interactive") -> str:
+    """
+    Optional endpoint override for ControlLayer.
+    Lookup order:
+      - CONTROL_ENDPOINT_DEEP (only when response_mode=deep)
+      - CONTROL_ENDPOINT
+      - empty string (disabled)
+    """
+    mode = str(response_mode or "").strip().lower()
+    if mode == "deep":
+        deep_val = str(settings.get(
+            "CONTROL_ENDPOINT_DEEP",
+            os.getenv("CONTROL_ENDPOINT_DEEP", "")
+        )).strip()
+        if deep_val:
+            return deep_val.rstrip("/")
+
+    val = str(settings.get(
+        "CONTROL_ENDPOINT",
+        os.getenv("CONTROL_ENDPOINT", "")
+    )).strip()
+    return val.rstrip("/")
+
 # ═══════════════════════════════════════════════════════════════
 # LAYER TOGGLES & OPTIMIERUNG
 # ═══════════════════════════════════════════════════════════════
@@ -402,9 +1033,14 @@ SKIP_CONTROL_ON_LOW_RISK = settings.get("SKIP_CONTROL_ON_LOW_RISK", os.getenv("S
 # ═══════════════════════════════════════════════════════════════
 # VALIDATOR SERVICE
 # ═══════════════════════════════════════════════════════════════
-ENABLE_VALIDATION = settings.get("ENABLE_VALIDATION", os.getenv("ENABLE_VALIDATION", "true").lower() == "true")
+# ENABLE_VALIDATION: default false — the legacy /ollama/chat validator is isolated from the
+# main orchestrator pipeline. With the Control Layer active, double-validation causes
+# unpredictable HARD FAILs that override approved plans. Enable only for debugging.
+ENABLE_VALIDATION = settings.get("ENABLE_VALIDATION", os.getenv("ENABLE_VALIDATION", "false").lower() == "true")
 VALIDATION_THRESHOLD = float(settings.get("VALIDATION_THRESHOLD", os.getenv("VALIDATION_THRESHOLD", "0.70")))
-VALIDATION_HARD_FAIL = settings.get("VALIDATION_HARD_FAIL", os.getenv("VALIDATION_HARD_FAIL", "true").lower() == "true")
+# VALIDATION_HARD_FAIL: default false — soft fail allows the response through even if the
+# validator disagrees. Hard fail causes silent retries that the orchestrator cannot see.
+VALIDATION_HARD_FAIL = settings.get("VALIDATION_HARD_FAIL", os.getenv("VALIDATION_HARD_FAIL", "false").lower() == "true")
 
 # ═══════════════════════════════════════════════════════════════
 # LOGGING
@@ -944,3 +1580,73 @@ def get_secret_rate_limit() -> int:
         ))
     except Exception:
         return 100
+
+
+def get_secret_resolve_miss_ttl_s() -> int:
+    """
+    Provider-level cooldown for missing cloud API keys.
+    Prevents repeated resolve bursts when no key exists.
+    """
+    try:
+        return int(settings.get(
+            "SECRET_RESOLVE_MISS_TTL_S",
+            os.getenv("SECRET_RESOLVE_MISS_TTL_S", "45")
+        ))
+    except Exception:
+        return 45
+
+
+def get_secret_resolve_not_found_ttl_s() -> int:
+    """
+    Candidate-level cooldown after resolve endpoint returned 404.
+    """
+    try:
+        return int(settings.get(
+            "SECRET_RESOLVE_NOT_FOUND_TTL_S",
+            os.getenv("SECRET_RESOLVE_NOT_FOUND_TTL_S", "180")
+        ))
+    except Exception:
+        return 180
+
+
+def get_autosave_dedupe_enable() -> bool:
+    """Enable short-window dedupe for assistant autosave (default: true)."""
+    return settings.get(
+        "AUTOSAVE_DEDUPE_ENABLE",
+        os.getenv("AUTOSAVE_DEDUPE_ENABLE", "true")
+    ).lower() == "true"
+
+
+def get_autosave_dedupe_window_s() -> int:
+    """Deduplication window in seconds (default: 90)."""
+    try:
+        return int(settings.get(
+            "AUTOSAVE_DEDUPE_WINDOW_S",
+            os.getenv("AUTOSAVE_DEDUPE_WINDOW_S", "90")
+        ))
+    except Exception:
+        return 90
+
+
+def get_autosave_dedupe_max_entries() -> int:
+    """In-memory dedupe key capacity (default: 8192)."""
+    try:
+        return int(settings.get(
+            "AUTOSAVE_DEDUPE_MAX_ENTRIES",
+            os.getenv("AUTOSAVE_DEDUPE_MAX_ENTRIES", "8192")
+        ))
+    except Exception:
+        return 8192
+
+
+def get_skill_auto_create_on_low_risk() -> bool:
+    """
+    Bypass pending_intent confirmation for low-risk skill creation.
+    When true: hallucination_risk==low AND needs_package_install==False → auto-create without user prompt.
+    Default: false (safe — always ask user).
+    Rollback: SKILL_AUTO_CREATE_ON_LOW_RISK=false → kein Code-Revert nötig.
+    """
+    return settings.get(
+        "SKILL_AUTO_CREATE_ON_LOW_RISK",
+        os.getenv("SKILL_AUTO_CREATE_ON_LOW_RISK", "false")
+    ).lower() == "true"

@@ -309,7 +309,11 @@ async def process_request(
             log_info_fn(f"[Orchestrator-Sync] Blueprint suggest: Kandidaten={[c['id'] for c in _bp_decision_sync['candidates']]} — Rückfrage nötig")
         else:
             thinking_plan["_blueprint_gate_blocked"] = True
-            log_info_fn("[Orchestrator-Sync] Blueprint gate: kein passender Blueprint — request_container wird blockiert")
+            thinking_plan["_blueprint_no_match"] = True
+            _cur_tools_sync = list(thinking_plan.get("suggested_tools") or [])
+            if "blueprint_list" not in _cur_tools_sync:
+                thinking_plan["suggested_tools"] = _cur_tools_sync + ["blueprint_list"]
+            log_info_fn("[Orchestrator-Sync] Blueprint: kein Match — blueprint_list als Fallback-Signal injiziert")
 
     _early_gate_msg_sync = orch._check_hardware_gate_early(user_text, thinking_plan)
     if _early_gate_msg_sync:

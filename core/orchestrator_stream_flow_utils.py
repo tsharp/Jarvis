@@ -521,10 +521,15 @@ async def process_stream_with_events(
                 "score": blueprint_decision["score"],
             })
         else:
-            # No blueprint match → HARD GATE: block request_container
+            # No exact blueprint match — security gate maintained (request_container stripped by
+            # control_decision_from_plan), but add blueprint_list so Control Layer can show
+            # available options instead of silently blocking.
             thinking_plan["_blueprint_gate_blocked"] = True
-            log_info_fn("[Orchestrator] Blueprint gate: kein passender Blueprint — request_container wird blockiert")
-            yield ("", False, {"type": "blueprint_blocked"})
+            thinking_plan["_blueprint_no_match"] = True
+            _cur_tools = list(thinking_plan.get("suggested_tools") or [])
+            if "blueprint_list" not in _cur_tools:
+                thinking_plan["suggested_tools"] = _cur_tools + ["blueprint_list"]
+            log_info_fn("[Orchestrator] Blueprint: kein Match — blueprint_list als Fallback-Signal injiziert")
 
     # ═══════════════════════════════════════════════════
     # STEP 1.75: SEQUENTIAL THINKING (STREAMING)
