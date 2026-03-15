@@ -158,20 +158,23 @@ class BlueprintSemanticRouter:
                 f"(strict={MATCH_THRESHOLD_STRICT}, suggest={MATCH_THRESHOLD_SUGGEST})"
             )
 
-            # Exact-name bypass: wenn Blueprint-ID explizit im user_text oder intent genannt,
-            # direkt auto-routen unabhängig vom Semantic-Score.
+            # Exact-name bypass: alle Kandidaten prüfen ob Blueprint-ID explizit genannt,
+            # nicht nur den best-scoring — z.B. wenn user-blueprint-1773182488 semantisch
+            # vor gaming-station liegt, aber der User explizit "gaming-station" schreibt.
             _combined_lower = f"{user_text} {intent}".lower()
-            if best_id and best_id.lower() in _combined_lower and best_score >= MATCH_THRESHOLD_SUGGEST:
-                log_info(
-                    f"[BlueprintRouter] EXACT-NAME BYPASS → '{best_id}' "
-                    f"(explizit genannt, score={best_score:.3f})"
-                )
-                return BlueprintRouterDecision(
-                    decision="use_blueprint",
-                    blueprint_id=best_id,
-                    score=best_score,
-                    reason=f"Explizit genannt + Semantic-Match ({best_score:.2f}) → auto-route '{best_id}'",
-                )
+            for _cand in candidates:
+                _cid = _cand.blueprint_id or ""
+                if _cid and _cid.lower() in _combined_lower and _cand.score >= MATCH_THRESHOLD_SUGGEST:
+                    log_info(
+                        f"[BlueprintRouter] EXACT-NAME BYPASS → '{_cid}' "
+                        f"(explizit genannt, score={_cand.score:.3f})"
+                    )
+                    return BlueprintRouterDecision(
+                        decision="use_blueprint",
+                        blueprint_id=_cid,
+                        score=_cand.score,
+                        reason=f"Explizit genannt + Semantic-Match ({_cand.score:.2f}) → auto-route '{_cid}'",
+                    )
 
             if best_score >= MATCH_THRESHOLD_STRICT:
                 log_info(f"[BlueprintRouter] AUTO-ROUTE → '{best_id}' (score={best_score:.3f} >= {MATCH_THRESHOLD_STRICT})")
