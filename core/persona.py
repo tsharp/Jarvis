@@ -113,19 +113,21 @@ class Persona:
                     mcp = tool.get("mcp", "")
                     parts.append(f"  • {name} [{mcp}]: {desc}")
                 parts.append("")
-                parts.append("WICHTIG: Wenn du ein Tool nutzen sollst, wird das System es für dich aufrufen.")
-                parts.append("Du bekommst das Ergebnis und formulierst daraus deine Antwort.")
-                parts.append("Sage NIEMALS 'Ich habe X gemacht' ohne ein echtes Tool-Ergebnis!")
+                parts.append("WICHTIG: Wenn du ein Tool nutzt, bekommst du das Ergebnis und formulierst daraus deine Antwort.")
+                parts.append("Sage NIEMALS 'Ich habe X gemacht' ohne ein echtes Tool-Ergebnis.")
+                parts.append("Wenn der User fragt wie du etwas gemacht hast, erkläre es ehrlich — du darfst sagen welche Tools du genutzt hast.")
 
                 # Container Commander: Ressourcen-Hinweis
                 container_tools = [t for t in tools if t.get("mcp") == "container-commander"]
                 if container_tools:
                     parts.append("")
                     parts.append("### CONTAINER-MANAGEMENT:")
-                    parts.append("Sei ressourcenschonend! Starte nur Container die du brauchst.")
-                    parts.append("Beende Container SOFORT nach Erledigung mit stop_container.")
-                    parts.append("Prüfe container_stats regelmäßig — bei efficiency_level red → stoppen.")
-                    parts.append("Nutze die kleinsten Resource-Limits die ausreichen.")
+                    parts.append("Starte nur Container die du wirklich brauchst.")
+                    parts.append("Beende einen Container erst wenn die GESAMTE Aufgabe abgeschlossen ist — nicht nach jedem Einzelschritt.")
+                    parts.append("Multi-Step-Tasks (z.B. Download → Build → Run) brauchen denselben Container durch alle Schritte hindurch.")
+                    parts.append("Prüfe container_stats nur wenn Ressourcenprobleme auftreten — nicht nach jedem Schritt.")
+                    parts.append("Wenn container_id bereits bekannt ist: direkt exec_in_container nutzen, kein Neustart nötig.")
+                    parts.append("Nur wenn keine container_id bekannt ist: zuerst container_list, dann gezielt weiterarbeiten.")
                 
                 # TRION Home: Persistentes Zuhause
                 home_tools = [t for t in tools if t.get("name", "").startswith("home_")]
@@ -138,6 +140,14 @@ class Persona:
                     parts.append("  • 'Was hattest du notiert?' → home_read nutzen, Inhalt zusammenfassen")
                     parts.append("  • 'Zeig mir meine Dateien' → home_list nutzen")
                     parts.append("Deine Dateien überleben Neustarts. Speichere wichtige Infos dort!")
+
+                cron_tools = [t for t in tools if t.get("name", "").startswith("autonomy_cron_")]
+                if cron_tools:
+                    parts.append("")
+                    parts.append("### GEPLANTE AUTONOMIE:")
+                    parts.append("Für wiederkehrende Aufgaben nutze autonomy_cron_* Tools.")
+                    parts.append("Erst prüfen (autonomy_cron_list_jobs/autonomy_cron_status), dann gezielt anlegen/ändern.")
+                    parts.append("Bei Änderungen immer kurz bestätigen, was aktiv, pausiert oder gelöscht wurde.")
         
         # === REGELN ===
         if self.core_rules:

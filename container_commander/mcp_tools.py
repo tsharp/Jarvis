@@ -25,23 +25,31 @@ Tool List:
   - home_list            → List directory in TRION home container
   - container_list       → List all active TRION containers (discovery)
   - container_inspect    → Detailed info about a specific container
+  - autonomy_cron_*      → Manage autonomous cron schedules (user/TRION)
+  - cron_reference_links_list → Read-only GitHub inspiration collections
 """
 
 import logging
-import re
+import os
+import asyncio
+import threading
 from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
 
 # ── KI System Prompt ──────────────────────────────────────
+# NOTE: CONTAINER_SYSTEM_PROMPT is injected via persona.py (CONTAINER-MANAGEMENT section),
+# not from here. get_system_prompt() is kept for API compatibility but persona.py is authoritative.
 
 CONTAINER_SYSTEM_PROMPT = """Du hast Zugriff auf Container-Management Tools.
-WICHTIG: Sei ressourcenschonend!
-- Starte nur Container die du wirklich brauchst
-- Beende Container SOFORT nach Erledigung
-- Nutze die kleinsten Resource-Limits die ausreichen
-- Prüfe container_stats regelmäßig auf Efficiency Score
-- Bei efficiency_level "red" → optimize oder stoppen"""
+- Starte nur Container die du wirklich brauchst.
+- Führe ALLE Schritte einer Aufgabe im selben Container aus — stoppe erst nach Abschluss der gesamten Pipeline.
+- Nutze die kleinsten Resource-Limits die ausreichen.
+- Bei efficiency_level "red" → optimize oder stoppen, aber nur wenn kein aktiver Task läuft."""
+
+# These tools are provided by Fast-Lane at runtime and should usually be hidden
+# from Commander MCP registration to avoid duplicate registry entries.
+FAST_LANE_TOOL_NAMES = {"home_read", "home_write", "home_list"}
 
 
 # ── Tool Definitions (MCP Schema) ─────────────────────────
@@ -49,7 +57,7 @@ WICHTIG: Sei ressourcenschonend!
 TOOL_DEFINITIONS = [
     {
         "name": "request_container",
-        "description": "Deploy a container from a blueprint. Returns container_id for use with exec/logs/stats. IMPORTANT: Stop the container when done!",
+        "description": "Deploy a container from a blueprint. Returns container_id plus connection hints (IP/ports). Keep the container running across all steps of a multi-step task — stop it only when the entire task is complete.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -61,7 +69,7 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "stop_container",
-        "description": "Stop and remove a running container. Always call this when done with a container!",
+        "description": "Stop and remove a running container. Call this only after the complete task pipeline is finished — not between steps.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -128,6 +136,42 @@ TOOL_DEFINITIONS = [
         }
     },
     {
+        "name": "storage_scope_list",
+        "description": "List approved storage scopes for host bind mounts.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    {
+        "name": "storage_scope_upsert",
+        "description": "Create or update a storage scope with approved host roots.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Scope name (e.g. 'gaming')"},
+                "roots": {
+                    "type": "array",
+                    "description": "Allowed roots: [{path:'/data/games', mode:'rw'}]",
+                    "items": {"type": "object"}
+                },
+                "approved_by": {"type": "string", "description": "Actor marker", "default": "user"}
+            },
+            "required": ["name", "roots"]
+        }
+    },
+    {
+        "name": "storage_scope_delete",
+        "description": "Delete an existing storage scope.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Scope name"}
+            },
+            "required": ["name"]
+        }
+    },
+    {
         "name": "snapshot_list",
         "description": "List available snapshots for workspace recovery.",
         "inputSchema": {
@@ -175,6 +219,48 @@ TOOL_DEFINITIONS = [
                 "memory_limit": {"type": "string", "description": "Memory limit (e.g. '512m')", "default": "512m"},
                 "cpu_limit": {"type": "string", "description": "CPU limit (e.g. '0.5')", "default": "0.5"},
                 "tags": {"type": "array", "items": {"type": "string"}, "description": "Tags for filtering"},
+                "network": {
+                    "type": "string",
+                    "description": "Network mode",
+                    "enum": ["none", "internal", "bridge", "full"],
+                    "default": "internal",
+                },
+                "ports": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Port mappings (e.g. ['47984:47984/tcp']).",
+                },
+                "runtime": {
+                    "type": "string",
+                    "description": "Container runtime (e.g. 'nvidia').",
+                },
+                "devices": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Device mappings (e.g. ['/dev/dri:/dev/dri']).",
+                },
+                "environment": {
+                    "type": "object",
+                    "description": "Static env vars. Supports secret refs via vault://SECRET_NAME values.",
+                    "additionalProperties": {"type": "string"},
+                },
+                "storage_scope": {
+                    "type": "string",
+                    "description": "Optional approved storage scope name for bind mounts.",
+                },
+                "healthcheck": {
+                    "type": "object",
+                    "description": "Healthcheck config object.",
+                },
+                "cap_add": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Linux capabilities to add (e.g. ['NET_ADMIN']).",
+                },
+                "shm_size": {
+                    "type": "string",
+                    "description": "Shared memory size (e.g. '1g').",
+                },
                 "allowed_exec": {
                     "type": "array",
                     "items": {"type": "string"},
@@ -242,6 +328,152 @@ TOOL_DEFINITIONS = [
             "required": ["container_id"]
         }
     },
+    {
+        "name": "autonomy_cron_status",
+        "description": "Get scheduler status and high-level counts for autonomy cron jobs.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    {
+        "name": "autonomy_cron_list_jobs",
+        "description": "List all autonomy cron jobs with runtime state and next execution time.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    {
+        "name": "autonomy_cron_validate",
+        "description": "Validate a 5-field cron expression.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "cron": {"type": "string", "description": "Cron expression (min hour day month weekday)"}
+            },
+            "required": ["cron"]
+        }
+    },
+    {
+        "name": "autonomy_cron_create_job",
+        "description": "Create a new autonomous cron job. Supports schedule_mode=recurring (cron) or schedule_mode=one_shot (run_at). TRION-created jobs are guarded by safety policy and may require explicit user approval for risky objectives.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Human-readable job name"},
+                "objective": {"type": "string", "description": "Autonomous objective to run"},
+                "conversation_id": {"type": "string", "description": "Conversation scope"},
+                "cron": {"type": "string", "description": "Cron expression (min hour day month weekday)"},
+                "schedule_mode": {"type": "string", "enum": ["recurring", "one_shot"], "default": "recurring"},
+                "run_at": {"type": "string", "description": "UTC timestamp for one-shot execution (ISO 8601)"},
+                "timezone": {"type": "string", "description": "Timezone (e.g. UTC, Europe/Berlin)", "default": "UTC"},
+                "max_loops": {"type": "integer", "description": "Autonomy max loops", "default": 10},
+                "created_by": {"type": "string", "description": "actor marker (user|trion)", "default": "user"},
+                "user_approved": {"type": "boolean", "description": "Set true only when a user explicitly approved a risky TRION objective", "default": False},
+                "enabled": {"type": "boolean", "description": "Whether job starts active", "default": True}
+            },
+            "required": ["name", "objective"]
+        }
+    },
+    {
+        "name": "autonomy_cron_update_job",
+        "description": "Update fields of an existing autonomy cron job, including schedule_mode and one-shot run_at.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "cron_job_id": {"type": "string", "description": "Cron job ID"},
+                "name": {"type": "string"},
+                "objective": {"type": "string"},
+                "conversation_id": {"type": "string"},
+                "cron": {"type": "string"},
+                "schedule_mode": {"type": "string", "enum": ["recurring", "one_shot"]},
+                "run_at": {"type": "string", "description": "UTC timestamp for one-shot execution (ISO 8601)"},
+                "timezone": {"type": "string"},
+                "max_loops": {"type": "integer"},
+                "created_by": {"type": "string"},
+                "user_approved": {"type": "boolean"},
+                "enabled": {"type": "boolean"}
+            },
+            "required": ["cron_job_id"]
+        }
+    },
+    {
+        "name": "autonomy_cron_pause_job",
+        "description": "Pause a cron job (keeps definition but stops scheduling).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "cron_job_id": {"type": "string", "description": "Cron job ID"}
+            },
+            "required": ["cron_job_id"]
+        }
+    },
+    {
+        "name": "autonomy_cron_resume_job",
+        "description": "Resume a paused cron job.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "cron_job_id": {"type": "string", "description": "Cron job ID"}
+            },
+            "required": ["cron_job_id"]
+        }
+    },
+    {
+        "name": "autonomy_cron_run_now",
+        "description": "Manually enqueue a run for a cron job immediately.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "cron_job_id": {"type": "string", "description": "Cron job ID"}
+            },
+            "required": ["cron_job_id"]
+        }
+    },
+    {
+        "name": "autonomy_cron_delete_job",
+        "description": "Delete a cron job definition permanently.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "cron_job_id": {"type": "string", "description": "Cron job ID"}
+            },
+            "required": ["cron_job_id"]
+        }
+    },
+    {
+        "name": "autonomy_cron_queue",
+        "description": "Inspect cron queue state: pending, running, recent dispatches.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    {
+        "name": "cron_reference_links_list",
+        "description": "Read configured GitHub reference collections (read-only) for cronjobs, skills, and blueprints.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "description": "Optional category filter",
+                    "enum": ["cronjobs", "skills", "blueprints"]
+                },
+                "include_disabled": {
+                    "type": "boolean",
+                    "description": "Include disabled links",
+                    "default": False
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max links to return per category (1-100)",
+                    "default": 50
+                }
+            }
+        }
+    },
 ]
 
 
@@ -265,6 +497,12 @@ def call_tool(tool_name: str, arguments: Dict[str, Any]) -> Any:
             return _tool_blueprint_list(arguments)
         elif tool_name == "blueprint_get":
             return _tool_blueprint_get(arguments)
+        elif tool_name == "storage_scope_list":
+            return _tool_storage_scope_list(arguments)
+        elif tool_name == "storage_scope_upsert":
+            return _tool_storage_scope_upsert(arguments)
+        elif tool_name == "storage_scope_delete":
+            return _tool_storage_scope_delete(arguments)
         elif tool_name == "snapshot_list":
             return _tool_snapshot_list(arguments)
         elif tool_name == "snapshot_restore":
@@ -283,6 +521,28 @@ def call_tool(tool_name: str, arguments: Dict[str, Any]) -> Any:
             return _tool_container_list(arguments)
         elif tool_name == "container_inspect":
             return _tool_container_inspect(arguments)
+        elif tool_name == "autonomy_cron_status":
+            return _tool_autonomy_cron_status(arguments)
+        elif tool_name == "autonomy_cron_list_jobs":
+            return _tool_autonomy_cron_list_jobs(arguments)
+        elif tool_name == "autonomy_cron_validate":
+            return _tool_autonomy_cron_validate(arguments)
+        elif tool_name == "autonomy_cron_create_job":
+            return _tool_autonomy_cron_create_job(arguments)
+        elif tool_name == "autonomy_cron_update_job":
+            return _tool_autonomy_cron_update_job(arguments)
+        elif tool_name == "autonomy_cron_pause_job":
+            return _tool_autonomy_cron_pause_job(arguments)
+        elif tool_name == "autonomy_cron_resume_job":
+            return _tool_autonomy_cron_resume_job(arguments)
+        elif tool_name == "autonomy_cron_run_now":
+            return _tool_autonomy_cron_run_now(arguments)
+        elif tool_name == "autonomy_cron_delete_job":
+            return _tool_autonomy_cron_delete_job(arguments)
+        elif tool_name == "autonomy_cron_queue":
+            return _tool_autonomy_cron_queue(arguments)
+        elif tool_name == "cron_reference_links_list":
+            return _tool_cron_reference_links_list(arguments)
         else:
             return {"error": f"Unknown tool: {tool_name}"}
     except Exception as e:
@@ -292,24 +552,54 @@ def call_tool(tool_name: str, arguments: Dict[str, Any]) -> Any:
 
 # ── Tool Implementations ──────────────────────────────────
 
+def _classify_deploy_runtime_error(error: str) -> str:
+    msg = str(error or "").strip().lower()
+    if msg.startswith("healthcheck_timeout_auto_stopped"):
+        return "healthcheck_timeout"
+    if msg.startswith("healthcheck_unhealthy_auto_stopped"):
+        return "healthcheck_unhealthy"
+    if msg.startswith("container_exited_before_ready_auto_stopped"):
+        return "container_not_ready"
+    return "deploy_conflict"
+
+
 def _tool_request_container(args: dict) -> dict:
-    from .engine import start_container, PendingApprovalError
+    from .engine import start_container, inspect_container, PendingApprovalError
+    blueprint_id = str(args.get("blueprint_id", "")).strip()
+    override_resources = None
+    if blueprint_id in {"gaming-station", "steam-headless", "gaming_station"}:
+        _ensure_gaming_station_blueprint()
+        override_resources = _compute_gaming_override_resources()
     try:
         instance = start_container(
-            blueprint_id=args["blueprint_id"],
+            blueprint_id=blueprint_id or args["blueprint_id"],
+            override_resources=override_resources,
             resume_volume=args.get("resume_volume"),
             session_id=args.get("session_id", ""),
             conversation_id=args.get("conversation_id", ""),
         )
-        return {
+        details = inspect_container(instance.container_id)
+        result = {
             "status": "running",
             "container_id": instance.container_id,
             "name": instance.name,
             "blueprint_id": instance.blueprint_id,
             "volume": instance.volume_name,
             "ttl_seconds": instance.ttl_remaining,
-            "hint": "Beende den Container mit stop_container wenn du fertig bist!",
+            "ip_address": details.get("ip_address", ""),
+            "ports": details.get("ports", []),
+            "connection": details.get("connection", {}),
+            "hint": "Container läuft. Führe alle Schritte der Aufgabe darin aus und stoppe ihn erst am Ende.",
         }
+        if override_resources is not None:
+            result["resource_profile"] = {
+                "cpu_limit": override_resources.cpu_limit,
+                "memory_limit": override_resources.memory_limit,
+                "memory_swap": override_resources.memory_swap,
+            }
+        return result
+    except ValueError as e:
+        return {"status": "error", "error": str(e)}
     except PendingApprovalError as e:
         return {
             "status": "pending_approval",
@@ -318,7 +608,110 @@ def _tool_request_container(args: dict) -> dict:
             "hint": "Der User muss die Netzwerk-Freigabe erst genehmigen.",
         }
     except RuntimeError as e:
-        return {"status": "error", "error": str(e)}
+        msg = str(e)
+        return {
+            "status": "error",
+            "error": msg,
+            "error_code": _classify_deploy_runtime_error(msg),
+        }
+
+
+def _compute_gaming_override_resources():
+    """
+    Derive a quota-compatible resource profile for gaming requests.
+    This keeps request_container deterministic even when default gaming
+    blueprint resources exceed current commander quotas.
+    """
+    from .engine import get_quota
+    from .models import ResourceLimits
+
+    try:
+        quota = get_quota()
+        max_mem = int(getattr(quota, "max_total_memory_mb", 0) or 0)
+        used_mem = float(getattr(quota, "memory_used_mb", 0) or 0.0)
+        max_cpu = float(getattr(quota, "max_total_cpu", 0) or 0.0)
+        used_cpu = float(getattr(quota, "cpu_used", 0) or 0.0)
+    except Exception:
+        return None
+
+    if max_mem <= 0 or max_cpu <= 0:
+        return None
+
+    # Keep small safety headroom to reduce oversubscription spikes.
+    mem_headroom = max(0, int(max_mem - used_mem) - 256)
+    cpu_headroom = max(0.0, max_cpu - used_cpu - 0.25)
+
+    if mem_headroom < 512 or cpu_headroom < 0.5:
+        return None
+
+    mem_limit_mb = min(1536, mem_headroom)
+    cpu_limit = min(1.5, cpu_headroom)
+    swap_mb = max(1024, min(mem_limit_mb * 2, 4096))
+
+    return ResourceLimits(
+        cpu_limit=f"{cpu_limit:.2f}".rstrip("0").rstrip("."),
+        memory_limit=f"{int(mem_limit_mb)}m",
+        memory_swap=f"{int(swap_mb)}m",
+        timeout_seconds=0,
+        pids_limit=512,
+    )
+
+
+def _ensure_gaming_station_blueprint() -> None:
+    """
+    Ensure a deterministic Steam/Sunshine gaming blueprint exists.
+    Keeps implementation prompt-free by using fixed defaults.
+    """
+    from .blueprint_store import get_blueprint, create_blueprint, update_blueprint
+    from .models import Blueprint, ResourceLimits, MountDef, NetworkMode
+
+    bp_id = "gaming-station"
+    image_ref = "josh5/steam-headless:latest"
+    existing = get_blueprint(bp_id)
+    if existing:
+        legacy_image = str(existing.image or "").strip().lower()
+        if legacy_image in {
+            "ghcr.io/linuxserver/steam-headless:latest",
+            "lscr.io/linuxserver/steam-headless:latest",
+        }:
+            update_blueprint(
+                bp_id,
+                {
+                    "image": image_ref,
+                },
+            )
+        return
+
+    bp = Blueprint(
+        id=bp_id,
+        name="Gaming Station (Steam Headless + Sunshine)",
+        description="GPU gaming container with Sunshine streaming and Steam session support.",
+        image=image_ref,
+        resources=ResourceLimits(memory_limit="8g", cpu_limit="4.0", timeout_seconds=0, pids_limit=512),
+        mounts=[
+            MountDef(host="gaming_steam_config", container="/config", type="volume", mode="rw"),
+            MountDef(host="gaming_steam_data", container="/data", type="volume", mode="rw"),
+        ],
+        network=NetworkMode.FULL,
+        ports=[
+            "47984:47984/tcp",
+            "47989:47989/tcp",
+            "48010:48010/tcp",
+            "48100-48110:48100-48110/udp",
+        ],
+        runtime="nvidia",
+        environment={
+            "TZ": "UTC",
+            "PUID": "1000",
+            "PGID": "1000",
+            "STEAM_USER": "vault://STEAM_USERNAME",
+            "STEAM_PASS": "vault://STEAM_PASSWORD",
+        },
+        healthcheck={"test": "curl -fsS http://127.0.0.1:47989/ || exit 1", "interval_seconds": 30, "timeout_seconds": 5, "retries": 5},
+        tags=["gaming", "steam", "sunshine", "gpu", "nvidia"],
+        icon="🎮",
+    )
+    create_blueprint(bp)
 
 
 def _tool_stop_container(args: dict) -> dict:
@@ -421,6 +814,34 @@ def _tool_blueprint_get(args: dict) -> dict:
     return bp.model_dump()
 
 
+def _tool_storage_scope_list(_args: dict) -> dict:
+    from .storage_scope import list_scopes
+
+    scopes = list_scopes()
+    return {"scopes": scopes, "count": len(scopes)}
+
+
+def _tool_storage_scope_upsert(args: dict) -> dict:
+    from .storage_scope import upsert_scope
+
+    scope = upsert_scope(
+        name=args.get("name", ""),
+        roots=args.get("roots", []),
+        approved_by=args.get("approved_by", "user"),
+    )
+    return {"stored": True, "scope": scope}
+
+
+def _tool_storage_scope_delete(args: dict) -> dict:
+    from .storage_scope import delete_scope
+
+    name = str(args.get("name", "")).strip()
+    if not name:
+        return {"error": "name is required"}
+    deleted = delete_scope(name)
+    return {"deleted": bool(deleted), "name": name}
+
+
 def _tool_snapshot_list(args: dict) -> dict:
     from .volumes import list_snapshots
     snaps = list_snapshots(volume_name=args.get("volume_name"))
@@ -476,31 +897,33 @@ def _tool_optimize(args: dict) -> dict:
         return {"error": f"Optimize failed: {str(e)}"}
 
 
-# ── Trusted Image Validation ──────────────────────────────
-
-TRUSTED_IMAGE_PATTERNS = [
-    r"^(library/)?(ubuntu|debian|alpine|busybox):",
-    r"^(library/)?(python|node|ruby|golang|rust|openjdk):",
-    r"^(library/)?(postgres|mysql|mariadb|mongo|redis|memcached):",
-    r"^(library/)?(nginx|httpd|traefik|caddy):",
-    r"^(library/)?(elasticsearch|kibana|logstash):",
-    r"^(library/)?(grafana|prometheus):",
-]
-
-
-def is_trusted_image(image: str) -> bool:
-    """Check if an image is from a trusted source (official Docker images)."""
-    for pattern in TRUSTED_IMAGE_PATTERNS:
-        if re.match(pattern, image.lower()):
-            return True
-    return False
-
-
 # ── TRION Home Container ──────────────────────────────────
 
-TRION_HOME_BLUEPRINT_ID = "trion-home"
-TRION_HOME_VOLUME = "trion_home_data"
-TRION_HOME_PATH = "/home/trion"
+def _home_runtime_config() -> Dict[str, str]:
+    try:
+        from utils.trion_home_identity import load_home_identity
+
+        identity = load_home_identity(create_if_missing=True)
+    except Exception:
+        identity = {}
+    blueprint_id = str(identity.get("container_id") or "trion-home").strip() or "trion-home"
+    container_path = (
+        str(os.environ.get("TRION_HOME_CONTAINER_PATH", "")).strip()
+        or str(identity.get("container_home_path") or "").strip()
+        or "/home/trion"
+    )
+    volume_name = str(os.environ.get("TRION_HOME_VOLUME", "trion_home_data")).strip() or "trion_home_data"
+    return {
+        "blueprint_id": blueprint_id,
+        "volume_name": volume_name,
+        "container_path": container_path,
+    }
+
+
+_HOME_RUNTIME = _home_runtime_config()
+TRION_HOME_BLUEPRINT_ID = _HOME_RUNTIME["blueprint_id"]
+TRION_HOME_VOLUME = _HOME_RUNTIME["volume_name"]
+TRION_HOME_PATH = _HOME_RUNTIME["container_path"]
 
 _trion_home_container_id = None  # Cached container ID
 
@@ -556,6 +979,7 @@ def _tool_blueprint_create(args: dict) -> dict:
     """Create a new blueprint from a trusted Docker image."""
     from .blueprint_store import create_blueprint, get_blueprint
     from .models import Blueprint, ResourceLimits, NetworkMode
+    from .trust import evaluate_blueprint_trust, is_trusted_image
     
     image = args["image"]
     blueprint_id = args["id"]
@@ -564,7 +988,17 @@ def _tool_blueprint_create(args: dict) -> dict:
     if not is_trusted_image(image):
         return {
             "error": f"Image '{image}' is not trusted. Only official Docker images are allowed.",
-            "allowed_prefixes": ["ubuntu:", "python:", "node:", "postgres:", "mongo:", "redis:", "nginx:", "alpine:"],
+            "allowed_prefixes": [
+                "ubuntu:",
+                "python:",
+                "node:",
+                "postgres:",
+                "mongo:",
+                "redis:",
+                "nginx:",
+                "alpine:",
+                "josh5/steam-headless",
+            ],
         }
     
     # Check if blueprint already exists
@@ -582,7 +1016,15 @@ def _tool_blueprint_create(args: dict) -> dict:
             memory_limit=args.get("memory_limit", "512m"),
             cpu_limit=args.get("cpu_limit", "0.5"),
         ),
-        network=NetworkMode.INTERNAL,
+        network=NetworkMode(args.get("network", "internal")),
+        ports=args.get("ports", []),
+        runtime=args.get("runtime", ""),
+        devices=args.get("devices", []),
+        environment=args.get("environment", {}),
+        storage_scope=args.get("storage_scope", ""),
+        healthcheck=args.get("healthcheck", {}),
+        cap_add=args.get("cap_add", []),
+        shm_size=args.get("shm_size", ""),
         tags=args.get("tags", []),
         allowed_exec=args.get("allowed_exec", []),
         icon="📦",
@@ -590,7 +1032,6 @@ def _tool_blueprint_create(args: dict) -> dict:
 
     # Determine trust level via trust.py (single source of truth)
     try:
-        from .trust import evaluate_blueprint_trust
         _trust_decision = evaluate_blueprint_trust(bp)
         _trust_level = _trust_decision["level"] if _trust_decision["level"] in ("verified", "unverified") else "unverified"
     except Exception:
@@ -601,8 +1042,8 @@ def _tool_blueprint_create(args: dict) -> dict:
 
     # Sync new blueprint to graph immediately
     try:
-        from .blueprint_store import _sync_single_blueprint_to_graph
-        _sync_single_blueprint_to_graph(created, trust_level=_trust_level)
+        from .blueprint_store import sync_blueprint_to_graph
+        sync_blueprint_to_graph(created, trust_level=_trust_level)
     except Exception as _e:
         logger.warning(f"[Blueprint] Graph sync failed for {created.id}: {_e}")
 
@@ -750,11 +1191,307 @@ def _tool_container_inspect(args: dict) -> dict:
     return inspect_container(container_id)
 
 
+# ── Autonomy Cron Tools ──────────────────────────────────
+
+def _run_async_sync(coro):
+    """
+    Run async scheduler methods safely from this synchronous tool layer.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    result_holder = {"value": None, "error": None}
+
+    def _runner():
+        try:
+            result_holder["value"] = asyncio.run(coro)
+        except Exception as exc:  # pragma: no cover - defensive
+            result_holder["error"] = exc
+
+    thread = threading.Thread(target=_runner, daemon=True)
+    thread.start()
+    thread.join()
+    if result_holder["error"] is not None:
+        raise result_holder["error"]
+    return result_holder["value"]
+
+
+def _get_autonomy_cron_scheduler():
+    try:
+        from core.autonomy.cron_runtime import get_scheduler
+
+        return get_scheduler()
+    except Exception:
+        return None
+
+
+def _tool_autonomy_cron_status(args: dict) -> dict:
+    scheduler = _get_autonomy_cron_scheduler()
+    if not scheduler:
+        return {"error": "autonomy_cron_unavailable"}
+    return _run_async_sync(scheduler.get_status())
+
+
+def _tool_autonomy_cron_list_jobs(args: dict) -> dict:
+    scheduler = _get_autonomy_cron_scheduler()
+    if not scheduler:
+        return {"error": "autonomy_cron_unavailable"}
+    jobs = _run_async_sync(scheduler.list_jobs())
+    return {"jobs": jobs, "count": len(jobs)}
+
+
+def _tool_autonomy_cron_validate(args: dict) -> dict:
+    cron_expr = str(args.get("cron", "")).strip()
+    if not cron_expr:
+        return {"valid": False, "error": "missing cron"}
+    try:
+        from core.autonomy.cron_scheduler import validate_cron_expression
+
+        validated = validate_cron_expression(cron_expr)
+        return {"valid": True, **validated}
+    except Exception as exc:
+        return {"valid": False, "error": str(exc)}
+
+
+def _reference_links_rows_for_category(
+    category: str,
+    *,
+    include_disabled: bool = False,
+    limit: int = 12,
+) -> List[Dict[str, Any]]:
+    from utils.settings import settings as runtime_settings
+
+    categories = {"cronjobs", "skills", "blueprints"}
+    requested = str(category or "").strip().lower()
+    if requested not in categories:
+        return []
+
+    raw = runtime_settings.get("TRION_REFERENCE_LINK_COLLECTIONS", {})
+    source = raw if isinstance(raw, dict) else {}
+    rows = source.get(requested, [])
+    if not isinstance(rows, list):
+        return []
+
+    out: List[Dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    for entry in rows:
+        item = entry if isinstance(entry, dict) else {}
+        name = str(item.get("name", "")).strip()
+        url = str(item.get("url", "")).strip()
+        if not name or not url:
+            continue
+        enabled = bool(item.get("enabled", True))
+        if not include_disabled and not enabled:
+            continue
+        key = url.lower()
+        if key in seen_urls:
+            continue
+        seen_urls.add(key)
+        out.append(
+            {
+                "name": name[:120],
+                "url": url[:500],
+                "description": str(item.get("description", "")).strip()[:300],
+                "enabled": enabled,
+                "read_only": True,
+            }
+        )
+        if len(out) >= max(1, int(limit)):
+            break
+    return out
+
+
+def _tool_autonomy_cron_create_job(args: dict) -> dict:
+    scheduler = _get_autonomy_cron_scheduler()
+    if not scheduler:
+        return {"error": "autonomy_cron_unavailable"}
+    payload = {
+        "name": args.get("name"),
+        "objective": args.get("objective"),
+        "conversation_id": args.get("conversation_id") or args.get("session_id") or "",
+        "cron": args.get("cron"),
+        "schedule_mode": args.get("schedule_mode", "recurring"),
+        "run_at": args.get("run_at", ""),
+        "timezone": args.get("timezone", "UTC"),
+        "max_loops": args.get("max_loops", 10),
+        "created_by": args.get("created_by", "user"),
+        "user_approved": bool(args.get("user_approved", False)),
+        "enabled": bool(args.get("enabled", True)),
+    }
+    auto_refs: List[Dict[str, Any]] = []
+    created_by = str(payload.get("created_by", "user")).strip().lower()
+    if created_by == "trion":
+        auto_refs = _reference_links_rows_for_category("cronjobs", include_disabled=False, limit=8)
+        if auto_refs:
+            payload["reference_links"] = auto_refs
+            payload["reference_source"] = "settings:cronjobs:auto"
+    try:
+        created = _run_async_sync(scheduler.create_job(payload))
+        if isinstance(created, dict):
+            created["reference_links_used"] = {
+                "category": "cronjobs",
+                "count": len(auto_refs),
+                "source": "settings:cronjobs:auto" if auto_refs else "",
+            }
+        return created
+    except Exception as exc:
+        error_code = getattr(exc, "error_code", "")
+        details = getattr(exc, "details", None)
+        if error_code:
+            return {"error": str(exc), "error_code": error_code, "details": details or {}}
+        return {"error": str(exc)}
+
+
+def _tool_autonomy_cron_update_job(args: dict) -> dict:
+    scheduler = _get_autonomy_cron_scheduler()
+    if not scheduler:
+        return {"error": "autonomy_cron_unavailable"}
+    cron_job_id = str(args.get("cron_job_id", "")).strip()
+    if not cron_job_id:
+        return {"error": "missing cron_job_id"}
+    payload = {
+        key: args[key]
+        for key in [
+            "name",
+            "objective",
+            "conversation_id",
+            "cron",
+            "schedule_mode",
+            "run_at",
+            "timezone",
+            "max_loops",
+            "created_by",
+            "user_approved",
+            "enabled",
+        ]
+        if key in args
+    }
+    try:
+        updated = _run_async_sync(scheduler.update_job(cron_job_id, payload))
+    except Exception as exc:
+        error_code = getattr(exc, "error_code", "")
+        details = getattr(exc, "details", None)
+        if error_code:
+            return {"error": str(exc), "error_code": error_code, "details": details or {}}
+        return {"error": str(exc)}
+    if not updated:
+        return {"error": "cron_job_not_found", "cron_job_id": cron_job_id}
+    return updated
+
+
+def _tool_autonomy_cron_pause_job(args: dict) -> dict:
+    scheduler = _get_autonomy_cron_scheduler()
+    if not scheduler:
+        return {"error": "autonomy_cron_unavailable"}
+    cron_job_id = str(args.get("cron_job_id", "")).strip()
+    if not cron_job_id:
+        return {"error": "missing cron_job_id"}
+    paused = _run_async_sync(scheduler.pause_job(cron_job_id))
+    if not paused:
+        return {"error": "cron_job_not_found", "cron_job_id": cron_job_id}
+    return paused
+
+
+def _tool_autonomy_cron_resume_job(args: dict) -> dict:
+    scheduler = _get_autonomy_cron_scheduler()
+    if not scheduler:
+        return {"error": "autonomy_cron_unavailable"}
+    cron_job_id = str(args.get("cron_job_id", "")).strip()
+    if not cron_job_id:
+        return {"error": "missing cron_job_id"}
+    resumed = _run_async_sync(scheduler.resume_job(cron_job_id))
+    if not resumed:
+        return {"error": "cron_job_not_found", "cron_job_id": cron_job_id}
+    return resumed
+
+
+def _tool_autonomy_cron_run_now(args: dict) -> dict:
+    scheduler = _get_autonomy_cron_scheduler()
+    if not scheduler:
+        return {"error": "autonomy_cron_unavailable"}
+    cron_job_id = str(args.get("cron_job_id", "")).strip()
+    if not cron_job_id:
+        return {"error": "missing cron_job_id"}
+    try:
+        scheduled = _run_async_sync(scheduler.run_now(cron_job_id, reason="tool"))
+    except Exception as exc:
+        error_code = getattr(exc, "error_code", "")
+        details = getattr(exc, "details", None)
+        if error_code:
+            return {"error": str(exc), "error_code": error_code, "details": details or {}}
+        return {"error": str(exc)}
+    if not scheduled:
+        return {"error": "cron_job_not_found", "cron_job_id": cron_job_id}
+    return scheduled
+
+
+def _tool_autonomy_cron_delete_job(args: dict) -> dict:
+    scheduler = _get_autonomy_cron_scheduler()
+    if not scheduler:
+        return {"error": "autonomy_cron_unavailable"}
+    cron_job_id = str(args.get("cron_job_id", "")).strip()
+    if not cron_job_id:
+        return {"error": "missing cron_job_id"}
+    deleted = _run_async_sync(scheduler.delete_job(cron_job_id))
+    return {"deleted": bool(deleted), "cron_job_id": cron_job_id}
+
+
+def _tool_autonomy_cron_queue(args: dict) -> dict:
+    scheduler = _get_autonomy_cron_scheduler()
+    if not scheduler:
+        return {"error": "autonomy_cron_unavailable"}
+    return _run_async_sync(scheduler.get_queue_snapshot())
+
+
+def _tool_cron_reference_links_list(args: dict) -> dict:
+    categories = ("cronjobs", "skills", "blueprints")
+    requested_category = str(args.get("category", "")).strip().lower()
+    include_disabled = bool(args.get("include_disabled", False))
+    limit = int(args.get("limit", 50) or 50)
+    limit = max(1, min(100, limit))
+
+    if requested_category and requested_category not in categories:
+        return {"error": "invalid_category", "allowed_categories": list(categories)}
+
+    if requested_category:
+        links = _reference_links_rows_for_category(
+            requested_category,
+            include_disabled=include_disabled,
+            limit=limit,
+        )
+        return {
+            "category": requested_category,
+            "count": len(links),
+            "links": links,
+            "mode": "read_only_for_trion",
+            "include_disabled": include_disabled,
+        }
+
+    collections: Dict[str, List[Dict[str, Any]]] = {}
+    for category in categories:
+        collections[category] = _reference_links_rows_for_category(
+            category,
+            include_disabled=include_disabled,
+            limit=limit,
+        )
+
+    return {
+        "categories": list(categories),
+        "collections": collections,
+        "mode": "read_only_for_trion",
+        "include_disabled": include_disabled,
+    }
+
+
 # ── Registration Helper ───────────────────────────────────
 
-def get_tool_definitions() -> List[Dict]:
-    """Return all tool definitions for MCP registration."""
-    return TOOL_DEFINITIONS
+def get_tool_definitions(include_fast_lane: bool = True) -> List[Dict]:
+    """Return tool definitions for MCP registration."""
+    if include_fast_lane:
+        return TOOL_DEFINITIONS
+    return [t for t in TOOL_DEFINITIONS if t["name"] not in FAST_LANE_TOOL_NAMES]
 
 
 def get_system_prompt() -> str:
