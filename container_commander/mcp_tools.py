@@ -146,14 +146,28 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "storage_scope_upsert",
-        "description": "Create or update a storage scope with approved host roots.",
+        "description": (
+            "Create or update a Container Commander storage scope — an approved set of host paths "
+            "that blueprints are allowed to bind-mount. "
+            "IMPORTANT: A scope is NOT a Storage Broker zone. "
+            "Storage Broker zones (managed_services, backup, system, …) classify disks/partitions. "
+            "A scope maps a chosen name to one or more concrete host paths so Container Commander "
+            "can enforce that bind mounts stay within approved directories. "
+            "Name it after the service (e.g. 'my-service_scope'), NOT after the zone."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "name": {"type": "string", "description": "Scope name (e.g. 'gaming')"},
+                "name": {
+                    "type": "string",
+                    "description": (
+                        "Scope name — choose a service-specific name (e.g. 'my-service_scope'). "
+                        "Do NOT use Storage Broker zone names (managed_services, backup, …) here."
+                    ),
+                },
                 "roots": {
                     "type": "array",
-                    "description": "Allowed roots: [{path:'/data/games', mode:'rw'}]",
+                    "description": "Allowed host path roots: [{path:'/data/my-service', mode:'rw'}]",
                     "items": {"type": "object"}
                 },
                 "approved_by": {"type": "string", "description": "Actor marker", "default": "user"}
@@ -247,7 +261,14 @@ TOOL_DEFINITIONS = [
                 },
                 "storage_scope": {
                     "type": "string",
-                    "description": "Optional approved storage scope name for bind mounts.",
+                    "description": (
+                        "Container Commander scope name that authorises bind-mount host paths. "
+                        "Must have been created via storage_scope_upsert BEFORE calling blueprint_create. "
+                        "IMPORTANT: This is NOT a Storage Broker zone name. "
+                        "Do NOT pass Storage Broker zone names (managed_services, backup, system, "
+                        "external, docker_runtime, unzoned) here — those are a different concept. "
+                        "Use storage_provision_container if you want zone→scope bridging done automatically."
+                    ),
                 },
                 "mounts": {
                     "type": "array",
@@ -497,11 +518,14 @@ TOOL_DEFINITIONS = [
     {
         "name": "storage_provision_container",
         "description": (
-            "Atomic: create the host storage directory (if needed), register it as an approved "
-            "storage scope, create a blueprint with the correct host→container mount mapping, "
-            "and optionally start the container. "
-            "Use this instead of the manual chain "
-            "(storage_create_service_dir → storage_scope_upsert → blueprint_create → request_container). "
+            "Atomic: create the host storage directory (if needed), register it as a Container Commander "
+            "scope (NOT a Storage Broker zone — different concepts!), create a blueprint with the correct "
+            "host→container mount mapping, and optionally start the container. "
+            "PREFER THIS over the manual chain "
+            "(storage_create_service_dir → storage_scope_upsert → blueprint_create → request_container) "
+            "to avoid the zone/scope confusion: passing a Storage Broker zone name (e.g. 'managed_services') "
+            "as storage_scope in blueprint_create is a common mistake — this tool prevents it by building "
+            "the scope automatically from the actual host path. "
             "The directory is auto-created with mode 0o750 if it does not exist — "
             "use owner_uid/owner_gid so non-root container users can write to it."
         ),
@@ -1226,6 +1250,42 @@ def _tool_blueprint_create(args: dict) -> dict:
     existing = get_blueprint(blueprint_id)
     if existing:
         return {"error": f"Blueprint '{blueprint_id}' already exists. Use a different ID."}
+
+    # Guard: reject Storage Broker zone names passed as storage_scope.
+    # The LLM often confuses zone="managed_services" (Storage Broker concept)
+    # with scope="my-service_scope" (Container Commander concept).
+    storage_scope_arg = str(args.get("storage_scope") or "").strip()
+    _STORAGE_BROKER_ZONES = frozenset({
+        "managed_services", "backup", "system", "external", "docker_runtime", "unzoned",
+    })
+    if storage_scope_arg in _STORAGE_BROKER_ZONES:
+        return {
+            "error": (
+                f"storage_scope='{storage_scope_arg}' is a Storage Broker zone name, "
+                "not a Container Commander scope. These are two different concepts:\n"
+                "  • Storage Broker zones (managed_services, backup, …) classify host disks/paths.\n"
+                "  • Container Commander scopes authorize specific host paths for bind mounts.\n"
+                "Fix: call storage_scope_upsert first to register the actual host path as a scope, "
+                "then pass that scope name here. "
+                "Or use storage_provision_container which bridges zones→scopes automatically."
+            ),
+            "hint": "storage_provision_container(blueprint_id=..., storage_host_path='/actual/path', ...) handles everything in one call.",
+        }
+
+    # Guard: if storage_scope is set, verify it exists in the scope registry.
+    # Without this check the blueprint saves fine but fails at container start time
+    # with a cryptic storage_scope_missing error.
+    if storage_scope_arg:
+        from .storage_scope import get_scope
+        if get_scope(storage_scope_arg) is None:
+            return {
+                "error": (
+                    f"storage_scope='{storage_scope_arg}' has not been registered yet. "
+                    "Call storage_scope_upsert(name=..., roots=[{{path: '/host/path', mode: 'rw'}}]) "
+                    "first, then retry blueprint_create."
+                ),
+                "hint": "storage_provision_container handles scope registration automatically.",
+            }
 
     # Parse mounts from args (new parameter: host→container mappings)
     raw_mounts = args.get("mounts") or []
