@@ -111,8 +111,53 @@ def _ensure_network():
 # ── Active Container Registry ─────────────────────────────
 
 _active: Dict[str, ContainerInstance] = {}
-_quota = SessionQuota()
 _ttl_timers: Dict[str, threading.Timer] = {}
+
+
+def _build_initial_quota() -> SessionQuota:
+    """Build quota from env vars, falling back to /proc/meminfo auto-detection."""
+    env_mem = os.environ.get("COMMANDER_MAX_MEMORY_MB", "").strip()
+    env_cpu = os.environ.get("COMMANDER_MAX_CPU", "").strip()
+    env_containers = os.environ.get("COMMANDER_MAX_CONTAINERS", "").strip()
+
+    if env_mem:
+        max_mem_mb = max(512, int(env_mem))
+    else:
+        # Auto-detect: total system RAM minus 4 GB headroom for host OS + trion-home
+        try:
+            with open("/proc/meminfo") as f:
+                for line in f:
+                    if line.startswith("MemTotal:"):
+                        total_kb = int(line.split()[1])
+                        max_mem_mb = max(2048, total_kb // 1024 - 4096)
+                        break
+                else:
+                    max_mem_mb = 2048
+        except Exception:
+            max_mem_mb = 2048
+
+    if env_cpu:
+        max_cpu = max(0.5, float(env_cpu))
+    else:
+        try:
+            max_cpu = max(2.0, float(os.cpu_count() or 2) - 2.0)
+        except Exception:
+            max_cpu = 2.0
+
+    max_containers = int(env_containers) if env_containers else 3
+
+    q = SessionQuota(
+        max_total_memory_mb=max_mem_mb,
+        max_total_cpu=max_cpu,
+        max_containers=max_containers,
+    )
+    logger.info(
+        f"[Engine] Quota: memory={max_mem_mb} MB, cpu={max_cpu}, containers={max_containers}"
+    )
+    return q
+
+
+_quota = _build_initial_quota()
 _state_lock = threading.RLock()
 _pending_starts = 0
 _pending_memory_mb = 0.0

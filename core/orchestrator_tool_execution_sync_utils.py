@@ -29,6 +29,7 @@ def execute_tools_sync(
     suggested_tools: list,
     user_text: str,
     *,
+    last_assistant_msg: str = "",
     control_tool_decisions: Optional[dict] = None,
     control_decision: Optional[ControlDecision] = None,
     time_reference: Optional[str] = None,
@@ -214,11 +215,20 @@ def execute_tools_sync(
                         continue
                     host_runtime_last_failure_reason = "request_container_blocked:no_blueprint_match"
                     tool_context += f"\n[request_container]: {block_msg}"
-                    execution_result.append_tool_status(
-                        tool_name=tool_name,
-                        status="unavailable",
-                        reason="no_blueprint_match",
-                    )
+                    if blueprint_suggest_msg:
+                        # Suggest-Zone: Soft-Guidance — kein grounding_missing_evidence
+                        execution_result.append_tool_status(
+                            tool_name=tool_name,
+                            status="needs_clarification",
+                            reason=blueprint_suggest_msg,
+                        )
+                    else:
+                        # No-match: Hard-Block bleibt
+                        execution_result.append_tool_status(
+                            tool_name=tool_name,
+                            status="unavailable",
+                            reason="no_blueprint_match",
+                        )
                     continue
                 elif blueprint_router_id:
                     tool_args["blueprint_id"] = blueprint_router_id
@@ -227,7 +237,11 @@ def execute_tools_sync(
                     log_info_fn(f"[Orchestrator-Sync] blueprint_id injected: {blueprint_router_id}")
                 else:
                     try:
-                        jit_decision = route_blueprint_request_fn(user_text, {})
+                        # JIT Blueprint Router: bei kurzem Input Context anhängen
+                        _jit_text_s = user_text
+                        if len(user_text.split()) < 5 and last_assistant_msg:
+                            _jit_text_s = f"{user_text} {last_assistant_msg}"
+                        jit_decision = route_blueprint_request_fn(_jit_text_s, {})
                         if jit_decision and jit_decision.get("blocked"):
                             jit_reason = jit_decision.get("reason", "blueprint_router_unavailable")
                             log_warn_fn(
@@ -644,13 +658,22 @@ def execute_tools_sync(
                         reason=error_msg,
                     )
                 else:
+                    # Fix #12A: detect pending_approval for request_container
+                    _result_status_raw_s = str(
+                        (result if isinstance(result, dict) else {}).get("status") or ""
+                    ).strip().lower()
+                    _is_pending_approval_s = (
+                        tool_name == "request_container"
+                        and _result_status_raw_s == "pending_approval"
+                    )
+                    _evidence_status_s = "pending_approval" if _is_pending_approval_s else "ok"
                     card, ref = build_tool_result_card_fn(tool_name, result_str, "ok", session_id)
                     tool_context += card
                     grounding_evidence.append(
                         build_grounding_evidence_entry_fn(
                             tool_name=tool_name,
                             raw_result=result_str,
-                            status="ok",
+                            status=_evidence_status_s,
                             ref_id=ref,
                         )
                     )
@@ -717,15 +740,17 @@ def execute_tools_sync(
             )
 
         existing_evidence = get_runtime_grounding_evidence(verified)
+        _merged_evidence_sync = [*existing_evidence, *grounding_evidence]
         set_runtime_grounding_evidence(
             verified,
-            [*existing_evidence, *grounding_evidence],
+            _merged_evidence_sync,
         )
 
         existing_runs = get_runtime_successful_tool_runs(verified)
+        _merged_runs_sync = [*existing_runs, *successful_tool_runs]
         set_runtime_successful_tool_runs(
             verified,
-            [*existing_runs, *successful_tool_runs],
+            _merged_runs_sync,
         )
 
         has_failures = any(
@@ -755,5 +780,11 @@ def execute_tools_sync(
     if execution_result.done_reason == DoneReason.STOP and suggested_tools:
         execution_result.done_reason = DoneReason.SKIPPED
     persist_execution_result(verified, execution_result)
+    # Fix #12B: Re-apply grounding evidence — persist_execution_result resets metadata={}
+    if isinstance(verified, dict):
+        if _merged_evidence_sync:
+            set_runtime_grounding_evidence(verified, _merged_evidence_sync)
+        if _merged_runs_sync:
+            set_runtime_successful_tool_runs(verified, _merged_runs_sync)
 
     return tool_context

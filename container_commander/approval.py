@@ -165,6 +165,7 @@ _pending: Dict[str, PendingApproval] = {}
 _history: List[PendingApproval] = []
 _lock = threading.Lock()
 _callbacks: Dict[str, threading.Event] = {}
+_last_store_mtime: float = 0.0
 
 
 def _emit_ws_activity(event: str, level: str = "info", message: str = "", **data):
@@ -194,9 +195,11 @@ def _save_store_unlocked() -> None:
 
 def _load_store() -> None:
     """Restore approval state from disk at module import/startup."""
+    global _last_store_mtime
     if not os.path.exists(APPROVAL_STORE_PATH):
         return
     try:
+        mtime = os.path.getmtime(APPROVAL_STORE_PATH)
         with open(APPROVAL_STORE_PATH, "r", encoding="utf-8") as f:
             raw = json.load(f)
     except Exception as e:
@@ -231,6 +234,43 @@ def _load_store() -> None:
 
         _cleanup_expired()
         _save_store_unlocked()
+        _last_store_mtime = mtime
+
+
+def _sync_from_disk_if_stale() -> None:
+    """Merge approvals written by other processes (e.g. MCP server) into memory.
+
+    Called without the lock — acquires it internally via _load_store path.
+    Only reloads if the file has been modified since our last load.
+    """
+    global _last_store_mtime
+    if not os.path.exists(APPROVAL_STORE_PATH):
+        return
+    try:
+        mtime = os.path.getmtime(APPROVAL_STORE_PATH)
+    except Exception:
+        return
+    if mtime <= _last_store_mtime:
+        return
+    # File is newer — merge: load disk state and add any IDs we don't have yet
+    try:
+        with open(APPROVAL_STORE_PATH, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except Exception as e:
+        logger.warning(f"[Approval] Failed to sync approval store: {e}")
+        return
+    pending_rows = raw.get("pending", []) if isinstance(raw, dict) else []
+    with _lock:
+        for row in pending_rows:
+            try:
+                item = PendingApproval.from_persist_dict(row)
+                if item.status == ApprovalStatus.PENDING and item.id not in _pending:
+                    _pending[item.id] = item
+                    _callbacks[item.id] = threading.Event()
+                    logger.info(f"[Approval] Synced from disk: {item.id} ({item.blueprint_id})")
+            except Exception:
+                continue
+        _last_store_mtime = mtime
 
 
 def request_approval(
@@ -442,6 +482,7 @@ def reject(approval_id: str, rejected_by: str = "user", reason: str = "") -> boo
 
 def get_pending() -> List[Dict]:
     """Get all pending approval requests."""
+    _sync_from_disk_if_stale()
     with _lock:
         _cleanup_expired()
         return [a.to_dict() for a in _pending.values()
@@ -450,6 +491,7 @@ def get_pending() -> List[Dict]:
 
 def get_approval(approval_id: str) -> Optional[Dict]:
     """Get a specific approval request."""
+    _sync_from_disk_if_stale()
     with _lock:
         a = _pending.get(approval_id)
         if a:

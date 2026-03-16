@@ -3315,6 +3315,8 @@ class PipelineOrchestrator:
         suggested_tools: list,
         user_text: str,
         control_tool_decisions: dict = None,
+        *,
+        last_assistant_msg: str = "",
         control_decision: Optional[ControlDecision] = None,
         time_reference: str = None,
         thinking_suggested_tools: list = None,
@@ -3328,6 +3330,7 @@ class PipelineOrchestrator:
         return util_execute_tools_sync(
             suggested_tools,
             user_text,
+            last_assistant_msg=last_assistant_msg,
             control_tool_decisions=control_tool_decisions,
             control_decision=control_decision,
             time_reference=time_reference,

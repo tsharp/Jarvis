@@ -49,7 +49,37 @@ def coerce_exec_payload(result: Any) -> Dict[str, Any]:
 
 
 def build_direct_host_runtime_response(tool_name: str, tool_args: Dict[str, Any], result: Any) -> str:
-    if str(tool_name).strip().lower() != "exec_in_container":
+    tool_lower = str(tool_name).strip().lower()
+
+    # Fix #13: request_container pending_approval → deterministischer Direct Response.
+    # LLM wird komplett umgangen um Halluzinationen wie "trion-home ist schon aktiv"
+    # zu verhindern. Der User bekommt klaren Hinweis zur Genehmigung.
+    if tool_lower == "request_container":
+        payload = coerce_exec_payload(result)
+        if str(payload.get("status") or "").strip().lower() == "pending_approval":
+            blueprint_id = str((tool_args or {}).get("blueprint_id") or "").strip()
+            approval_id = str(payload.get("approval_id") or "").strip()
+            hint = str(payload.get("hint") or "").strip()
+            reason = str(payload.get("reason") or "").strip()
+            bp_label = f"**{blueprint_id}**" if blueprint_id else "der angeforderte Container"
+            msg = (
+                f"Die Anfrage für {bp_label} wurde erfolgreich übermittelt "
+                f"und wartet auf deine Genehmigung."
+            )
+            if approval_id:
+                msg += f"\n\n🔑 Genehmigungs-ID: `{approval_id}`"
+            if hint:
+                msg += f"\n\n{hint}"
+            if reason:
+                msg += f"\n\nGrund: {reason}"
+            msg += (
+                "\n\nDu kannst die Anfrage im **Approval Center** (Terminal → Approvals) "
+                "einsehen und genehmigen."
+            )
+            return msg
+        return ""
+
+    if tool_lower != "exec_in_container":
         return ""
     command = str((tool_args or {}).get("command") or "")
     if not is_host_runtime_probe_command(command):

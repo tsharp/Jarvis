@@ -37,7 +37,13 @@ class ToolSelector:
             return None
 
         try:
-            candidates = await self._get_candidates(user_text)
+            search_query = user_text
+            # Short-Input Context-Enrichment: kurze Inputs wie "ja bitte" haben keine semantische
+            # Überlappung mit Tool-Beschreibungen — mit dem letzten Assistenten-Message anreichern.
+            if context_summary and len(user_text.split()) < 5:
+                search_query = f"{user_text}. Context: {context_summary[-200:]}"
+                logger.info("[ToolSelector] Short-input enriched with context_summary")
+            candidates = await self._get_candidates(search_query)
             if not candidates:
                 return None
             names = [c["name"] for c in candidates]

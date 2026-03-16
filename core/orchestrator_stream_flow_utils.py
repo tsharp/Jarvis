@@ -201,10 +201,25 @@ async def process_stream_with_events(
         log_info_fn("[Orchestrator] === LAYER 1: THINKING (STREAMING) ===")
         
         # Layer 0: Tool Selection
-        selected_tools = await orch.tool_selector.select_tools(user_text)
+        # Letzten Assistenten-Message als Kontext für ToolSelector extrahieren
+        _last_assistant_msg = ""
+        for _msg in reversed(list(getattr(request, "messages", None) or [])):
+            if isinstance(_msg, dict) and _msg.get("role") == "assistant":
+                _last_assistant_msg = str(_msg.get("content", ""))
+                break
+        selected_tools = await orch.tool_selector.select_tools(user_text, context_summary=_last_assistant_msg)
         selected_tools = orch._filter_tool_selector_candidates(
             selected_tools, user_text, forced_mode=forced_response_mode
         )
+        # Short-Input Bypass: Wenn Semantic Search bei sehr kurzem Input leer bleibt,
+        # Core-Follow-up-Tools injizieren — ThinkingLayer entscheidet via Chat-History selbst.
+        # Mit Konversationskontext: nur Container/Skill-Tools (kein Onboarding-Trigger).
+        if not selected_tools and len(user_text.split()) < 5:
+            if _last_assistant_msg:
+                selected_tools = ["request_container", "run_skill"]
+            else:
+                selected_tools = ["request_container", "run_skill", "home_write"]
+            log_info_fn("[Orchestrator] Short-Input Bypass: core follow-up tools injected [stream]")
         query_budget_signal = await orch._classify_query_budget_signal(
             user_text,
             selected_tools=selected_tools,
@@ -260,7 +275,13 @@ async def process_stream_with_events(
         
         if not skip_thinking:
             # ── ThinkingLayer Cache-Check ──
-            _cached_plan = thinking_plan_cache.get(user_text)
+            # Kurze Inputs (< 5 Wörter) sind vollständig kontextabhängig ("ja bitte",
+            # "ok", "nein") — niemals cachen, da der gleiche Text in verschiedenen
+            # Gesprächssituationen komplett unterschiedliche Tools erfordert.
+            _is_short_input = len(user_text.split()) < 5
+            _cached_plan = None if _is_short_input else thinking_plan_cache.get(user_text)
+            if _is_short_input:
+                log_info_fn("[Orchestrator] ThinkingLayer Cache SKIP: short input is context-dependent")
             if _cached_plan:
                 thinking_plan = _cached_plan
                 thinking_plan = orch._ensure_dialogue_controls(thinking_plan, tone_signal)
@@ -286,8 +307,17 @@ async def process_stream_with_events(
                 if _thinking_skill_ctx:
                     log_info_fn(f"[Orchestrator] Skill-Context für ThinkingLayer vorbereitet mode={_stream_prefetch_mode}")
 
+                # Variante A: Kontext-Anreicherung für extrem kurze Inputs.
+                # DeepSeek soll "ja bitte. [Kontext: Möchtest du den Blueprint starten?]"
+                # sehen — nicht nur "ja bitte" — damit suggested_tools korrekt gesetzt wird.
+                _thinking_user_text = user_text
+                if _last_assistant_msg and len(user_text.split()) < 5:
+                    _ctx_snippet = _last_assistant_msg.strip()[-200:]
+                    _thinking_user_text = f"{user_text}. [Kontext: {_ctx_snippet}]"
+                    log_info_fn("[Orchestrator] A-Enrichment: ThinkingLayer user_text angereichert [stream]")
+
                 async for chunk, is_done, plan in orch.thinking.analyze_stream(
-                    user_text,
+                    _thinking_user_text,
                     memory_context=_thinking_skill_ctx,
                     available_tools=selected_tools,
                     tone_signal=tone_signal,
@@ -331,6 +361,20 @@ async def process_stream_with_events(
         thinking_plan,
         conversation_id=conversation_id,
     )
+
+    # Short-Input Plan Bypass: Wenn ThinkingLayer keine Tools zurückgab (suggested_tools=[])
+    # UND der Input sehr kurz war UND der Bypass vorher Kandidaten injiziert hatte —
+    # direkt in thinking_plan["suggested_tools"] eingreifen, damit der Executor Tools sieht.
+    if (
+        not thinking_plan.get("suggested_tools")
+        and selected_tools
+        and len(user_text.split()) < 5
+    ):
+        thinking_plan["suggested_tools"] = list(selected_tools)
+        log_info_fn(
+            f"[Orchestrator] Short-Input Plan Bypass: suggested_tools injected "
+            f"from selected_tools={selected_tools} [stream]"
+        )
 
     # Response mode policy (interactive | deep)
     response_mode_stream = orch._apply_response_mode_policy(
@@ -470,18 +514,19 @@ async def process_stream_with_events(
     # ═══════════════════════════════════════════════════
     if "request_container" in thinking_plan.get("suggested_tools", []):
         # A3 Fix: container follow-ups without a blueprint name in user_text lose context.
-        # Always set needs_chat_history=True for container requests, and enrich intent
-        # with blueprint mentions from recent history so the Router has enough signal.
+        # needs_chat_history setzen falls noch nicht gesetzt.
         if not thinking_plan.get("needs_chat_history"):
             thinking_plan["needs_chat_history"] = True
-            _stream_history = list(chat_history or [])
-            _bp_hint = _extract_blueprint_hint_from_history(_stream_history, user_text)
-            if _bp_hint:
-                _current_intent = str(thinking_plan.get("intent") or "").strip()
-                thinking_plan["intent"] = f"{_current_intent} {_bp_hint}".strip()
-                log_info_fn(f"[Orchestrator] A3 Fix: blueprint hint '{_bp_hint}' injected into intent")
-            else:
-                log_info_fn("[Orchestrator] A3 Fix: needs_chat_history=True (request_container follow-up)")
+            log_info_fn("[Orchestrator] A3 Fix: needs_chat_history=True (request_container follow-up)")
+        # Blueprint-Hint aus History immer extrahieren — unabhängig ob needs_chat_history
+        # bereits gesetzt war. Kurze Inputs ("ja bitte") haben keinen Blueprint-Namen im
+        # user_text, der Router braucht den Hint aus der History im Intent.
+        _stream_history = list(getattr(request, "messages", None) or [])
+        _bp_hint = _extract_blueprint_hint_from_history(_stream_history, user_text)
+        if _bp_hint and _bp_hint.lower() not in str(thinking_plan.get("intent", "")).lower():
+            _current_intent = str(thinking_plan.get("intent") or "").strip()
+            thinking_plan["intent"] = f"{_current_intent} {_bp_hint}".strip()
+            log_info_fn(f"[Orchestrator] A3 Fix: blueprint hint '{_bp_hint}' injected into intent")
 
         blueprint_decision = orch._route_blueprint_request(user_text, thinking_plan)
         if blueprint_decision and blueprint_decision.get("blocked"):
@@ -1123,11 +1168,18 @@ async def process_stream_with_events(
                             continue
                         if _suggest_data:
                             _cands = ", ".join(f"{c['id']} ({c['score']:.2f})" for c in _suggest_data.get("candidates", []))
-                            tool_context += f"\n[request_container]: RÜCKFRAGE: Welchen Blueprint soll ich starten? Meinst du: {_cands}? Bitte präzisiere."
+                            # Soft-Guidance: kein Hard-Block, sondern natives Tool-Ergebnis das den
+                            # LLM über die Klärungsanfrage informiert — kein grounding_missing_evidence.
+                            _clarification_msg = (
+                                f"Mehrere Blueprints passen auf die Anfrage, aber keiner ist eindeutig. "
+                                f"Mögliche Kandidaten: {_cands}. "
+                                "Bitte den Nutzer, einen dieser Blueprints auszuwählen."
+                            )
+                            tool_context += f"\n[request_container]: {_clarification_msg}"
                             execution_result_stream.append_tool_status(
                                 tool_name="request_container",
-                                status="unavailable",
-                                reason="blueprint_suggest_requires_selection",
+                                status="needs_clarification",
+                                reason=_clarification_msg,
                             )
                         else:
                             tool_context += "\n[request_container]: FEHLER: Kein passender Blueprint gefunden. Verfügbare Blueprints: python-sandbox, node-sandbox, db-sandbox, shell-sandbox."
@@ -1146,8 +1198,13 @@ async def process_stream_with_events(
                         log_info_fn(f"[Orchestrator-Stream] blueprint_id injected: {_bp_id}")
                     else:
                         # Keyword-fallback path: JIT router check
+                        # Short-Input Bypass context: "ja bitte" hat keine Blueprint-Keywords
+                        # → _last_assistant_msg als Fallback-Text verwenden wenn user_text < 5 Wörter
+                        _jit_text = user_text
+                        if len(user_text.split()) < 5 and _last_assistant_msg:
+                            _jit_text = f"{user_text} {_last_assistant_msg}"
                         try:
-                            _jit_d = orch._route_blueprint_request(user_text, thinking_plan)
+                            _jit_d = orch._route_blueprint_request(_jit_text, thinking_plan)
                             if _jit_d and _jit_d.get("blocked"):
                                 _jit_reason = _jit_d.get("reason", "blueprint_router_unavailable")
                                 log_warn_fn(f"[Orchestrator-Stream] JIT router blocked request_container — reason={_jit_reason}")
@@ -1652,6 +1709,15 @@ async def process_stream_with_events(
                     })
                 else:
                     # TOOL SUCCESS (no error, no retry needed)
+                    # ── Fix #12A: detect pending_approval for request_container ──
+                    _result_status_raw = str(
+                        (result if isinstance(result, dict) else {}).get("status") or ""
+                    ).strip().lower()
+                    _is_pending_approval = (
+                        tool_name == "request_container"
+                        and _result_status_raw == "pending_approval"
+                    )
+                    _evidence_status = "pending_approval" if _is_pending_approval else "ok"
                     # ── Commit 2 stream parity: Card + Full Payload ──
                     _card, _ref = orch._build_tool_result_card(
                         tool_name, result_str, "ok", conversation_id
@@ -1661,7 +1727,7 @@ async def process_stream_with_events(
                         orch._build_grounding_evidence_entry(
                             tool_name=tool_name,
                             raw_result=result_str,
-                            status="ok",
+                            status=_evidence_status,
                             ref_id=_ref,
                         )
                     )
@@ -1888,6 +1954,11 @@ async def process_stream_with_events(
     if execution_result_stream.done_reason == DoneReason.STOP and suggested_tools:
         execution_result_stream.done_reason = DoneReason.SKIPPED
     persist_execution_result(verified_plan, execution_result_stream)
+    # Fix #12B: Re-apply grounding evidence — persist_execution_result resets metadata={}
+    if grounding_evidence_stream:
+        set_runtime_grounding_evidence(verified_plan, grounding_evidence_stream)
+    if successful_tool_runs_stream:
+        set_runtime_successful_tool_runs(verified_plan, successful_tool_runs_stream)
 
     orch._inject_carryover_grounding_evidence(
         conversation_id,

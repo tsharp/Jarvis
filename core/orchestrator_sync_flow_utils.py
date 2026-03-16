@@ -128,10 +128,25 @@ async def process_request(
     # ===============================================================
     # STEP 1.5: Tool Selector (Layer 0)
     # ===============================================================
-    selected_tools = await orch.tool_selector.select_tools(user_text)
+    # Letzten Assistenten-Message als Kontext für ToolSelector extrahieren
+    _last_assistant_msg = ""
+    for _msg in reversed(list(getattr(request, "messages", None) or [])):
+        if isinstance(_msg, dict) and _msg.get("role") == "assistant":
+            _last_assistant_msg = str(_msg.get("content", ""))
+            break
+    selected_tools = await orch.tool_selector.select_tools(user_text, context_summary=_last_assistant_msg)
     selected_tools = orch._filter_tool_selector_candidates(
         selected_tools, user_text, forced_mode=forced_response_mode
     )
+    # Short-Input Bypass: Wenn Semantic Search bei sehr kurzem Input leer bleibt,
+    # Core-Follow-up-Tools injizieren — ThinkingLayer entscheidet via Chat-History selbst.
+    # home_write nur ohne Konversationskontext — mit Kontext würde es Onboarding triggern.
+    if not selected_tools and len(user_text.split()) < 5:
+        if _last_assistant_msg:
+            selected_tools = ["request_container", "run_skill"]
+        else:
+            selected_tools = ["request_container", "run_skill", "home_write"]
+        log_info_fn("[Orchestrator] Short-Input Bypass: core follow-up tools injected [sync]")
     query_budget_signal = await orch._classify_query_budget_signal(
         user_text,
         selected_tools=selected_tools,
@@ -169,7 +184,11 @@ async def process_request(
     
     if not skip_thinking:
         # ── ThinkingLayer Cache-Check (Sync-Pfad) ──
-        _cached_plan_sync = thinking_plan_cache.get(user_text)
+        # Kurze Inputs niemals cachen — vollständig kontextabhängig.
+        _is_short_input = len(user_text.split()) < 5
+        _cached_plan_sync = None if _is_short_input else thinking_plan_cache.get(user_text)
+        if _is_short_input:
+            log_info_fn("[Orchestrator] ThinkingLayer Cache SKIP: short input is context-dependent [sync]")
         if _cached_plan_sync:
             thinking_plan = _cached_plan_sync
             thinking_plan = orch._ensure_dialogue_controls(thinking_plan, tone_signal)
@@ -181,8 +200,15 @@ async def process_request(
             _sync_skill_ctx, _sync_prefetch_mode = orch._maybe_prefetch_skills(
                 user_text, selected_tools
             )
+            # Variante A: Kontext-Anreicherung für extrem kurze Inputs.
+            _thinking_user_text = user_text
+            if _last_assistant_msg and len(user_text.split()) < 5:
+                _ctx_snippet = _last_assistant_msg.strip()[-200:]
+                _thinking_user_text = f"{user_text}. [Kontext: {_ctx_snippet}]"
+                log_info_fn("[Orchestrator] A-Enrichment: ThinkingLayer user_text angereichert [sync]")
+
             thinking_plan = await orch.thinking.analyze(
-                user_text,
+                _thinking_user_text,
                 memory_context=_sync_skill_ctx,
                 available_tools=selected_tools,
                 tone_signal=tone_signal,
@@ -211,6 +237,19 @@ async def process_request(
         thinking_plan,
         conversation_id=conversation_id,
     )
+
+    # Short-Input Plan Bypass: Wenn ThinkingLayer keine Tools zurückgab UND
+    # der Input sehr kurz war UND Bypass-Kandidaten verfügbar sind.
+    if (
+        not thinking_plan.get("suggested_tools")
+        and selected_tools
+        and len(user_text.split()) < 5
+    ):
+        thinking_plan["suggested_tools"] = list(selected_tools)
+        log_info_fn(
+            f"[Orchestrator] Short-Input Plan Bypass: suggested_tools injected "
+            f"from selected_tools={selected_tools} [sync]"
+        )
 
     # ===============================================================
     # STEP 2.1: RESPONSE MODE POLICY (interactive | deep)
@@ -496,6 +535,7 @@ async def process_request(
         tool_context = await asyncio.to_thread(
             orch._execute_tools_sync,
             suggested_tools, user_text, _ctrl_decisions_sync,
+            last_assistant_msg=_last_assistant_msg,
             control_decision=control_decision,
             time_reference=thinking_plan.get("time_reference"),
             thinking_suggested_tools=thinking_plan.get("suggested_tools", []),
