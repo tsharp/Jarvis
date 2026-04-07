@@ -132,6 +132,80 @@ def test_stabilize_lifts_spurious_query_budget_fast_path_block_for_benign_prompt
     assert out["reason"] == "query_budget_fast_path_false_block_auto_corrected"
 
 
+def test_stabilize_container_resolution_auto_selects_clear_winner():
+    layer = ControlLayer()
+    verification = {
+        "approved": True,
+        "warnings": [],
+        "corrections": {},
+        "suggested_tools": ["request_container"],
+    }
+    thinking_plan = {
+        "intent": "gaming container mit steam und sunshine",
+        "suggested_tools": ["request_container"],
+        "_domain_route": {"domain_tag": "CONTAINER", "domain_locked": True, "operation": "create"},
+        "_container_resolution": {
+            "decision": "suggest_blueprint",
+            "blueprint_id": "gaming-station",
+            "score": 0.91,
+            "reason": "steam sunshine gpu",
+        },
+        "_container_candidates": [
+            {"id": "gaming-station", "score": 0.91},
+            {"id": "desktop-streamer", "score": 0.62},
+        ],
+    }
+
+    out = layer._stabilize_verification_result(
+        verification,
+        thinking_plan,
+        user_text="Kannst du einen gaming container mit steam und sunshine starten?",
+    )
+
+    assert out["approved"] is True
+    assert out["reason"] == "container_blueprint_selected_by_control"
+    assert out["corrections"]["_selected_blueprint_id"] == "gaming-station"
+    assert out["corrections"]["_blueprint_gate_blocked"] is False
+
+
+def test_stabilize_container_resolution_keeps_ambiguous_candidates_gated():
+    layer = ControlLayer()
+    verification = {
+        "approved": True,
+        "warnings": [],
+        "corrections": {},
+        "suggested_tools": ["request_container"],
+    }
+    thinking_plan = {
+        "intent": "starte einen container zum streamen",
+        "suggested_tools": ["request_container"],
+        "_domain_route": {"domain_tag": "CONTAINER", "domain_locked": True, "operation": "create"},
+        "_container_resolution": {
+            "decision": "suggest_blueprint",
+            "blueprint_id": "gaming-station",
+            "score": 0.78,
+            "reason": "multiple plausible matches",
+        },
+        "_container_candidates": [
+            {"id": "gaming-station", "score": 0.78},
+            {"id": "desktop-streamer", "score": 0.72},
+        ],
+    }
+
+    out = layer._stabilize_verification_result(
+        verification,
+        thinking_plan,
+        user_text="Kannst du einmal einen streaming container erstellen?",
+    )
+
+    assert out["approved"] is True
+    assert out["decision_class"] == "warn"
+    assert out["reason"] == "container_blueprint_clarification_required"
+    assert out["suggested_tools"] == ["blueprint_list"]
+    assert out["corrections"]["_blueprint_gate_blocked"] is True
+    assert out["corrections"]["_container_resolution"]["decision"] == "clarification_required"
+
+
 def test_stabilize_keeps_query_budget_fast_path_block_for_dangerous_prompt():
     layer = ControlLayer()
     verification = {

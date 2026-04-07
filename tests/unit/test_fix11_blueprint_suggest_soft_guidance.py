@@ -70,12 +70,12 @@ def test_sync_suggest_uses_needs_clarification_status():
     assert 'status="needs_clarification"' in src
 
 
-def test_sync_no_match_still_uses_unavailable():
-    """Sync-Flow: No-Match-Zweig (kein blueprint_suggest_msg) muss unavailable behalten."""
+def test_sync_no_match_uses_routing_block():
+    """Sync-Flow: No-Match-Zweig (kein blueprint_suggest_msg) muss routing_block verwenden."""
     src = _src("core/orchestrator_tool_execution_sync_utils.py")
-    # Both statuses must exist — needs_clarification for suggest, unavailable for no-match
+    # Both statuses must exist — needs_clarification for suggest, routing_block for no-match
     assert 'status="needs_clarification"' in src
-    assert 'status="unavailable"' in src
+    assert 'status="routing_block"' in src
 
 
 def test_sync_suggest_conditioned_on_blueprint_suggest_msg():
@@ -87,7 +87,7 @@ def test_sync_suggest_conditioned_on_blueprint_suggest_msg():
     block = src[cond_idx:cond_idx + 800]
     assert "needs_clarification" in block
     assert "else:" in block
-    assert "unavailable" in block
+    assert "routing_block" in block
 
 
 # ── Output-Layer: needs_clarification nicht in der Blocking-Menge ────────────

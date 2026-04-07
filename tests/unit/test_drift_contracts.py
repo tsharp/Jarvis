@@ -60,7 +60,7 @@ FALLBACK_TEXT = (
     "Bitte Tool-Abfrage erneut ausführen."
 )
 
-VALID_EXEC_STATUSES = {"ok", "error", "timeout", "unavailable", "skipped", "partial"}
+VALID_EXEC_STATUSES = {"ok", "error", "timeout", "unavailable", "skipped", "partial", "routing_block", "needs_clarification"}
 POLICY_WORDS = {"policy", "denied", "approved", "blocked_by_control", "hard_block"}
 VALID_SKIP_REASONS = {
     "low_risk_skip", "control_disabled", "fact_query_requires_control",
@@ -213,10 +213,20 @@ class TestINV04ExecutionResultNoPolicy:
                 )
 
     def test_valid_done_reasons_are_technical(self):
-        """DoneReason-Enum enthält nur technische Klassen."""
-        technical = {"success", "unavailable", "tech_fail", "timeout", "skipped", "stop"}
+        """DoneReason-Enum enthält technische plus interaktive Laufzeitklassen."""
+        technical = {"success", "needs_clarification", "unavailable", "routing_block", "tech_fail", "timeout", "skipped", "stop"}
         actual = {r.value for r in DoneReason}
         assert actual == technical
+
+    def test_finalize_done_reason_needs_clarification(self):
+        er = ExecutionResult()
+        er.append_tool_status(
+            tool_name="request_container",
+            status="needs_clarification",
+            reason="multiple_blueprints_plausible",
+        )
+        er.finalize_done_reason()
+        assert er.done_reason == DoneReason.NEEDS_CLARIFICATION
 
     def test_finalize_done_reason_unavailable(self):
         er = ExecutionResult()
@@ -550,6 +560,38 @@ class TestINV08PendingApprovalNotFallback:
         assert pending_result["status"] == "pending_approval"
         assert "approval_id" in pending_result
         assert pending_result["status"] not in {"error", "tech_fail"}
+
+
+class TestINV08BNeedsClarificationNotFallback:
+    """INV-08B: needs_clarification ist ein interaktiver Zustand, kein Fallback-Ausloeser."""
+
+    def test_needs_clarification_should_not_produce_fallback_text(self):
+        from core.layers.output import OutputLayer
+        from core.plan_runtime_bridge import set_runtime_grounding_evidence
+
+        plan = make_verified_plan(
+            approved=True,
+            suggested_tools=["request_container"],
+        )
+        set_runtime_grounding_evidence(
+            plan,
+            [
+                {
+                    "tool_name": "request_container",
+                    "status": "needs_clarification",
+                    "reason": "multiple_blueprints_plausible",
+                    "key_facts": [],
+                }
+            ],
+        )
+
+        layer = OutputLayer()
+        result = layer._grounding_precheck(plan, memory_data="")
+
+        assert result.get("mode") == "pass", (
+            f"INV-08B VERLETZT: needs_clarification muss pass-through sein, got mode={result.get('mode')}"
+        )
+        assert FALLBACK_TEXT not in str(result.get("response") or "")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -911,3 +953,97 @@ class TestINV15BlueprintGateIsRoutingSignal:
         # Kein assert auf approved=False weil das vom LightCIM-Check abhängt —
         # aber sicherstellen dass kein unkontrolliertes True entsteht wenn override sauber arbeitet
         assert isinstance(result, dict), "Stabilize muss ein Dict zurückgeben"
+
+
+# ═══════════════════════════════════════════════════════════════════
+# INV-15 bis INV-17 — routing_block Contract (2026-04-01)
+# ═══════════════════════════════════════════════════════════════════
+
+class TestRoutingBlockContract:
+    """
+    INV-15: routing_block status → DoneReason.ROUTING_BLOCK, nicht UNAVAILABLE
+    INV-16: routing_block items lösen keinen tool_execution_failed_fallback aus
+    INV-17: UI-Rendering muss decision_class nutzen, nicht rohes approved
+    """
+
+    def test_inv15_routing_block_sets_done_reason_routing_block(self):
+        """
+        INV-15: ExecutionResult.finalize_done_reason() muss bei routing_block-Status
+        DoneReason.ROUTING_BLOCK setzen — nicht UNAVAILABLE.
+        """
+        result = ExecutionResult()
+        result.append_tool_status(tool_name="request_container", status="routing_block", reason="no_jit_match")
+        result.finalize_done_reason()
+        assert result.done_reason == DoneReason.ROUTING_BLOCK, (
+            "INV-15 verletzt: routing_block-Status muss DoneReason.ROUTING_BLOCK setzen, "
+            f"aber done_reason={result.done_reason!r}"
+        )
+
+    def test_inv15_routing_block_has_priority_over_unavailable(self):
+        """
+        INV-15: routing_block hat Vorrang vor unavailable in finalize_done_reason.
+        """
+        result = ExecutionResult()
+        result.append_tool_status(tool_name="tool_a", status="unavailable", reason="tech_issue")
+        result.append_tool_status(tool_name="request_container", status="routing_block", reason="blueprint_gate")
+        result.finalize_done_reason()
+        assert result.done_reason == DoneReason.ROUTING_BLOCK, (
+            "INV-15 verletzt: routing_block muss Vorrang vor unavailable haben"
+        )
+
+    def test_inv16_routing_block_not_in_tool_failure_fallback(self):
+        """
+        INV-16: routing_block darf nicht in _build_tool_failure_fallback als Fehler erscheinen.
+        """
+        from core.layers.output import OutputLayer
+        layer = OutputLayer()
+        evidence = [
+            {"tool_name": "request_container", "status": "routing_block", "reason": "no_jit_match", "result": ""},
+        ]
+        fallback_text = layer._build_tool_failure_fallback(evidence)
+        assert "request_container" not in fallback_text, (
+            "INV-16 verletzt: routing_block items dürfen nicht in tool_execution_failed_fallback erscheinen"
+        )
+
+    def test_inv16_routing_block_does_not_trigger_fallback_in_grounding(self):
+        """
+        INV-16: _grounding_precheck muss bei reinen routing_block-Items
+        mode='pass' zurückgeben, nicht 'tool_execution_failed_fallback'.
+        """
+        from core.layers.output import OutputLayer
+        layer = OutputLayer()
+
+        verified_plan = {
+            "is_fact_query": True,
+            "conversation_mode": "task",
+            "_tool_selection": ["request_container"],
+            "_execution_result": {
+                "done_reason": "routing_block",
+                "tool_statuses": [
+                    {"tool_name": "request_container", "status": "routing_block", "reason": "no_jit_match"}
+                ],
+                "grounding": {},
+                "direct_response": "",
+                "metadata": {},
+            },
+        }
+        result = layer._grounding_precheck(verified_plan, memory_data="", execution_result=None)
+        assert result.get("mode") != "tool_execution_failed_fallback", (
+            "INV-16 verletzt: routing_block darf nicht tool_execution_failed_fallback auslösen, "
+            f"aber mode={result.get('mode')!r}"
+        )
+        assert result.get("blocked_reason") != "tool_execution_failed", (
+            "INV-16 verletzt: routing_block darf nicht als tool_execution_failed gewertet werden"
+        )
+
+    def test_inv17_done_reason_routing_block_in_enum(self):
+        """
+        INV-17: DoneReason.ROUTING_BLOCK muss im Enum existieren.
+        """
+        assert hasattr(DoneReason, "ROUTING_BLOCK"), (
+            "INV-17 verletzt: DoneReason.ROUTING_BLOCK fehlt im Enum"
+        )
+        assert DoneReason.ROUTING_BLOCK.value == "routing_block", (
+            f"INV-17 verletzt: DoneReason.ROUTING_BLOCK.value={DoneReason.ROUTING_BLOCK.value!r}, "
+            "erwartet 'routing_block'"
+        )

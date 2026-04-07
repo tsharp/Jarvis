@@ -92,7 +92,7 @@ class TestNoDoubleInjection:
             _tool_results="some tool output data",
             _tool_confidence="high",
         )
-        prompt = ol._build_system_prompt(plan, memory_data="base memory")
+        prompt = ol.build_system_prompt(plan, memory_data="base memory")
         # Must NOT have the old triple-injection block
         assert "PFLICHT — TOOL-ERGEBNISSE" not in prompt
         assert "DATEN AUS TOOL-ABFRAGE" not in prompt
@@ -104,7 +104,7 @@ class TestNoDoubleInjection:
             pytest.skip("OutputLayer not importable")
         plan = _make_verified_plan(_tool_results="X" * 500)
         with patch("core.layers.output._is_small_model_mode", return_value=False):
-            prompt = ol._build_system_prompt(plan, memory_data="base")
+            prompt = ol.build_system_prompt(plan, memory_data="base")
         assert "PFLICHT — TOOL-ERGEBNISSE" not in prompt
 
     def test_user_message_is_plain_user_text(self):
@@ -401,7 +401,8 @@ class TestRetrievalPolicy:
 
         def _fake_build(**kwargs):
             build_calls.append(kwargs)
-            return "extra data", {"context_chars": 10, "context_sources": ["memory:key"]}
+            from core.memory_resolution import MemoryResolution
+            return "extra data", {"context_chars": 10, "context_sources": ["memory:key"]}, MemoryResolution()
 
         with patch("config.get_jit_retrieval_max", return_value=1), \
              patch("config.get_jit_retrieval_max_on_failure", return_value=2), \
@@ -417,7 +418,7 @@ class TestRetrievalPolicy:
                 if key not in thinking_plan.get("memory_keys", []):
                     if ctx_trace["retrieval_count"] >= _budget:
                         continue
-                    extra_text, _ = orch.build_effective_context(
+                    extra_text, _, _res = orch.build_effective_context(
                         user_text=key, conv_id="c", small_model_mode=False,
                         cleanup_payload={"needs_memory": True, "memory_keys": [key]},
                         include_blocks={"compact": False, "system_tools": False, "memory_data": True},
@@ -621,7 +622,7 @@ class TestRetrievalCountIsNotStatic:
              patch("config.get_small_model_char_cap", return_value=8000), \
              patch("config.get_context_trace_dryrun", return_value=False), \
              patch.object(orch, "_get_compact_context", return_value="NOW:\n  - state\n"):
-            _, trace = orch.build_effective_context(
+            _, trace, _res = orch.build_effective_context(
                 user_text="hello",
                 conv_id="conv-x",
                 small_model_mode=True,
@@ -644,7 +645,7 @@ class TestRetrievalCountIsNotStatic:
              patch("config.get_small_model_char_cap", return_value=8000), \
              patch("config.get_context_trace_dryrun", return_value=False), \
              patch.object(orch, "_get_compact_context", return_value="NOW:\n  - fail\n"):
-            _, trace = orch.build_effective_context(
+            _, trace, _res = orch.build_effective_context(
                 user_text="hello",
                 conv_id="conv-fail",
                 small_model_mode=True,
@@ -669,7 +670,7 @@ class TestRetrievalCountIsNotStatic:
              patch("config.get_small_model_char_cap", return_value=8000), \
              patch("config.get_context_trace_dryrun", return_value=False), \
              patch.object(orch, "_get_compact_context", return_value="NOW:\n  - container\n"):
-            _, trace = orch.build_effective_context(
+            _, trace, _res = orch.build_effective_context(
                 user_text="container query",
                 conv_id="_container_events",
                 small_model_mode=True,
@@ -686,7 +687,7 @@ class TestRetrievalCountIsNotStatic:
         if orch is None:
             pytest.skip("Cannot import PipelineOrchestrator")
         with patch("config.get_context_trace_dryrun", return_value=False):
-            _, trace = orch.build_effective_context(
+            _, trace, _res = orch.build_effective_context(
                 user_text="hello",
                 conv_id="conv-full",
                 small_model_mode=False,
@@ -712,11 +713,11 @@ class TestRetrievalCountIsNotStatic:
              patch("config.get_small_model_char_cap", return_value=8000), \
              patch("config.get_context_trace_dryrun", return_value=False), \
              patch.object(orch, "_get_compact_context", return_value="NOW:\n  - state\n"):
-            _, trace_normal = orch.build_effective_context(
+            _, trace_normal, _res = orch.build_effective_context(
                 user_text="q", conv_id="c", small_model_mode=True,
                 debug_flags={"has_tool_failure": False},
             )
-            _, trace_failure = orch.build_effective_context(
+            _, trace_failure, _res2 = orch.build_effective_context(
                 user_text="q", conv_id="c2", small_model_mode=True,
                 debug_flags={"has_tool_failure": True},
             )
@@ -751,12 +752,12 @@ class TestRetrievalCountIsNotStatic:
              patch.object(orch, "_get_compact_context", return_value="NOW:\n  - state\n"), \
              patch.object(orch.context, "get_context", return_value=mock_ctx):
             # Failure path: compact_rc=2, memory_used=True → without cap would be 3
-            _, trace_failure = orch.build_effective_context(
+            _, trace_failure, _res2 = orch.build_effective_context(
                 user_text="q", conv_id="c-fail", small_model_mode=True,
                 debug_flags={"has_tool_failure": True},
             )
             # Normal path: compact_rc=1, memory_used=True → without cap would be 2
-            _, trace_normal = orch.build_effective_context(
+            _, trace_normal, _res = orch.build_effective_context(
                 user_text="q", conv_id="c-norm", small_model_mode=True,
                 debug_flags={"has_tool_failure": False},
             )

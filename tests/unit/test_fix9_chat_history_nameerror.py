@@ -1,68 +1,70 @@
 """
 Fix #9: NameError: name 'chat_history' is not defined
 
-Ursache: Im Blueprint-Router-Block (STEP 1.8) in process_stream_with_events()
+Ursache: Im Blueprint-Router-Block in process_stream_with_events()
 wird `chat_history` als bare Variable referenziert, obwohl sie kein Parameter
 der Funktion ist. Getriggert wenn request_container in suggested_tools und
 needs_chat_history=False (z.B. Gaming/Steam-Container Request).
 
 Fix: `chat_history` → `getattr(request, "messages", None)`
+
+Die Blueprint-Router-Logik wurde in run_pre_control_gates (pipeline_stages.py)
+extrahiert, wo sie korrekt getattr(request, "messages", None) nutzt.
 """
 import ast
 import re
 from pathlib import Path
 
 
-def _src() -> str:
-    root = Path(__file__).resolve().parents[2]
-    return (root / "core/orchestrator_stream_flow_utils.py").read_text(encoding="utf-8")
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def _stream_src() -> str:
+    return (ROOT / "core/orchestrator_stream_flow_utils.py").read_text(encoding="utf-8")
+
+
+def _stages_src() -> str:
+    return (ROOT / "core/orchestrator_pipeline_stages.py").read_text(encoding="utf-8")
 
 
 def test_chat_history_bare_name_gone_from_blueprint_router_block():
-    """The bare name 'chat_history' must not appear in the STEP 1.8 block anymore."""
-    src = _src()
-    # Isolate the STEP 1.8 block
-    step18_start = src.find("STEP 1.8: BLUEPRINT ROUTER")
-    assert step18_start != -1, "STEP 1.8 block not found"
-    # Find next STEP after 1.8
-    step_next = src.find("# STEP ", step18_start + 50)
-    if step_next == -1:
-        step_next = step18_start + 2000  # fallback: take enough context
-    block = src[step18_start:step_next]
+    """run_pre_control_gates (pipeline_stages) must not use bare 'chat_history' variable."""
+    src = _stages_src()
+    # Isolate the Container Candidate Evidence block
+    block_start = src.find("Container Candidate Evidence")
+    assert block_start != -1, "Container Candidate Evidence block not found in pipeline_stages"
+    # Take next ~80 lines as the block
+    block = src[block_start:block_start + 2500]
 
-    # Must NOT contain bare `chat_history` variable (only as part of getattr call or request.messages)
-    # Simple check: find `chat_history` not preceded by "request." and not in comment
     bad_occurrences = []
     for line in block.splitlines():
         stripped = line.strip()
         if stripped.startswith("#"):
             continue
-        # Match standalone `chat_history` variable (not as part of needs_chat_history, getattr, or string literal)
-        # Pattern: `chat_history` that is NOT preceded by `needs_` and NOT in getattr call
         if re.search(r'(?<!needs_)\bchat_history\b', stripped):
-            # Exclude getattr(request, "messages") assignment and string literals
             if "getattr(request" not in stripped and '"needs_chat_history"' not in stripped:
                 bad_occurrences.append(stripped)
 
     assert not bad_occurrences, (
-        f"Bare 'chat_history' still present in STEP 1.8 block:\n" + "\n".join(bad_occurrences)
+        f"Bare 'chat_history' still present in pipeline_stages blueprint block:\n"
+        + "\n".join(bad_occurrences)
     )
 
 
 def test_blueprint_router_block_uses_getattr_request_messages():
-    """The A3-Fix branch must use getattr(request, 'messages', None) instead of chat_history."""
-    src = _src()
-    step18_start = src.find("STEP 1.8: BLUEPRINT ROUTER")
-    assert step18_start != -1
-    block = src[step18_start:step18_start + 2000]
+    """run_pre_control_gates must use getattr(request, 'messages', None) for chat history."""
+    src = _stages_src()
+    block_start = src.find("Container Candidate Evidence")
+    assert block_start != -1
+    block = src[block_start:block_start + 2500]
     assert 'getattr(request, "messages", None)' in block or "getattr(request, 'messages', None)" in block, (
-        "Blueprint router A3 block must use getattr(request, 'messages', None)"
+        "run_pre_control_gates must use getattr(request, 'messages', None)"
     )
 
 
 def test_process_stream_with_events_has_no_chat_history_param():
     """process_stream_with_events must NOT have chat_history as a parameter (confirm root cause context)."""
-    src = _src()
+    src = _stream_src()
     # Find function signature
     fn_start = src.find("async def process_stream_with_events(")
     assert fn_start != -1, "process_stream_with_events not found"
@@ -75,7 +77,7 @@ def test_process_stream_with_events_has_no_chat_history_param():
 
 def test_no_other_bare_chat_history_in_process_stream_with_events():
     """No other bare chat_history references should exist inside process_stream_with_events body."""
-    src = _src()
+    src = _stream_src()
     fn_start = src.find("async def process_stream_with_events(")
     assert fn_start != -1
     # Find end of function (next top-level async def / def)

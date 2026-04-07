@@ -103,22 +103,24 @@ class TestBuildEffectiveContextPublicAPI:
             "build_effective_context must be a public method"
 
     def test_returns_tuple_str_dict(self):
-        """build_effective_context must return (str, dict)."""
+        """build_effective_context must return (str, dict, MemoryResolution)."""
         orch = _make_orch(_default_layers())
         result = orch.build_effective_context(
             user_text="hello",
             conv_id="test-conv",
             small_model_mode=False,
         )
-        assert isinstance(result, tuple) and len(result) == 2
-        text, trace = result
+        assert isinstance(result, tuple) and len(result) == 3
+        text, trace, resolution = result
         assert isinstance(text, str)
         assert isinstance(trace, dict)
+        from core.memory_resolution import MemoryResolution
+        assert isinstance(resolution, MemoryResolution)
 
     def test_trace_has_required_keys(self):
         """Trace dict must contain all required keys for [CTX-PRE-OUTPUT] logging."""
         orch = _make_orch(_default_layers())
-        _, trace = orch.build_effective_context(
+        _, trace, _res = orch.build_effective_context(
             user_text="query",
             conv_id="conv-a",
             small_model_mode=False,
@@ -131,7 +133,7 @@ class TestBuildEffectiveContextPublicAPI:
     def test_context_chars_final_equals_context_chars_initially(self):
         """context_chars_final must equal context_chars before any post-build appends."""
         orch = _make_orch(_default_layers(), _default_ctx_mgr(memory_data="some data"))
-        _, trace = orch.build_effective_context(
+        _, trace, _res = orch.build_effective_context(
             user_text="q",
             conv_id="c",
             small_model_mode=False,
@@ -153,7 +155,7 @@ class TestBuildEffectiveContextPublicAPI:
             _default_layers(),
             _default_ctx_mgr(memory_data="MY_MEMORY_DATA"),
         )
-        text, trace = orch.build_effective_context(
+        text, trace, _res = orch.build_effective_context(
             user_text="extra key",
             conv_id="conv-x",
             small_model_mode=False,
@@ -441,7 +443,7 @@ class TestFinalCapAfterAllAppends:
         orch = _make_orch(_default_layers(), _default_ctx_mgr(memory_data="MEM"))
 
         # Step 1: Build initial context
-        ctx, trace = orch.build_effective_context(
+        ctx, trace, _res = orch.build_effective_context(
             user_text="query", conv_id="conv", small_model_mode=False
         )
 
@@ -921,8 +923,9 @@ class TestTtlEventStructure:
         mock_docker = MagicMock()
         mock_docker.containers.get.side_effect = Exception("Container not found")
 
-        # Inject in-memory fallback entry
-        from container_commander.engine import _active
+        # Inject in-memory fallback entry (use already-imported engine to avoid
+        # re-import attempt which fails if a prior test left sys.modules without docker)
+        _active = engine._active
 
         class _FakeEntry:
             blueprint_id = "bp-fallback"

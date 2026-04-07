@@ -71,7 +71,7 @@ def merge_container_state_from_tool_result(
                 and str(result.get("running", False)).lower() in {"1", "true"}
             ):
                 home_container_id = cid
-    elif tool_name == "request_container" and isinstance(result, dict):
+    elif tool_name in {"request_container", "home_start"} and isinstance(result, dict):
         cid = str(result.get("container_id", "")).strip()
         if not cid and isinstance(result.get("container"), dict):
             cid = str(result["container"].get("container_id", "")).strip()

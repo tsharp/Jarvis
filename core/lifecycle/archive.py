@@ -35,13 +35,14 @@ from config import (
 from utils.embedding_resolver import resolve_embedding_target
 from utils.embedding_metrics import increment_fallback, increment_error, record_latency
 from utils.role_endpoint_resolver import resolve_role_endpoint
+from utils.service_endpoint_resolver import default_service_endpoint
 
 # ═══════════════════════════════════════════════════════════
 # CONFIGURATION
 # ═══════════════════════════════════════════════════════════
 
 DB_PATH = os.getenv("MEMORY_DB_PATH", "/app/memory_data/memory.db")
-OLLAMA_URL = os.getenv("OLLAMA_BASE", "http://host.docker.internal:11434")
+OLLAMA_URL = os.getenv("OLLAMA_BASE", default_service_endpoint("ollama", 11434))
 
 # Search defaults
 DEFAULT_SEARCH_LIMIT = 5

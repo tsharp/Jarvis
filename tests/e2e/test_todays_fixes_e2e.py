@@ -257,6 +257,8 @@ class TestFix7MountUtils:
     def test_creates_missing_bind_dir(self):
         script = (
             "import sys, os, json, tempfile; sys.path.insert(0, '/app')\n"
+            # Disable storage-host-helper so fallback os.makedirs runs locally in the container
+            "import container_commander.mount_utils as _mu; _mu.HOST_HELPER_URL = ''\n"
             "from container_commander.mount_utils import ensure_bind_mount_host_dirs\n"
             "from types import SimpleNamespace\n"
             "tmpd = tempfile.mkdtemp()\n"

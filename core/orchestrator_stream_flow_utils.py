@@ -52,6 +52,51 @@ from core.host_runtime_policy import (
 )
 from core.tool_hub_runtime import get_initialized_hub_safe
 
+
+def _build_thinking_ui_payload(plan: Optional[Dict[str, Any]], **overrides: Any) -> Dict[str, Any]:
+    """Expose a compact, UI-safe thinking summary without leaking raw internals."""
+    base = dict(plan or {})
+    ctx_trace = base.get("_ctx_trace") if isinstance(base.get("_ctx_trace"), dict) else {}
+    skill_trace = ctx_trace.get("skill_catalog") if isinstance(ctx_trace.get("skill_catalog"), dict) else {}
+    thinking_tools = list(base.get("_thinking_suggested_tools") or base.get("suggested_tools") or [])
+    final_execution_tools = list(base.get("_final_execution_tools") or [])
+    skill_route = base.get("_skill_catalog_tool_route") if isinstance(base.get("_skill_catalog_tool_route"), dict) else {}
+    payload: Dict[str, Any] = {
+        "intent": base.get("intent", "unknown"),
+        "needs_memory": bool(base.get("needs_memory", False)),
+        "memory_keys": list(base.get("memory_keys") or []),
+        "needs_chat_history": bool(base.get("needs_chat_history", False)),
+        "is_fact_query": bool(base.get("is_fact_query", False)),
+        "suggested_tools": thinking_tools,
+        "thinking_suggested_tools": thinking_tools,
+        "final_execution_tools": final_execution_tools,
+        "hallucination_risk": base.get("hallucination_risk", "medium"),
+        "needs_sequential_thinking": bool(base.get("needs_sequential_thinking", False)),
+        "response_length_hint": base.get("response_length_hint"),
+        "resolution_strategy": (
+            base.get("resolution_strategy")
+            or base.get("_authoritative_resolution_strategy")
+        ),
+        "strategy_hints": list(base.get("strategy_hints") or []),
+        "cached": bool(base.get("cached", False)),
+        "skipped": bool(base.get("skipped", False)),
+        "reason": base.get("reason"),
+        "source": base.get("source"),
+        "skill_catalog_hints": list(skill_trace.get("selected_hints") or []),
+        "skill_catalog_docs": list(skill_trace.get("selected_docs") or []),
+        "skill_catalog_strict_mode": skill_trace.get("strict_mode"),
+        "skill_catalog_postcheck": skill_trace.get("postcheck"),
+        "skill_catalog_thinking_tools": list(skill_trace.get("thinking_suggested_tools") or thinking_tools),
+        "skill_catalog_final_execution_tools": list(skill_trace.get("final_execution_tools") or final_execution_tools),
+        "skill_catalog_tool_route": skill_trace.get("tool_route_status") or skill_route.get("status"),
+        "skill_catalog_tool_route_reason": skill_trace.get("tool_route_reason") or skill_route.get("reason"),
+        "skill_catalog_policy_mode": skill_trace.get("policy_mode"),
+        "skill_catalog_required_tools": list(skill_trace.get("required_tools") or []),
+        "skill_catalog_force_sections": list(skill_trace.get("force_sections") or []),
+    }
+    payload.update(overrides)
+    return {key: value for key, value in payload.items() if value is not None}
+
 async def process_stream_with_events(
     orch: Any,
     request: Any,
@@ -195,39 +240,26 @@ async def process_stream_with_events(
     if chunking_context and chunking_context.get("thinking_result"):
         log_info_fn("[Orchestrator] Layer 1 SKIPPED (using chunking result)")
         thinking_plan = chunking_context["thinking_result"]
-        thinking_plan = orch._ensure_dialogue_controls(thinking_plan, tone_signal)
-        yield ("", False, {"type": "thinking_done", "thinking": thinking_plan, "source": "chunking"})
+        thinking_plan = orch._ensure_dialogue_controls(
+            thinking_plan,
+            tone_signal,
+            user_text=user_text,
+            selected_tools=[],
+        )
+        yield ("", False, {
+            "type": "thinking_done",
+            "thinking": _build_thinking_ui_payload(thinking_plan, source="chunking"),
+            "source": "chunking",
+        })
     else:
         log_info_fn("[Orchestrator] === LAYER 1: THINKING (STREAMING) ===")
         
         # Layer 0: Tool Selection
-        # Letzten Assistenten-Message als Kontext für ToolSelector extrahieren
-        _last_assistant_msg = ""
-        for _msg in reversed(list(getattr(request, "messages", None) or [])):
-            if isinstance(_msg, dict) and _msg.get("role") == "assistant":
-                _last_assistant_msg = str(_msg.get("content", ""))
-                break
-        selected_tools = await orch.tool_selector.select_tools(user_text, context_summary=_last_assistant_msg)
-        selected_tools = orch._filter_tool_selector_candidates(
-            selected_tools, user_text, forced_mode=forced_response_mode
-        )
-        # Short-Input Bypass: Wenn Semantic Search bei sehr kurzem Input leer bleibt,
-        # Core-Follow-up-Tools injizieren — ThinkingLayer entscheidet via Chat-History selbst.
-        # Mit Konversationskontext: nur Container/Skill-Tools (kein Onboarding-Trigger).
-        if not selected_tools and len(user_text.split()) < 5:
-            if _last_assistant_msg:
-                selected_tools = ["request_container", "run_skill"]
-            else:
-                selected_tools = ["request_container", "run_skill", "home_write"]
-            log_info_fn("[Orchestrator] Short-Input Bypass: core follow-up tools injected [stream]")
-        query_budget_signal = await orch._classify_query_budget_signal(
-            user_text,
-            selected_tools=selected_tools,
-            tone_signal=tone_signal,
-        )
-        domain_route_signal = await orch._classify_domain_signal(
-            user_text,
-            selected_tools=selected_tools,
+        from core.orchestrator_pipeline_stages import run_tool_selection_stage
+        selected_tools, query_budget_signal, domain_route_signal, _last_assistant_msg = (
+            await run_tool_selection_stage(
+                orch, user_text, request, forced_response_mode, tone_signal, log_info_fn
+            )
         )
         if selected_tools:
             yield ("", False, {"type": "tool_selection", "tools": selected_tools})
@@ -241,15 +273,22 @@ async def process_stream_with_events(
             if skip_thinking:
                 log_info_fn("[Pipeline] Skipping ThinkingLayer for Master (ThinkingLayer=OFF in settings)")
                 thinking_plan = orch.thinking._default_plan()
-                thinking_plan = orch._ensure_dialogue_controls(thinking_plan, tone_signal)
+                thinking_plan = orch._ensure_dialogue_controls(
+                    thinking_plan,
+                    tone_signal,
+                    user_text=user_text,
+                    selected_tools=selected_tools,
+                )
                 yield ("", False, {
                     "type": "thinking_done",
-                    "thinking": {
-                        "intent": "Master orchestrator action",
-                        "needs_memory": False,
-                        "skipped": True,
-                        "reason": "Master has own planning + ThinkingLayer disabled in settings"
-                    }
+                    "thinking": _build_thinking_ui_payload(
+                        thinking_plan,
+                        intent="Master orchestrator action",
+                        needs_memory=False,
+                        skipped=True,
+                        reason="Master has own planning + ThinkingLayer disabled in settings",
+                        source="master_skip",
+                    ),
                 })
         if (
             not skip_thinking
@@ -262,15 +301,22 @@ async def process_stream_with_events(
             skip_thinking = True
             log_info_fn("[Pipeline] Skipping ThinkingLayer via QueryBudget signal [stream]")
             thinking_plan = orch.thinking._default_plan()
-            thinking_plan = orch._ensure_dialogue_controls(thinking_plan, tone_signal)
+            thinking_plan = orch._ensure_dialogue_controls(
+                thinking_plan,
+                tone_signal,
+                user_text=user_text,
+                selected_tools=selected_tools,
+            )
             yield ("", False, {
                 "type": "thinking_done",
-                "thinking": {
-                    "intent": "query_budget_fast_path",
-                    "needs_memory": False,
-                    "skipped": True,
-                    "reason": "query_budget_skip_candidate",
-                }
+                "thinking": _build_thinking_ui_payload(
+                    thinking_plan,
+                    intent="query_budget_fast_path",
+                    needs_memory=False,
+                    skipped=True,
+                    reason="query_budget_skip_candidate",
+                    source="query_budget",
+                ),
             })
         
         if not skip_thinking:
@@ -284,20 +330,22 @@ async def process_stream_with_events(
                 log_info_fn("[Orchestrator] ThinkingLayer Cache SKIP: short input is context-dependent")
             if _cached_plan:
                 thinking_plan = _cached_plan
-                thinking_plan = orch._ensure_dialogue_controls(thinking_plan, tone_signal)
+                thinking_plan = orch._ensure_dialogue_controls(
+                    thinking_plan,
+                    tone_signal,
+                    user_text=user_text,
+                    selected_tools=selected_tools,
+                )
                 # Touch TTL on hit so repeated turns don't expire mid-benchmark.
                 thinking_plan_cache.set(user_text, thinking_plan)
                 log_info_fn(f"[Orchestrator] CACHE HIT ThinkingLayer: intent='{thinking_plan.get('intent')}'")
                 yield ("", False, {
                     "type": "thinking_done",
-                    "thinking": {
-                        "intent": thinking_plan.get("intent", "unknown"),
-                        "needs_memory": thinking_plan.get("needs_memory", False),
-                        "memory_keys": thinking_plan.get("memory_keys", []),
-                        "hallucination_risk": thinking_plan.get("hallucination_risk", "medium"),
-                        "needs_sequential_thinking": thinking_plan.get("needs_sequential_thinking", False),
-                        "cached": True,
-                    }
+                    "thinking": _build_thinking_ui_payload(
+                        thinking_plan,
+                        cached=True,
+                        source="cache",
+                    ),
                 })
             else:
                 # STEP 0.5: Skill-Graph Pre-Fetch — policy-gated (stream path)
@@ -323,10 +371,19 @@ async def process_stream_with_events(
                     tone_signal=tone_signal,
                 ):
                     if not is_done:
-                        yield ("", False, {"type": "thinking_stream", "thinking_chunk": chunk})
+                        yield ("", False, {
+                            "type": "thinking_stream",
+                            "chunk": chunk,
+                            "thinking_chunk": chunk,
+                        })
                     else:
                         thinking_plan = plan
-                        thinking_plan = orch._ensure_dialogue_controls(thinking_plan, tone_signal)
+                        thinking_plan = orch._ensure_dialogue_controls(
+                            thinking_plan,
+                            tone_signal,
+                            user_text=user_text,
+                            selected_tools=selected_tools,
+                        )
                         thinking_plan["_trace_skills_prefetch"] = bool(_thinking_skill_ctx)
                         thinking_plan["_trace_skills_prefetch_mode"] = _stream_prefetch_mode
                         # Im Cache speichern für spätere Aufrufe
@@ -334,67 +391,21 @@ async def process_stream_with_events(
                         log_info_fn(f"[Orchestrator] ThinkingLayer plan cached prefetch={_stream_prefetch_mode}")
                 yield ("", False, {
                     "type": "thinking_done",
-                    "thinking": {
-                        "intent": thinking_plan.get("intent", "unknown"),
-                        "needs_memory": thinking_plan.get("needs_memory", False),
-                        "memory_keys": thinking_plan.get("memory_keys", []),
-                        "hallucination_risk": thinking_plan.get("hallucination_risk", "medium"),
-                        "needs_sequential_thinking": thinking_plan.get("needs_sequential_thinking", False),
-                    }
+                    "thinking": _build_thinking_ui_payload(
+                        thinking_plan,
+                        source="live",
+                    ),
                 })
-    thinking_plan = orch._coerce_thinking_plan_schema(
-        thinking_plan,
-        user_text=user_text,
-    )
-    thinking_plan = orch._apply_query_budget_to_plan(
-        thinking_plan,
-        query_budget_signal,
-        user_text=user_text,
-    )
-    thinking_plan = orch._apply_domain_route_to_plan(
-        thinking_plan,
-        domain_route_signal,
-        user_text=user_text,
-    )
-    thinking_plan = orch._resolve_precontrol_policy_conflicts(
-        user_text,
-        thinking_plan,
-        conversation_id=conversation_id,
-    )
-
-    # Short-Input Plan Bypass: Wenn ThinkingLayer keine Tools zurückgab (suggested_tools=[])
-    # UND der Input sehr kurz war UND der Bypass vorher Kandidaten injiziert hatte —
-    # direkt in thinking_plan["suggested_tools"] eingreifen, damit der Executor Tools sieht.
-    if (
-        not thinking_plan.get("suggested_tools")
-        and selected_tools
-        and len(user_text.split()) < 5
-    ):
-        thinking_plan["suggested_tools"] = list(selected_tools)
-        log_info_fn(
-            f"[Orchestrator] Short-Input Plan Bypass: suggested_tools injected "
-            f"from selected_tools={selected_tools} [stream]"
-        )
-
-    # Response mode policy (interactive | deep)
-    response_mode_stream = orch._apply_response_mode_policy(
-        user_text,
-        thinking_plan,
-        forced_mode=forced_response_mode,
+    # ═══════════════════════════════════════════════════
+    # PLAN FINALIZATION + RESPONSE MODE
+    # ═══════════════════════════════════════════════════
+    from core.orchestrator_pipeline_stages import run_plan_finalization
+    thinking_plan, response_mode_stream = run_plan_finalization(
+        orch, user_text, request, thinking_plan, selected_tools,
+        query_budget_signal, domain_route_signal, forced_response_mode,
+        conversation_id, log_info_fn,
     )
     log_info_fn(f"[Orchestrator] response_mode={response_mode_stream} (stream)")
-    log_info_fn(
-        "[Orchestrator] dialogue_controls(stream) "
-        f"act={thinking_plan.get('dialogue_act')} "
-        f"tone={thinking_plan.get('response_tone')} "
-        f"len={thinking_plan.get('response_length_hint')} "
-        f"conf={thinking_plan.get('tone_confidence')}"
-    )
-    orch._apply_temporal_context_fallback(
-        user_text,
-        thinking_plan,
-        chat_history=request.messages,
-    )
     yield ("", False, {"type": "response_mode", "mode": response_mode_stream})
     
     # ═══════════════════════════════════════════════════
@@ -413,7 +424,7 @@ async def process_stream_with_events(
     # ═══════════════════════════════════════════════════
     from config import get_small_model_mode as _get_smm_stream
     _smm_stream = _get_smm_stream()
-    full_context, ctx_trace_stream = orch.build_effective_context(
+    full_context, ctx_trace_stream, mem_res = orch.build_effective_context(
         user_text=user_text,
         conv_id=conversation_id,
         small_model_mode=_smm_stream,
@@ -437,14 +448,15 @@ async def process_stream_with_events(
     )
     
     # ═══════════════════════════════════════════════════
-    # STEP 1.6: EARLY HARDWARE GATE (vor Sequential Thinking!)
-    # Blockt teure Requests sofort — spart 20-40s Sequential-Time
+    # STEP 1.6–1.8: PRE-CONTROL GATES (Hardware, Skill Dedup, Container)
     # ═══════════════════════════════════════════════════
-    _early_gate_msg = orch._check_hardware_gate_early(user_text, thinking_plan)
-    if _early_gate_msg:
-        log_info_fn("[Orchestrator] Early Hardware Gate signal — delegated to Control hard-block authority")
-        thinking_plan["_hardware_gate_triggered"] = True
-        thinking_plan["_hardware_gate_warning"] = str(_early_gate_msg or "")[:1200]
+    from core.orchestrator_pipeline_stages import run_pre_control_gates
+    _skill_gate_result, _hardware_gate_msg = run_pre_control_gates(
+        orch, user_text, thinking_plan, request, log_info_fn, log_warn_fn
+    )
+
+    # Stream-only: yield UI-notification events based on gate results
+    if _hardware_gate_msg:
         ws_warn = orch._save_workspace_entry(
             conversation_id,
             "hardware_gate_triggered=true | authority=control | reason=hardware_self_protection",
@@ -455,126 +467,18 @@ async def process_stream_with_events(
             yield ("", False, ws_warn)
         yield ("", False, {"type": "hardware_gate_signal", "reason": "hardware_self_protection"})
 
-    # ═══════════════════════════════════════════════════
-    # STEP 1.7: SKILL DEDUP GATE — Embedding-basiert, kein LLM
-    # Wenn autonomous_skill_task geplant: prüfe ob Skill bereits existiert.
-    # Score > 0.75 → use_existing (run_skill) statt Neuerstellen.
-    # Deterministisch — kein Modell kann das überschreiben.
-    # ═══════════════════════════════════════════════════
-    if "autonomous_skill_task" in thinking_plan.get("suggested_tools", []):
-        if not orch._contains_explicit_skill_intent(user_text):
-            thinking_plan["_skill_gate_blocked"] = True
-            thinking_plan["_skill_gate_reason"] = "no_explicit_skill_intent"
-            thinking_plan["suggested_tools"] = [
-                t for t in thinking_plan.get("suggested_tools", [])
-                if t not in {"autonomous_skill_task", "run_skill", "create_skill"}
-            ]
-            log_info_fn("[Orchestrator] Skill gate blocked — reason=no_explicit_skill_intent")
+    if _skill_gate_result:
+        if _skill_gate_result.get("blocked"):
             yield ("", False, {
                 "type": "skill_blocked",
-                "reason": thinking_plan["_skill_gate_reason"],
+                "reason": _skill_gate_result["reason"],
             })
-        else:
-            skill_decision = orch._route_skill_request(user_text, thinking_plan)
-            if skill_decision and skill_decision.get("blocked"):
-                thinking_plan["_skill_gate_blocked"] = True
-                thinking_plan["_skill_gate_reason"] = skill_decision.get("reason", "skill_router_unavailable")
-                thinking_plan["suggested_tools"] = [
-                    t for t in thinking_plan.get("suggested_tools", [])
-                    if t not in {"autonomous_skill_task", "run_skill", "create_skill"}
-                ]
-                log_warn_fn(
-                    "[Orchestrator] Skill gate blocked — "
-                    f"reason={thinking_plan['_skill_gate_reason']}"
-                )
-                yield ("", False, {
-                    "type": "skill_blocked",
-                    "reason": thinking_plan["_skill_gate_reason"],
-                })
-            elif skill_decision:
-                # Existing skill gefunden → suggested_tools überschreiben
-                thinking_plan["suggested_tools"] = ["run_skill"]
-                thinking_plan["_skill_router"] = skill_decision
-                log_info_fn(
-                    f"[Orchestrator] Skill Dedup Gate: '{skill_decision['skill_name']}' "
-                    f"(score={skill_decision['score']:.2f}) — run_skill statt create"
-                )
-                yield ("", False, {
-                    "type": "skill_routed",
-                    "skill_name": skill_decision["skill_name"],
-                    "score": skill_decision["score"],
-                })
-
-    # ═══════════════════════════════════════════════════
-    # STEP 1.8: BLUEPRINT ROUTER — Container-Intent → Blueprint aus Graph
-    # Wenn request_container geplant: prüfe ob passender Blueprint verfügbar.
-    # Score > MATCH_THRESHOLD → blueprint_id in thinking_plan injizieren.
-    # Kein Match → HARD GATE: request_container wird blockiert (kein Freestyle-Fallback!).
-    # Deterministisch — kein Modell kann das überschreiben.
-    # ═══════════════════════════════════════════════════
-    if "request_container" in thinking_plan.get("suggested_tools", []):
-        # A3 Fix: container follow-ups without a blueprint name in user_text lose context.
-        # needs_chat_history setzen falls noch nicht gesetzt.
-        if not thinking_plan.get("needs_chat_history"):
-            thinking_plan["needs_chat_history"] = True
-            log_info_fn("[Orchestrator] A3 Fix: needs_chat_history=True (request_container follow-up)")
-        # Blueprint-Hint aus History immer extrahieren — unabhängig ob needs_chat_history
-        # bereits gesetzt war. Kurze Inputs ("ja bitte") haben keinen Blueprint-Namen im
-        # user_text, der Router braucht den Hint aus der History im Intent.
-        _stream_history = list(getattr(request, "messages", None) or [])
-        _bp_hint = _extract_blueprint_hint_from_history(_stream_history, user_text)
-        if _bp_hint and _bp_hint.lower() not in str(thinking_plan.get("intent", "")).lower():
-            _current_intent = str(thinking_plan.get("intent") or "").strip()
-            thinking_plan["intent"] = f"{_current_intent} {_bp_hint}".strip()
-            log_info_fn(f"[Orchestrator] A3 Fix: blueprint hint '{_bp_hint}' injected into intent")
-
-        blueprint_decision = orch._route_blueprint_request(user_text, thinking_plan)
-        if blueprint_decision and blueprint_decision.get("blocked"):
-            thinking_plan["_blueprint_gate_blocked"] = True
-            thinking_plan["_blueprint_gate_reason"] = blueprint_decision.get(
-                "reason", "blueprint_router_unavailable"
-            )
-            log_warn_fn(
-                "[Orchestrator] Blueprint gate blocked — "
-                f"reason={thinking_plan['_blueprint_gate_reason']}"
-            )
+        elif _skill_gate_result.get("routed"):
             yield ("", False, {
-                "type": "blueprint_blocked",
-                "reason": thinking_plan["_blueprint_gate_reason"],
+                "type": "skill_routed",
+                "skill_name": _skill_gate_result["skill_name"],
+                "score": _skill_gate_result["score"],
             })
-        elif blueprint_decision and not blueprint_decision.get("suggest"):
-            # Auto-route: score >= STRICT
-            thinking_plan["_blueprint_router"] = blueprint_decision
-            log_info_fn(
-                f"[Orchestrator] Blueprint auto-routed: '{blueprint_decision['blueprint_id']}' "
-                f"(score={blueprint_decision['score']:.2f})"
-            )
-            yield ("", False, {
-                "type": "blueprint_routed",
-                "blueprint_id": blueprint_decision["blueprint_id"],
-                "score": blueprint_decision["score"],
-            })
-        elif blueprint_decision and blueprint_decision.get("suggest"):
-            # Suggest-Zone: score in [SUGGEST, STRICT) → Rückfrage, kein Starten
-            thinking_plan["_blueprint_suggest"] = blueprint_decision
-            thinking_plan["_blueprint_gate_blocked"] = True
-            candidates = blueprint_decision.get("candidates", [])
-            log_info_fn(f"[Orchestrator] Blueprint suggest: Kandidaten={[c['id'] for c in candidates]} — Rückfrage nötig")
-            yield ("", False, {
-                "type": "blueprint_suggest",
-                "candidates": candidates,
-                "score": blueprint_decision["score"],
-            })
-        else:
-            # No exact blueprint match — security gate maintained (request_container stripped by
-            # control_decision_from_plan), but add blueprint_list so Control Layer can show
-            # available options instead of silently blocking.
-            thinking_plan["_blueprint_gate_blocked"] = True
-            thinking_plan["_blueprint_no_match"] = True
-            _cur_tools = list(thinking_plan.get("suggested_tools") or [])
-            if "blueprint_list" not in _cur_tools:
-                thinking_plan["suggested_tools"] = _cur_tools + ["blueprint_list"]
-            log_info_fn("[Orchestrator] Blueprint: kein Match — blueprint_list als Fallback-Signal injiziert")
 
     # ═══════════════════════════════════════════════════
     # STEP 1.75: SEQUENTIAL THINKING (STREAMING)
@@ -768,7 +672,7 @@ async def process_stream_with_events(
                     )
                     continue
                 log_info_fn(f"[Orchestrator-Control-Stream] Extra memory lookup: {_key}")
-                _extra_text_s, _extra_trace_s = orch.build_effective_context(
+                _extra_text_s, _extra_trace_s, _extra_res_s = orch.build_effective_context(
                     user_text=_key,
                     conv_id=conversation_id,
                     small_model_mode=_smm_stream,
@@ -795,7 +699,6 @@ async def process_stream_with_events(
         control_decision=control_decision,
         stream=True,
     )
-    control_decision = control_decision.with_tools_allowed(_control_tool_decisions.keys())
     persist_control_decision(verified_plan, control_decision)
     
     # Control is the only hard-block authority.
@@ -840,7 +743,19 @@ async def process_stream_with_events(
         persist_control_decision(verified_plan, control_decision)
         log_warning_fn("[Orchestrator] Soft control deny converted to warning (stream path)")
 
-    yield ("", False, {"type": "control", "approved": verification.get("approved", True), "skipped": skip_control})
+    yield (
+        "",
+        False,
+        {
+            "type": "control",
+            "approved": bool(control_decision.approved),
+            "decision_class": str(control_decision.decision_class or "").strip(),
+            "reason": str(control_decision.reason or "").strip(),
+            "warnings": [str(w) for w in control_decision.warnings],
+            "tools_allowed": [str(t) for t in control_decision.tools_allowed],
+            "skipped": skip_control,
+        },
+    )
 
     # ═══════════════════════════════════════════════════
     # LOOP ENGINE TRIGGER CHECK
@@ -1069,16 +984,19 @@ async def process_stream_with_events(
                         "reasoning": thinking_plan.get("reasoning", ""),
                         "sequential_complexity": thinking_plan.get("sequential_complexity", 3),
                     }
+            if tool_name == "request_container" and bool(verified_plan.get("_trion_home_start_fast_path")):
+                tool_name = "home_start"
+                tool_args = {}
             if not tool_allowed_by_control_decision(control_decision, tool_name):
                 _deny_reason = "control_tool_not_allowed"
                 execution_result_stream.append_tool_status(
                     tool_name=str(tool_name),
-                    status="unavailable",
+                    status="routing_block",
                     reason=_deny_reason,
                 )
                 grounding_evidence_stream.append({
                     "tool_name": str(tool_name),
-                    "status": "unavailable",
+                    "status": "routing_block",
                     "reason": _deny_reason,
                 })
                 yield ("", False, {
@@ -1128,12 +1046,12 @@ async def process_stream_with_events(
                     })
                     grounding_evidence_stream.append({
                         "tool_name": tool_name,
-                        "status": "unavailable",
+                        "status": "routing_block",
                         "reason": _skill_reason,
                     })
                     execution_result_stream.append_tool_status(
                         tool_name=str(tool_name),
-                        status="unavailable",
+                        status="routing_block",
                         reason=str(_skill_reason),
                     )
                     continue
@@ -1185,7 +1103,7 @@ async def process_stream_with_events(
                             tool_context += "\n[request_container]: FEHLER: Kein passender Blueprint gefunden. Verfügbare Blueprints: python-sandbox, node-sandbox, db-sandbox, shell-sandbox."
                             execution_result_stream.append_tool_status(
                                 tool_name="request_container",
-                                status="unavailable",
+                                status="routing_block",
                                 reason="no_blueprint_match",
                             )
                         host_runtime_last_failure_reason = "request_container_blocked:no_blueprint_match"
@@ -1225,7 +1143,7 @@ async def process_stream_with_events(
                                 tool_context += "\n[request_container]: FEHLER: Blueprint-Router nicht verfügbar. Kein Freestyle-Container erlaubt."
                                 execution_result_stream.append_tool_status(
                                     tool_name="request_container",
-                                    status="unavailable",
+                                    status="routing_block",
                                     reason=str(_jit_reason),
                                 )
                                 continue
@@ -1253,7 +1171,7 @@ async def process_stream_with_events(
                                 tool_context += f"\n[request_container]: RÜCKFRAGE: Welchen Blueprint soll ich starten? Meinst du: {_jit_cands}? Bitte präzisiere."
                                 execution_result_stream.append_tool_status(
                                     tool_name="request_container",
-                                    status="unavailable",
+                                    status="routing_block",
                                     reason="jit_suggest_requires_selection",
                                 )
                                 continue
@@ -1276,7 +1194,7 @@ async def process_stream_with_events(
                                 tool_context += "\n[request_container]: FEHLER: Kein passender Blueprint gefunden. Verfügbare Blueprints: python-sandbox, node-sandbox, db-sandbox, shell-sandbox."
                                 execution_result_stream.append_tool_status(
                                     tool_name="request_container",
-                                    status="unavailable",
+                                    status="routing_block",
                                     reason="no_jit_match",
                                 )
                                 continue
@@ -1960,6 +1878,51 @@ async def process_stream_with_events(
     if successful_tool_runs_stream:
         set_runtime_successful_tool_runs(verified_plan, successful_tool_runs_stream)
 
+    _active_container_ctx = await orch._maybe_build_active_container_capability_context(
+        user_text=user_text,
+        conversation_id=conversation_id,
+        verified_plan=verified_plan,
+        history_len=len(request.messages),
+    )
+    _active_container_ctx_text = str((_active_container_ctx or {}).get("context_text") or "").strip()
+    if _active_container_ctx_text:
+        full_context = orch._append_context_block(
+            full_context,
+            _active_container_ctx_text,
+            "active_container_ctx",
+            ctx_trace_stream,
+        )
+    _active_container_tool_results = str(
+        (_active_container_ctx or {}).get("tool_results_text") or ""
+    ).strip()
+    if _active_container_tool_results:
+        append_runtime_tool_results(
+            verified_plan,
+            f"\n{_active_container_tool_results}\n",
+        )
+
+    _skill_semantic_ctx = await orch._maybe_build_skill_semantic_context(
+        user_text=user_text,
+        conversation_id=conversation_id,
+        verified_plan=verified_plan,
+    )
+    _skill_semantic_ctx_text = str((_skill_semantic_ctx or {}).get("context_text") or "").strip()
+    if _skill_semantic_ctx_text:
+        full_context = orch._append_context_block(
+            full_context,
+            _skill_semantic_ctx_text,
+            "skill_catalog_ctx",
+            ctx_trace_stream,
+        )
+    _skill_semantic_tool_results = str(
+        (_skill_semantic_ctx or {}).get("tool_results_text") or ""
+    ).strip()
+    if _skill_semantic_tool_results:
+        append_runtime_tool_results(
+            verified_plan,
+            f"\n{_skill_semantic_tool_results}\n",
+        )
+
     orch._inject_carryover_grounding_evidence(
         conversation_id,
         verified_plan,
@@ -1998,8 +1961,6 @@ async def process_stream_with_events(
 
     full_response = ""
     first_chunk = True
-    resolved_output_model_stream, model_resolution_stream = orch._resolve_runtime_output_model(request.model)
-    verified_plan["_output_model_resolution"] = model_resolution_stream
 
     # Tool-Confidence Override: LoopEngine überspringen wenn Tools bereits Daten geliefert haben
     if use_loop_engine and get_runtime_tool_confidence(verified_plan) == "high":
@@ -2017,6 +1978,41 @@ async def process_stream_with_events(
     # [CTX-PRE-OUTPUT]: orchestrator context string before OutputLayer adds persona/instructions/history.
     # [CTX-FINAL] is emitted inside OutputLayer after the full messages array is built.
     ctx_trace_stream["mode"] = orch._compute_ctx_mode(ctx_trace_stream, is_loop=use_loop_engine)
+    if str(
+        verified_plan.get("_authoritative_resolution_strategy")
+        or verified_plan.get("resolution_strategy")
+        or ""
+    ).strip().lower() == "skill_catalog_context":
+        skill_ctx = verified_plan.get("_skill_catalog_context")
+        skill_ctx = skill_ctx if isinstance(skill_ctx, dict) else {}
+        skill_policy = verified_plan.get("_skill_catalog_policy")
+        skill_policy = skill_policy if isinstance(skill_policy, dict) else {}
+        selected_doc_ids = list(skill_ctx.get("selected_doc_ids") or [])
+        if not selected_doc_ids and str(skill_ctx.get("selected_docs") or "").strip():
+            selected_doc_ids = [
+                part.strip()
+                for part in str(skill_ctx.get("selected_docs") or "").split(",")
+                if str(part or "").strip()
+            ]
+        skill_route = verified_plan.get("_skill_catalog_tool_route")
+        skill_route = skill_route if isinstance(skill_route, dict) else {}
+        ctx_trace_stream["skill_catalog"] = {
+            "selected_hints": list(verified_plan.get("strategy_hints") or []),
+            "selected_docs": selected_doc_ids,
+            "strict_mode": "answer_schema+semantic_postcheck",
+            "postcheck": "pending",
+            "thinking_suggested_tools": list(
+                verified_plan.get("_thinking_suggested_tools")
+                or verified_plan.get("suggested_tools")
+                or []
+            ),
+            "final_execution_tools": list(verified_plan.get("_final_execution_tools") or []),
+            "tool_route_status": skill_route.get("status"),
+            "tool_route_reason": skill_route.get("reason"),
+            "policy_mode": str(skill_policy.get("mode") or "").strip(),
+            "required_tools": list(skill_policy.get("required_tools") or []),
+            "force_sections": list(skill_policy.get("force_sections") or []),
+        }
     log_info_fn(
         f"[CTX-PRE-OUTPUT] mode={ctx_trace_stream['mode']} "
         f"context_sources={','.join(ctx_trace_stream['context_sources'])} "
@@ -2025,15 +2021,16 @@ async def process_stream_with_events(
     )
     verified_plan["_ctx_trace"] = ctx_trace_stream
     verified_plan["_response_mode"] = response_mode_stream
-    try:
-        from config import get_output_timeout_interactive_s, get_output_timeout_deep_s
-        verified_plan["_output_time_budget_s"] = (
-            get_output_timeout_deep_s()
-            if response_mode_stream == "deep"
-            else get_output_timeout_interactive_s()
-        )
-    except Exception:
-        pass
+    if "skill_catalog" in ctx_trace_stream:
+        yield ("", False, {
+            "type": "thinking_trace",
+            "thinking": _build_thinking_ui_payload(verified_plan, source="trace"),
+        })
+
+    from core.orchestrator_pipeline_stages import prepare_output_invocation
+    resolved_output_model_stream, memory_required_but_missing_stream = prepare_output_invocation(
+        orch, request, verified_plan, mem_res, response_mode=response_mode_stream
+    )
 
     if use_loop_engine:
         # ── LOOP ENGINE: OutputLayer bleibt aktiv, ruft Tools autonom auf ──
@@ -2055,7 +2052,10 @@ async def process_stream_with_events(
             f"[Orchestrator] LoopEngine budgets: char_cap={_loop_output_char_cap} "
             f"num_predict={_loop_max_predict}"
         )
-        sys_prompt = orch.output._build_system_prompt(verified_plan, full_context)
+        sys_prompt = orch.output.build_system_prompt(
+            verified_plan, full_context,
+            memory_required_but_missing=memory_required_but_missing_stream,
+        )
         # [CTX-FINAL] for LoopEngine path: sys_prompt + user_text + initial tool_context
         # (LoopEngine bypasses OutputLayer.generate_stream, so we measure here)
         _loop_initial_chars = len(sys_prompt) + len(user_text) + len(tool_context or "")
@@ -2091,6 +2091,7 @@ async def process_stream_with_events(
             model=resolved_output_model_stream,
             control_decision=control_decision,
             execution_result=verified_plan.get("_execution_result"),
+            memory_required_but_missing=memory_required_but_missing_stream,
         ):
             if first_chunk:
                 log_info_fn(f"[TIMING] T+{time.time()-_t0:.2f}s: FIRST OUTPUT CHUNK")
@@ -2112,6 +2113,13 @@ async def process_stream_with_events(
                 "type": "response_repair",
                 "reason": "consistency_guard",
             })
+    if isinstance(verified_plan.get("_ctx_trace"), dict) and isinstance(
+        verified_plan["_ctx_trace"].get("skill_catalog"), dict
+    ):
+        yield ("", False, {
+            "type": "thinking_trace",
+            "thinking": _build_thinking_ui_payload(verified_plan, source="trace_final"),
+        })
     
     # ═══════════════════════════════════════════════════
     # STEP 4: MEMORY SAVE

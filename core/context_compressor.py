@@ -23,12 +23,13 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Tuple, Dict, Any
 from utils.logger import log_info, log_warn, log_error, log_debug
+from utils.service_endpoint_resolver import default_service_endpoint
 
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 
 PROTOCOL_DIR     = Path(os.getenv("PROTOCOL_DIR", "/app/memory"))
-OLLAMA_BASE      = os.getenv("OLLAMA_BASE", "http://host.docker.internal:11434")
+OLLAMA_BASE      = os.getenv("OLLAMA_BASE", default_service_endpoint("ollama", 11434))
 COMPRESS_MODEL   = os.getenv("COMPRESS_MODEL", "ministral-3:3b")
 MEMORY_URL       = os.getenv("MCP_BASE", "http://mcp-sql-memory:8081")
 

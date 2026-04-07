@@ -21,7 +21,12 @@ from unittest.mock import MagicMock, patch
 
 def test_save_shell_session_summary_calls_workspace_event_save():
     mock_hub = MagicMock()
-    with patch("mcp.hub.get_hub", return_value=mock_hub):
+    mock_hub.call_tool.return_value = '{"id": 42, "status": "saved"}'
+    # Seit Phase 1: save_shell_session_summary delegiert an WorkspaceEventEmitter.persist_and_broadcast.
+    # hub.call_tool + emit_activity werden intern durch den Emitter aufgerufen.
+    with patch("mcp.hub.get_hub", return_value=mock_hub), \
+         patch("core.workspace_event_emitter.WorkspaceEventEmitter.persist_and_broadcast",
+               wraps=None, return_value=MagicMock(entry_id=42, sse_dict=None)) as mock_pab:
         from container_commander.shell_context_bridge import save_shell_session_summary
         save_shell_session_summary(
             conversation_id="conv-1",
@@ -38,13 +43,11 @@ def test_save_shell_session_summary_calls_workspace_event_save():
             final_stop_reason="",
             raw_summary="Summary text here",
         )
-    mock_hub.call_tool.assert_called_once()
-    call_args = mock_hub.call_tool.call_args
-    assert call_args[0][0] == "workspace_event_save"
-    payload = call_args[0][1]
-    assert payload["conversation_id"] == "conv-1"
-    assert payload["event_type"] == "shell_session_summary"
-    data = payload["event_data"]
+    mock_pab.assert_called_once()
+    call_kwargs = mock_pab.call_args[1]
+    assert call_kwargs["conversation_id"] == "conv-1"
+    assert call_kwargs["event_type"] == "shell_session_summary"
+    data = call_kwargs["event_data"]
     assert data["container_id"] == "ctr-abc"
     assert data["blueprint_id"] == "bp-test"
     assert data["goal"] == "Fix the noVNC blackscreen"
@@ -128,7 +131,11 @@ def test_save_shell_session_summary_commands_capped_at_12():
 
 def test_save_shell_checkpoint_calls_workspace_event_save():
     mock_hub = MagicMock()
-    with patch("mcp.hub.get_hub", return_value=mock_hub):
+    mock_hub.call_tool.return_value = '{"id": 84, "status": "saved"}'
+    # Seit Phase 1: save_shell_checkpoint delegiert an WorkspaceEventEmitter.persist_and_broadcast.
+    with patch("mcp.hub.get_hub", return_value=mock_hub), \
+         patch("core.workspace_event_emitter.WorkspaceEventEmitter.persist_and_broadcast",
+               wraps=None, return_value=MagicMock(entry_id=84, sse_dict=None)) as mock_pab:
         from container_commander.shell_context_bridge import save_shell_checkpoint
         save_shell_checkpoint(
             conversation_id="conv-2",
@@ -140,15 +147,15 @@ def test_save_shell_checkpoint_calls_workspace_event_save():
             blocker="",
             step_count=3,
         )
-    mock_hub.call_tool.assert_called_once()
-    call_args = mock_hub.call_tool.call_args
-    assert call_args[0][0] == "workspace_event_save"
-    payload = call_args[0][1]
-    assert payload["event_type"] == "shell_checkpoint"
-    data = payload["event_data"]
+    mock_pab.assert_called_once()
+    call_kwargs = mock_pab.call_args[1]
+    assert call_kwargs["conversation_id"] == "conv-2"
+    assert call_kwargs["event_type"] == "shell_checkpoint"
+    data = call_kwargs["event_data"]
     assert data["container_id"] == "ctr-xyz"
     assert data["finding"] == "OOM killer triggered"
     assert data["step_count"] == 3
+    assert "checked dmesg" in data["content"]
 
 
 def test_save_shell_checkpoint_fail_closed_on_hub_error():

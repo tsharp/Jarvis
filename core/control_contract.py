@@ -143,11 +143,25 @@ class ControlDecision:
 
 class DoneReason(str, Enum):
     SUCCESS = "success"
+    NEEDS_CLARIFICATION = "needs_clarification"
     UNAVAILABLE = "unavailable"
+    ROUTING_BLOCK = "routing_block"
     TECH_FAIL = "tech_fail"
     TIMEOUT = "timeout"
     SKIPPED = "skipped"
     STOP = "stop"
+
+
+INTERACTIVE_TOOL_STATUSES: Tuple[str, ...] = (
+    "needs_clarification",
+    "pending_approval",
+    "routing_block",
+)
+
+
+def is_interactive_tool_status(status: Any) -> bool:
+    normalized = str(status or "").strip().lower()
+    return normalized in INTERACTIVE_TOOL_STATUSES
 
 
 @dataclass
@@ -179,6 +193,10 @@ class ExecutionResult:
             self.done_reason = DoneReason.SUCCESS
         elif "error" in statuses:
             self.done_reason = DoneReason.TECH_FAIL
+        elif "needs_clarification" in statuses:
+            self.done_reason = DoneReason.NEEDS_CLARIFICATION
+        elif "routing_block" in statuses:
+            self.done_reason = DoneReason.ROUTING_BLOCK
         elif "unavailable" in statuses:
             self.done_reason = DoneReason.UNAVAILABLE
         elif "timeout" in statuses:
@@ -350,4 +368,11 @@ def tool_allowed_by_control_decision(
     allowed = set(decision.tools_allowed or ())
     if not allowed:
         return True
-    return str(tool_name or "").strip() in allowed
+    normalized = str(tool_name or "").strip()
+    if normalized in allowed:
+        return True
+    if normalized == "home_start" and "request_container" in allowed:
+        return True
+    if normalized == "request_container" and "home_start" in allowed:
+        return True
+    return False

@@ -82,6 +82,7 @@ from core.plan_runtime_bridge import (
     get_runtime_grounding_value,
     get_runtime_tool_failure,
     get_runtime_tool_results,
+    set_runtime_grounding_evidence,
 )
 from core.plan_cache import make_plan_cache, SqlitePlanCache as _SqlitePlanCache
 from core.workspace_event_utils import (
@@ -94,7 +95,6 @@ from core.archive_embedding_queue import (
 )
 from core.master_settings import get_master_settings
 from core.container_state_utils import (
-    merge_container_state_from_tool_result,
     normalize_container_entries as util_normalize_container_entries,
     select_preferred_container_id as util_select_preferred_container_id,
     tool_requires_container_id as util_tool_requires_container_id,
@@ -277,6 +277,7 @@ class PipelineOrchestrator:
     _CONTROL_SKIP_BLOCK_TOOLS = {
         "create_skill",
         "autonomous_skill_task",
+        "home_start",
         "request_container",
         "exec_in_container",
         "home_write",
@@ -485,6 +486,159 @@ class PipelineOrchestrator:
         "was weißt du",
         "was weist du",
     )
+    _HOME_CONTAINER_START_MARKERS = (
+        "starte",
+        "start",
+        "workspace starten",
+        "container starten",
+        "hochfahren",
+        "oeffne",
+        "öffne",
+    )
+    _ACTIVE_CONTAINER_DEICTIC_MARKERS = (
+        "diesem container",
+        "dieser container",
+        "dieses container",
+        "in diesem container",
+        "im container",
+        "hier im container",
+        "aktuellen container",
+        "active container",
+        "current container",
+        "this container",
+    )
+    _ACTIVE_CONTAINER_CAPABILITY_MARKERS = (
+        "was kannst du",
+        "was kann",
+        "wofür",
+        "wofuer",
+        "wozu",
+        "zweck",
+        "was ist hier installiert",
+        "welche tools",
+        "welche tool",
+        "welche werkzeuge",
+        "was ist installiert",
+        "workspace",
+        "ordnerstruktur",
+        "verzeichnisstruktur",
+        "was gibt es hier",
+        "was ist hier drin",
+        "was kannst du hier",
+    )
+    _ACTIVE_CONTAINER_CAPABILITY_EXCLUDE_MARKERS = (
+        "starte",
+        "stoppe",
+        "deploy",
+        "lösche",
+        "loesche",
+        "erstelle",
+        "status",
+        "auslastung",
+        "logs",
+        "log",
+        "ip adresse",
+        "ip-adresse",
+        "host-ip",
+    )
+    _CONTAINER_INVENTORY_QUERY_MARKERS = (
+        "welche container hast du",
+        "welche container gibt es gerade",
+        "welche container laufen",
+        "welche container sind installiert",
+        "welche container sind gestoppt",
+        "running containers",
+        "stopped containers",
+        "installed containers",
+        "container list",
+        "container liste",
+        "list_running_containers",
+        "list_stopped_containers",
+        "list_attached_containers",
+        "list_active_session_containers",
+        "list_recently_used_containers",
+    )
+    _CONTAINER_BLUEPRINT_QUERY_MARKERS = (
+        "blueprint",
+        "blueprints",
+        "container blueprint",
+        "container blueprints",
+        "container-typ",
+        "container typen",
+        "containertypen",
+        "welche container kann ich starten",
+        "welche container koennte ich starten",
+        "welche sandboxes stehen zur auswahl",
+        "welche sandboxes gibt es",
+        "welche sandboxes",
+        "welche container sind startbar",
+        "installable blueprints",
+        "installierbare blueprints",
+        "list_container_blueprints",
+    )
+    _CONTAINER_STATE_QUERY_MARKERS = (
+        "welcher container ist aktiv",
+        "welcher container ist gerade aktiv",
+        "welcher container laeuft gerade fuer mich",
+        "current container",
+        "active container",
+        "aktiver container",
+        "aktueller container",
+        "session container",
+        "container binding",
+        "auf welchen container",
+        "get_active_container",
+        "get_current_container_binding",
+        "get_session_container_state",
+        "get_container_runtime_status",
+    )
+    _CONTAINER_REQUEST_QUERY_MARKERS = (
+        "starte container",
+        "start container",
+        "container starten",
+        "starte einen container",
+        "starte einen python-container",
+        "starte einen node-container",
+        "deploy",
+        "deploye",
+        "brauche sandbox",
+        "brauche container",
+        "python sandbox",
+        "node sandbox",
+        "python-container",
+        "node-container",
+    )
+    _SKILL_CATALOG_QUERY_MARKERS = (
+        "welche skills hast",
+        "welche skills sind installiert",
+        "welche arten von skills",
+        "was ist der unterschied zwischen tools und skills",
+        "was ist der unterschied zwischen skill und tool",
+        "was fehlt dir an skills",
+        "welche draft skills",
+        "was sind draft skills",
+        "welche session skills",
+        "welche codex skills",
+        "warum zeigt list_skills nicht",
+        "list_skills",
+    )
+    _SKILL_CATALOG_EXCLUDE_MARKERS = (
+        "skill erstellen",
+        "erstelle skill",
+        "create skill",
+        "skill ausführen",
+        "skill ausfuehren",
+        "führe skill",
+        "fuehre skill",
+        "run skill",
+        "installiere skill",
+        "skill installieren",
+        "validiere skill",
+        "validate skill",
+        "autonomous_skill_task",
+        "run_skill",
+        "create_skill",
+    )
     # RECALL-Tools (lesen) dürfen NIE supprimiert werden — nur ACTION-Tools (schreiben/ausführen).
     _LOW_SIGNAL_ACTION_TOOLS = frozenset({
         "memory_save",
@@ -529,16 +683,21 @@ class PipelineOrchestrator:
         "autonomy_cron_queue",
         "cron_reference_links_list",
     })
-    _DOMAIN_SKILL_TOOLS = frozenset({
+    _READ_ONLY_SKILL_TOOLS = frozenset({
+        "list_skills",
+        "list_draft_skills",
+        "get_skill_info",
+    })
+    _SKILL_ACTION_TOOLS = frozenset({
         "autonomous_skill_task",
         "run_skill",
         "create_skill",
-        "list_skills",
-        "get_skill_info",
         "validate_skill_code",
         "query_skill_knowledge",
     })
+    _DOMAIN_SKILL_TOOLS = frozenset(_READ_ONLY_SKILL_TOOLS.union(_SKILL_ACTION_TOOLS))
     _DOMAIN_CONTAINER_TOOLS = frozenset({
+        "home_start",
         "request_container",
         "stop_container",
         "exec_in_container",
@@ -599,6 +758,8 @@ class PipelineOrchestrator:
         "status": "container_stats",
         "logs": "container_logs",
         "list": "container_list",
+        "catalog": "blueprint_list",
+        "binding": "container_inspect",
         "exec": "exec_in_container",
         "inspect": "container_inspect",
         "ports": "list_used_ports",
@@ -697,37 +858,7 @@ class PipelineOrchestrator:
         conversation_id: str,
         history_len: int = 0,
     ) -> Optional[Dict[str, Any]]:
-        from config import (
-            get_followup_tool_reuse_ttl_s,
-            get_followup_tool_reuse_ttl_turns,
-        )
-
-        conv_id = str(conversation_id or "").strip()
-        if not conv_id:
-            return None
-        ttl_s = int(get_followup_tool_reuse_ttl_s())
-        ttl_turns = int(get_followup_tool_reuse_ttl_turns())
-        with self._conversation_container_lock:
-            state = self._conversation_container_state.get(conv_id)
-            if not isinstance(state, dict):
-                return None
-            age_s = time.time() - float(state.get("updated_at", 0.0) or 0.0)
-            if age_s > ttl_s:
-                self._conversation_container_state.pop(conv_id, None)
-                return None
-            state_history_len = int(state.get("history_len", 0) or 0)
-            if history_len > 0 and state_history_len > 0 and history_len >= state_history_len:
-                max_delta = max(2, ttl_turns * 2)
-                if (history_len - state_history_len) > max_delta:
-                    self._conversation_container_state.pop(conv_id, None)
-                    return None
-            return {
-                "last_active_container_id": str(state.get("last_active_container_id", "") or ""),
-                "home_container_id": str(state.get("home_container_id", "") or ""),
-                "known_containers": list(state.get("known_containers") or []),
-                "history_len": state_history_len,
-                "updated_at": float(state.get("updated_at", 0.0) or 0.0),
-            }
+        return self._container_state_store.get_recent(conversation_id, history_len)
 
     @staticmethod
     def _normalize_container_entries(rows: Any) -> List[Dict[str, str]]:
@@ -742,21 +873,13 @@ class PipelineOrchestrator:
         known_containers: Optional[List[Dict[str, str]]] = None,
         history_len: int = 0,
     ) -> None:
-        conv_id = str(conversation_id or "").strip()
-        if not conv_id:
-            return
-        with self._conversation_container_lock:
-            prev = self._conversation_container_state.get(conv_id, {})
-            merged_last_active = str(last_active_container_id or prev.get("last_active_container_id", "")).strip()
-            merged_home = str(home_container_id or prev.get("home_container_id", "")).strip()
-            merged_known = known_containers if isinstance(known_containers, list) else list(prev.get("known_containers") or [])
-            self._conversation_container_state[conv_id] = {
-                "updated_at": time.time(),
-                "history_len": int(history_len or 0),
-                "last_active_container_id": merged_last_active,
-                "home_container_id": merged_home,
-                "known_containers": merged_known[:64],
-            }
+        self._container_state_store.remember(
+            conversation_id,
+            last_active_container_id=last_active_container_id,
+            home_container_id=home_container_id,
+            known_containers=known_containers,
+            history_len=history_len,
+        )
 
     def _update_container_state_from_tool_result(
         self,
@@ -767,23 +890,11 @@ class PipelineOrchestrator:
         *,
         history_len: int = 0,
     ) -> None:
-        conv_id = str(conversation_id or "").strip()
-        if not conv_id:
-            return
-
-        state = self._get_recent_container_state(conv_id, history_len=history_len) or {}
-        merged = merge_container_state_from_tool_result(
-            state,
-            tool_name=tool_name,
-            tool_args=tool_args,
-            result=result,
-            expected_home_blueprint_id=self._expected_home_blueprint_id(),
-        )
-        self._remember_container_state(
-            conv_id,
-            last_active_container_id=str(merged.get("last_active_container_id", "")).strip(),
-            home_container_id=str(merged.get("home_container_id", "")).strip(),
-            known_containers=merged.get("known_containers", []),
+        self._container_state_store.update_from_tool_result(
+            conversation_id,
+            tool_name,
+            tool_args,
+            result,
             history_len=history_len,
         )
 
@@ -1036,7 +1147,6 @@ class PipelineOrchestrator:
             get_runtime_grounding_value(
                 verified_plan,
                 key="successful_evidence",
-                legacy_key="_grounding_successful_evidence",
                 default=0,
             )
             or 0
@@ -1352,6 +1462,7 @@ class PipelineOrchestrator:
         *,
         user_text: str = "",
         suggested_tools: Optional[List[Any]] = None,
+        verified_plan: Optional[Dict[str, Any]] = None,
     ) -> str:
         if not isinstance(route, dict):
             return ""
@@ -1360,6 +1471,14 @@ class PipelineOrchestrator:
             op = str(route.get("operation") or "").strip().lower()
             return self._DOMAIN_CRON_OP_TO_TOOL.get(op, "autonomy_cron_status")
         if tag == "SKILL":
+            if self._should_prioritize_skill_catalog_route(
+                verified_plan,
+                user_text=user_text,
+            ):
+                return self._select_read_only_skill_tool_for_query(
+                    user_text,
+                    verified_plan=verified_plan,
+                )
             return "autonomous_skill_task"
         if tag == "CONTAINER":
             op = str(route.get("operation") or "").strip().lower()
@@ -1427,8 +1546,14 @@ class PipelineOrchestrator:
         if not domain_locked or domain_tag not in {"CRONJOB", "SKILL", "CONTAINER"}:
             return plan
 
+        skill_catalog_route_priority = (
+            domain_tag == "SKILL"
+            and self._should_prioritize_skill_catalog_route(plan, user_text=user_text)
+        )
         if domain_tag == "CRONJOB":
             allowed = self._DOMAIN_CRON_TOOLS
+        elif skill_catalog_route_priority:
+            allowed = self._READ_ONLY_SKILL_TOOLS
         elif domain_tag == "SKILL":
             allowed = self._DOMAIN_SKILL_TOOLS
         else:
@@ -1449,6 +1574,7 @@ class PipelineOrchestrator:
                 route,
                 user_text=user_text,
                 suggested_tools=existing_list,
+                verified_plan=plan,
             )
             if seed_tool:
                 plan["suggested_tools"] = [seed_tool]
@@ -1457,6 +1583,8 @@ class PipelineOrchestrator:
         if domain_tag == "CRONJOB":
             # Hard guard for ControlLayer skill-confirmation fallback.
             plan["_domain_skill_confirmation_disabled"] = True
+        elif skill_catalog_route_priority:
+            plan["_skill_catalog_domain_priority"] = True
         return plan
 
     def _apply_domain_tool_policy(
@@ -1477,8 +1605,14 @@ class PipelineOrchestrator:
             return suggested_tools
 
         domain_tag = str(route.get("domain_tag") or "").strip().upper()
+        skill_catalog_route_priority = (
+            domain_tag == "SKILL"
+            and self._should_prioritize_skill_catalog_route(verified_plan, user_text=user_text)
+        )
         if domain_tag == "CRONJOB":
             allowed = self._DOMAIN_CRON_TOOLS
+        elif skill_catalog_route_priority:
+            allowed = self._READ_ONLY_SKILL_TOOLS
         elif domain_tag == "SKILL":
             allowed = self._DOMAIN_SKILL_TOOLS
         elif domain_tag == "CONTAINER":
@@ -1505,6 +1639,7 @@ class PipelineOrchestrator:
                     route,
                     user_text=user_text,
                     suggested_tools=suggested_tools,
+                    verified_plan=verified_plan,
                 )
                 if seed_tool and seed_tool in allowed:
                     filtered = [seed_tool]
@@ -1693,6 +1828,9 @@ class PipelineOrchestrator:
         self,
         thinking_plan: Dict[str, Any],
         tone_signal: Optional[Dict[str, Any]],
+        *,
+        user_text: str = "",
+        selected_tools: Optional[List[Any]] = None,
     ) -> Dict[str, Any]:
         try:
             from config import get_tone_signal_override_confidence
@@ -1703,6 +1841,10 @@ class PipelineOrchestrator:
             thinking_plan,
             tone_signal,
             override_threshold=override_threshold,
+            user_text=user_text,
+            selected_tools=selected_tools,
+            contains_explicit_tool_intent_fn=self._contains_explicit_tool_intent,
+            has_non_memory_tool_runtime_signal_fn=self._has_non_memory_tool_runtime_signal,
         )
 
     def _coerce_thinking_plan_schema(
@@ -2022,6 +2164,89 @@ class PipelineOrchestrator:
             }
         return None
 
+    def _prepare_container_candidate_evidence(
+        self,
+        user_text: str,
+        thinking_plan: Dict[str, Any],
+        *,
+        chat_history: Optional[list] = None,
+    ) -> None:
+        """
+        Populate advisory container-candidate evidence before Control.
+
+        This prepares blueprint matches for Control review, but does not decide
+        whether a container should actually be started.
+        """
+        if not isinstance(thinking_plan, dict):
+            return
+        suggested = list(thinking_plan.get("suggested_tools") or [])
+        if "request_container" not in suggested:
+            return
+
+        thinking_plan["needs_chat_history"] = True
+
+        history = list(chat_history or [])
+        blueprint_hint = ""
+        try:
+            for msg in reversed(history[-6:]):
+                content = self._message_content(msg)
+                if not content:
+                    continue
+                for candidate in re.findall(r"\b([a-z][a-z0-9]*(?:-[a-z0-9]+)+)\b", content.lower()):
+                    if candidate in {"follow-up", "step-by-step", "well-known", "real-time", "up-to-date", "built-in"}:
+                        continue
+                    if candidate not in str(user_text or "").lower():
+                        blueprint_hint = candidate
+                        raise StopIteration
+        except StopIteration:
+            pass
+        except Exception:
+            blueprint_hint = ""
+
+        if blueprint_hint and blueprint_hint.lower() not in str(thinking_plan.get("intent") or "").lower():
+            current_intent = str(thinking_plan.get("intent") or "").strip()
+            thinking_plan["intent"] = f"{current_intent} {blueprint_hint}".strip()
+            log_info(f"[Orchestrator] Container candidate hint injected: '{blueprint_hint}'")
+
+        decision = self._route_blueprint_request(user_text, thinking_plan)
+        resolution: Dict[str, Any] = {
+            "decision": "no_blueprint",
+            "blueprint_id": "",
+            "score": 0.0,
+            "reason": "",
+            "candidates": [],
+        }
+
+        if isinstance(decision, dict):
+            if decision.get("blocked"):
+                resolution["decision"] = "resolver_error"
+                resolution["reason"] = str(decision.get("reason") or "blueprint_router_unavailable")
+            else:
+                resolution["decision"] = "suggest_blueprint" if decision.get("suggest") else "use_blueprint"
+                resolution["blueprint_id"] = str(decision.get("blueprint_id") or "").strip()
+                try:
+                    resolution["score"] = float(decision.get("score") or 0.0)
+                except Exception:
+                    resolution["score"] = 0.0
+                resolution["reason"] = str(decision.get("reason") or "").strip()
+                resolution["candidates"] = list(decision.get("candidates") or [])
+
+        if not resolution["candidates"] and resolution["blueprint_id"]:
+            resolution["candidates"] = [
+                {
+                    "id": resolution["blueprint_id"],
+                    "score": float(resolution.get("score") or 0.0),
+                }
+            ]
+
+        thinking_plan["_container_resolution"] = resolution
+        thinking_plan["_container_candidates"] = list(resolution.get("candidates") or [])
+        log_info(
+            "[Orchestrator] Container candidate evidence prepared: "
+            f"decision={resolution['decision']} "
+            f"candidates={[c.get('id') for c in resolution.get('candidates', []) if isinstance(c, dict)]}"
+        )
+
     # ===============================================================
     # TASK LIFECYCLE POST-PROCESSING (Phase 2)
     # ===============================================================
@@ -2090,10 +2315,62 @@ class PipelineOrchestrator:
         text = str(user_text or "").strip().lower()
         if not text:
             return False
+        if cls._is_home_container_start_query(text):
+            return False
         has_home_marker = any(marker in text for marker in cls._HOME_CONTAINER_QUERY_MARKERS)
         if not has_home_marker:
             return False
         return any(marker in text for marker in cls._HOME_CONTAINER_PURPOSE_MARKERS) or "container" in text
+
+    @classmethod
+    def _is_home_container_start_query(cls, user_text: str) -> bool:
+        text = str(user_text or "").strip().lower()
+        if not text:
+            return False
+        has_home_marker = any(marker in text for marker in cls._HOME_CONTAINER_QUERY_MARKERS)
+        if not has_home_marker:
+            return False
+        return any(marker in text for marker in cls._HOME_CONTAINER_START_MARKERS)
+
+    def _rewrite_home_start_request_tools(
+        self,
+        user_text: str,
+        verified_plan: Optional[Dict[str, Any]],
+        suggested_tools: List[Any],
+        *,
+        prefix: str = "[Orchestrator]",
+    ) -> List[Any]:
+        if not self._is_home_container_start_query(user_text):
+            return suggested_tools
+
+        rewritten: List[Any] = []
+        seen = set()
+        replaced = False
+        for tool in suggested_tools or []:
+            name = self._extract_tool_name(tool).strip().lower()
+            if name == "request_container":
+                if "home_start" not in seen:
+                    rewritten.append("home_start")
+                    seen.add("home_start")
+                replaced = True
+                continue
+            if not name or name in seen:
+                continue
+            rewritten.append(tool)
+            seen.add(name)
+
+        if not replaced and "home_start" not in seen:
+            rewritten.insert(0, "home_start")
+            replaced = True
+
+        if "home_start" in seen and isinstance(verified_plan, dict):
+            verified_plan["_trion_home_start_fast_path"] = True
+            verified_plan["needs_chat_history"] = True
+            log_info(
+                f"{prefix} TRION Home start fast-path: "
+                f"{[self._extract_tool_name(t) for t in rewritten]}"
+            )
+        return rewritten
 
     def _prioritize_home_container_tools(
         self,
@@ -2507,10 +2784,20 @@ class PipelineOrchestrator:
         prefix = "[Orchestrator-Stream]" if stream else "[Orchestrator]"
         decisions = control_tool_decisions or {}
         has_control_decisions = bool(decisions)
+        authoritative_suggested_tools = list(
+            verified_plan.get("_authoritative_suggested_tools") or []
+        )
+        control_allowed_tools = list(
+            control_decision.tools_allowed
+            if isinstance(control_decision, ControlDecision) and control_decision.tools_allowed
+            else []
+        )
+        has_control_authority = bool(
+            has_control_decisions or authoritative_suggested_tools or control_allowed_tools
+        )
         if isinstance(control_decision, ControlDecision) and not control_decision.approved:
-            verified_plan["_selected_tools_for_prompt"] = []
             log_info(f"{prefix} Tool execution suppressed (control_decision.approved=false)")
-            return []
+            return self._finalize_execution_suggested_tools(verified_plan, [])
         suppress_low_signal_tools = self._should_suppress_conversational_tools(
             user_text, verified_plan
         )
@@ -2518,6 +2805,12 @@ class PipelineOrchestrator:
         if decisions:
             suggested_tools = list(decisions.keys())
             log_info(f"{prefix} ControlLayer tools (authoritative): {suggested_tools}")
+        elif authoritative_suggested_tools:
+            suggested_tools = list(authoritative_suggested_tools)
+            log_info(f"{prefix} Authoritative control suggested_tools: {suggested_tools}")
+        elif control_allowed_tools:
+            suggested_tools = list(control_allowed_tools)
+            log_info(f"{prefix} ControlLayer tools_allowed fallback: {suggested_tools}")
         else:
             suggested_tools = verified_plan.get("suggested_tools", [])
             if suggested_tools:
@@ -2541,11 +2834,7 @@ class PipelineOrchestrator:
                         ]
                     log_info(f"{prefix} Confirmation follow-up reuse: {suggested_tools}")
                     verified_plan["needs_chat_history"] = True
-                    verified_plan["_selected_tools_for_prompt"] = [
-                        t["tool"] if isinstance(t, dict) and "tool" in t else str(t)
-                        for t in suggested_tools
-                    ]
-                    return suggested_tools
+                    return self._finalize_execution_suggested_tools(verified_plan, suggested_tools)
 
         # Validate + Normalize: filters invalid tools, maps skill names -> run_skill.
         suggested_tools = self._normalize_tools(suggested_tools)
@@ -2554,13 +2843,37 @@ class PipelineOrchestrator:
                 t for t in suggested_tools
                 if tool_allowed_by_control_decision(control_decision, self._extract_tool_name(t))
             ]
+        resolution_strategy = self._get_effective_resolution_strategy(verified_plan)
+        if resolution_strategy:
+            log_info(f"{prefix} Effective resolution_strategy={resolution_strategy}")
         suggested_tools = self._prioritize_home_container_tools(
             user_text,
             verified_plan,
             suggested_tools,
             prefix=prefix,
         )
-        if has_control_decisions:
+        suggested_tools = self._rewrite_home_start_request_tools(
+            user_text,
+            verified_plan,
+            suggested_tools,
+            prefix=prefix,
+        )
+        suggested_tools = self._prioritize_active_container_capability_tools(
+            user_text,
+            verified_plan,
+            suggested_tools,
+            conversation_id=conversation_id,
+            force=resolution_strategy == "active_container_capability",
+            prefix=prefix,
+        )
+        suggested_tools = self._apply_container_query_policy(
+            user_text,
+            verified_plan,
+            suggested_tools,
+            conversation_id=conversation_id,
+            prefix=prefix,
+        )
+        if has_control_authority:
             log_info(f"{prefix} Post-control tool policies bypassed (Control authority)")
         else:
             suggested_tools = self._apply_query_budget_tool_policy(
@@ -2576,7 +2889,7 @@ class PipelineOrchestrator:
                 prefix=prefix,
             )
 
-        if suppress_low_signal_tools and suggested_tools and not has_control_decisions:
+        if suppress_low_signal_tools and suggested_tools and not has_control_authority:
             policy = self.tool_execution_policy or {}
             conv_cfg = policy.get("conversational_guard", {}) if isinstance(policy, dict) else {}
             suppressed_exec_tools = {
@@ -2596,7 +2909,7 @@ class PipelineOrchestrator:
                 log_info(
                     f"{prefix} Suppressed conversational tools for turn: dropped={dropped}"
                 )
-        elif suppress_low_signal_tools and suggested_tools and has_control_decisions:
+        elif suppress_low_signal_tools and suggested_tools and has_control_authority:
             log_info(f"{prefix} Conversational suppress bypassed (Control authority)")
 
         if not suggested_tools:
@@ -2615,15 +2928,10 @@ class PipelineOrchestrator:
                     ]
                 log_info(f"{prefix} Follow-up tool reuse: {suggested_tools}")
                 verified_plan["needs_chat_history"] = True
-                verified_plan["_selected_tools_for_prompt"] = [
-                    t["tool"] if isinstance(t, dict) and "tool" in t else str(t)
-                    for t in suggested_tools
-                ]
-                return suggested_tools
+                return self._finalize_execution_suggested_tools(verified_plan, suggested_tools)
             if suppress_low_signal_tools:
-                verified_plan["_selected_tools_for_prompt"] = []
                 log_info(f"{prefix} Tool fallback suppressed for conversational turn")
-                return []
+                return self._finalize_execution_suggested_tools(verified_plan, [])
             suggested_tools = self._detect_tools_by_keyword(user_text)
             if suggested_tools:
                 suggested_tools = self._normalize_tools(suggested_tools)
@@ -2648,7 +2956,7 @@ class PipelineOrchestrator:
             else:
                 log_info("[Orchestrator] Skill Trigger Router skipped (no explicit skill intent)")
 
-        if not has_control_decisions:
+        if not has_control_authority:
             suggested_tools = self._apply_domain_tool_policy(
                 verified_plan,
                 suggested_tools,
@@ -2657,7 +2965,7 @@ class PipelineOrchestrator:
             )
 
         _host_runtime_requested = self._looks_like_host_runtime_lookup(user_text)
-        if not has_control_decisions:
+        if not has_control_authority:
             _host_tools = enforce_host_runtime_exec_first(
                 user_text=user_text,
                 suggested_tools=suggested_tools,
@@ -2673,12 +2981,167 @@ class PipelineOrchestrator:
                 )
                 suggested_tools = _host_tools
 
-        # OutputLayer prompt hygiene: pass only request-scoped selected tools.
-        verified_plan["_selected_tools_for_prompt"] = [
-            t["tool"] if isinstance(t, dict) and "tool" in t else str(t)
-            for t in suggested_tools
+        return self._finalize_execution_suggested_tools(verified_plan, suggested_tools)
+
+    def _tool_name_list(self, suggested_tools: Optional[List[Any]]) -> List[str]:
+        out: List[str] = []
+        for tool in suggested_tools or []:
+            name = self._extract_tool_name(tool).strip()
+            if name:
+                out.append(name)
+        return out
+
+    def _materialize_skill_catalog_policy(
+        self,
+        verified_plan: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        if not isinstance(verified_plan, dict):
+            return {}
+        if self._get_effective_resolution_strategy(verified_plan) != "skill_catalog_context":
+            return {}
+
+        raw_hints = verified_plan.get("strategy_hints")
+        strategy_hints = [
+            str(hint or "").strip().lower()
+            for hint in (raw_hints if isinstance(raw_hints, list) else [])
+            if str(hint or "").strip()
         ]
-        return suggested_tools
+        hint_set = set(strategy_hints)
+
+        suggested_tools = self._tool_name_list(
+            verified_plan.get("_authoritative_suggested_tools")
+            or verified_plan.get("suggested_tools")
+            or []
+        )
+        read_only_tools = [
+            name for name in suggested_tools if name in self._READ_ONLY_SKILL_TOOLS
+        ]
+        has_non_read_only_skill_tools = any(
+            name in self._SKILL_ACTION_TOOLS for name in suggested_tools
+        )
+        followup_split_required = bool("fact_then_followup" in hint_set)
+
+        required_tools: List[str] = []
+
+        def _add_required(tool_name: str) -> None:
+            if tool_name and tool_name not in required_tools:
+                required_tools.append(tool_name)
+
+        draft_focus = "list_draft_skills" in read_only_tools or (
+            "draft_skills" in hint_set and not followup_split_required
+        )
+        runtime_focus = bool(
+            {
+                "runtime_skills",
+                "tools_vs_skills",
+                "overview",
+                "fact_then_followup",
+            }.intersection(hint_set)
+        ) or "list_skills" in read_only_tools
+
+        if draft_focus:
+            _add_required("list_draft_skills")
+        if runtime_focus or not required_tools:
+            _add_required("list_skills")
+        if "get_skill_info" in read_only_tools:
+            _add_required("get_skill_info")
+
+        force_sections = ["Runtime-Skills", "Einordnung"]
+        if followup_split_required:
+            force_sections.append("Wunsch-Skills")
+
+        policy = {
+            "mode": "mixed" if has_non_read_only_skill_tools else "inventory_read_only",
+            "required_tools": required_tools,
+            "force_sections": force_sections,
+            "draft_explanation_required": bool(
+                draft_focus or "tools_vs_skills" in hint_set
+            ),
+            "followup_split_required": followup_split_required,
+            "allow_sequential": False,
+            "semantic_guardrails_only": True,
+            "selected_hints": strategy_hints,
+        }
+        verified_plan["_skill_catalog_policy"] = policy
+        return policy
+
+    def _record_execution_tool_trace(
+        self,
+        verified_plan: Optional[Dict[str, Any]],
+        suggested_tools: Optional[List[Any]],
+    ) -> None:
+        if not isinstance(verified_plan, dict):
+            return
+        thinking_tools = self._tool_name_list(
+            verified_plan.get("_thinking_suggested_tools")
+            or verified_plan.get("suggested_tools")
+            or []
+        )
+        final_tools = self._tool_name_list(suggested_tools)
+        verified_plan["_thinking_suggested_tools"] = thinking_tools
+        verified_plan["_final_execution_tools"] = final_tools
+
+        if self._get_effective_resolution_strategy(verified_plan) != "skill_catalog_context":
+            return
+
+        domain_gate = verified_plan.get("_domain_gate")
+        domain_gate = domain_gate if isinstance(domain_gate, dict) else {}
+        dropped = int(domain_gate.get("dropped", 0) or 0)
+        domain_seeded = bool(verified_plan.get("_domain_tool_seeded"))
+        changed = final_tools != thinking_tools
+        if not final_tools and thinking_tools:
+            status = "suppressed"
+        elif changed or domain_seeded:
+            status = "rerouted"
+        else:
+            status = "unchanged"
+        reasons: List[str] = []
+        if bool(verified_plan.get("_skill_catalog_domain_priority")) or (
+            status in {"rerouted", "suppressed"}
+            and self._get_effective_resolution_strategy(verified_plan) == "skill_catalog_context"
+        ):
+            reasons.append("skill_catalog_priority")
+        if domain_seeded:
+            reasons.append("domain_seeded")
+        if dropped > 0:
+            reasons.append(f"domain_filtered:{dropped}")
+        if changed and not reasons:
+            reasons.append("tool_selection_changed")
+        verified_plan["_skill_catalog_tool_route"] = {
+            "status": status,
+            "reason": ", ".join(reasons) if reasons else "none",
+            "thinking_suggested_tools": thinking_tools,
+            "final_execution_tools": final_tools,
+        }
+
+    def _finalize_execution_suggested_tools(
+        self,
+        verified_plan: Optional[Dict[str, Any]],
+        suggested_tools: Optional[List[Any]],
+    ) -> List[Any]:
+        selected = list(suggested_tools or [])
+        if isinstance(verified_plan, dict):
+            verified_plan["_selected_tools_for_prompt"] = self._tool_name_list(selected)
+        self._record_execution_tool_trace(verified_plan, selected)
+        return selected
+
+    @staticmethod
+    def _get_effective_resolution_strategy(verified_plan: Optional[Dict[str, Any]]) -> str:
+        if not isinstance(verified_plan, dict):
+            return ""
+        for key in ("_authoritative_resolution_strategy", "resolution_strategy"):
+            strategy = str(verified_plan.get(key) or "").strip().lower()
+            if strategy in {
+                "container_inventory",
+                "container_blueprint_catalog",
+                "container_state_binding",
+                "container_request",
+                "active_container_capability",
+                "home_container_info",
+                "skill_catalog_context",
+            }:
+                return strategy
+        return ""
 
     def _detect_tools_by_keyword(self, user_text: str) -> list:
         """Keyword-based tool detection fallback when Thinking suggests none."""
@@ -2706,25 +3169,31 @@ class PipelineOrchestrator:
             return [{"tool": "run_skill", "args": {"name": "system_hardware_info", "action": "run", "args": {}}}]
         if any(kw in user_lower for kw in ["skill", "skills", "fähigkeit"]):
             if any(kw in user_lower for kw in ["zeig", "list", "welche", "hast du", "installiert", "verfügbar"]):
+                if any(kw in user_lower for kw in ["draft", "entwurf", "noch nicht aktiv", "nicht aktiv"]):
+                    return ["list_draft_skills"]
                 return ["list_skills"]
             elif any(kw in user_lower for kw in ["erstell", "create", "bau", "mach"]):
                 return ["autonomous_skill_task"]
         elif self._is_home_container_info_query(user_lower):
             return ["container_list", {"tool": "home_read", "args": {"path": "."}}]
+        elif self._is_home_container_start_query(user_lower):
+            return ["home_start"]
+        elif self._is_active_container_capability_query(user_lower):
+            return ["container_inspect"]
+        elif self._is_container_state_binding_query(user_lower):
+            return ["container_list"]
         elif any(kw in user_lower for kw in ["erinnerst du", "weißt du noch", "was weißt du über"]):
             return ["memory_graph_search"]
         elif any(kw in user_lower for kw in ["merk dir", "speicher", "remember"]):
             return ["memory_fact_save"]
         # Container Commander — Blueprint listing
-        elif any(kw in user_lower for kw in ["blueprint", "blueprints", "container-typ", "container typen"]):
+        elif self._is_container_blueprint_catalog_query(user_lower):
             return ["blueprint_list"]
-        elif any(kw in user_lower for kw in ["welche container", "verfügbare container", "was für container", "container liste", "welche sandbox", "verfügbare sandbox"]):
-            return ["blueprint_list"]
+        elif self._is_container_inventory_query(user_lower):
+            return ["container_list"]
         # Container Commander — Start/Deploy
-        elif any(kw in user_lower for kw in [
-            "starte container", "start container", "deploy container", "container starten",
-            "starte einen", "deploy blueprint", "brauche sandbox", "brauche container",
-            "python container", "node container", "python sandbox", "node sandbox",
+        elif self._is_container_request_query(user_lower) or any(kw in user_lower for kw in [
+            "deploy container", "starte einen", "deploy blueprint", "python container", "node container",
             "starte python", "starte node", "starte sandbox"
         ]):
             return ["request_container"]
@@ -2748,6 +3217,877 @@ class PipelineOrchestrator:
         ]):
             return ["request_container", "exec_in_container"]
         return []
+
+    @staticmethod
+    def _container_state_has_active_target(state: Optional[Dict[str, Any]]) -> bool:
+        if not isinstance(state, dict):
+            return False
+        if str(state.get("last_active_container_id", "")).strip():
+            return True
+        if str(state.get("home_container_id", "")).strip():
+            return True
+        for row in state.get("known_containers") or []:
+            if not isinstance(row, dict):
+                continue
+            if str(row.get("status", "")).strip().lower() == "running":
+                return True
+        return False
+
+    @classmethod
+    def _is_active_container_capability_query(cls, user_text: str) -> bool:
+        text = str(user_text or "").strip().lower()
+        if not text:
+            return False
+        if any(marker in text for marker in cls._ACTIVE_CONTAINER_CAPABILITY_EXCLUDE_MARKERS):
+            return False
+        has_deictic_marker = any(marker in text for marker in cls._ACTIVE_CONTAINER_DEICTIC_MARKERS)
+        if not has_deictic_marker:
+            return False
+        return any(marker in text for marker in cls._ACTIVE_CONTAINER_CAPABILITY_MARKERS)
+
+    @classmethod
+    def _is_container_inventory_query(cls, user_text: str) -> bool:
+        text = str(user_text or "").strip().lower()
+        if not text:
+            return False
+        if cls._is_container_blueprint_catalog_query(text) or cls._is_container_request_query(text):
+            return False
+        return any(marker in text for marker in cls._CONTAINER_INVENTORY_QUERY_MARKERS)
+
+    @classmethod
+    def _is_container_blueprint_catalog_query(cls, user_text: str) -> bool:
+        text = str(user_text or "").strip().lower()
+        if not text:
+            return False
+        if cls._is_container_request_query(text):
+            return False
+        return any(marker in text for marker in cls._CONTAINER_BLUEPRINT_QUERY_MARKERS)
+
+    @classmethod
+    def _is_container_state_binding_query(cls, user_text: str) -> bool:
+        text = str(user_text or "").strip().lower()
+        if not text:
+            return False
+        if cls._is_active_container_capability_query(text):
+            return False
+        return any(marker in text for marker in cls._CONTAINER_STATE_QUERY_MARKERS)
+
+    @classmethod
+    def _is_container_request_query(cls, user_text: str) -> bool:
+        text = str(user_text or "").strip().lower()
+        if not text:
+            return False
+        return any(marker in text for marker in cls._CONTAINER_REQUEST_QUERY_MARKERS)
+
+    @classmethod
+    def _is_skill_catalog_context_query(cls, user_text: str) -> bool:
+        text = str(user_text or "").strip().lower().replace("-", " ")
+        if not text:
+            return False
+        if any(marker in text for marker in cls._SKILL_CATALOG_EXCLUDE_MARKERS):
+            return False
+        return any(marker in text for marker in cls._SKILL_CATALOG_QUERY_MARKERS)
+
+    def _should_prioritize_skill_catalog_route(
+        self,
+        verified_plan: Optional[Dict[str, Any]],
+        *,
+        user_text: str = "",
+    ) -> bool:
+        if self._get_effective_resolution_strategy(verified_plan) == "skill_catalog_context":
+            return True
+        return self._is_skill_catalog_context_query(user_text)
+
+    def _select_read_only_skill_tool_for_query(
+        self,
+        user_text: str,
+        *,
+        verified_plan: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        hints = verified_plan.get("strategy_hints") if isinstance(verified_plan, dict) else []
+        normalized_hints = {
+            str(hint or "").strip().lower()
+            for hint in (hints if isinstance(hints, list) else [])
+            if str(hint or "").strip()
+        }
+        normalized_text = str(user_text or "").strip().lower().replace("-", " ")
+        if "draft_skills" in normalized_hints or "draft skill" in normalized_text:
+            return "list_draft_skills"
+        return "list_skills"
+
+    def _prioritize_active_container_capability_tools(
+        self,
+        user_text: str,
+        verified_plan: Dict[str, Any],
+        suggested_tools: List[Any],
+        *,
+        conversation_id: str = "",
+        force: bool = False,
+        prefix: str = "[Orchestrator]",
+    ) -> List[Any]:
+        if not isinstance(verified_plan, dict):
+            return suggested_tools
+        if not bool(verified_plan.get("is_fact_query", False)):
+            return suggested_tools
+        if not force and not self._is_active_container_capability_query(user_text):
+            return suggested_tools
+
+        container_state = self._get_recent_container_state(conversation_id) if conversation_id else None
+        if not self._container_state_has_active_target(container_state):
+            return suggested_tools
+
+        adjusted: List[Any] = ["container_inspect"]
+        seen = {"container_inspect"}
+        for tool in suggested_tools or []:
+            name = self._extract_tool_name(tool).strip().lower()
+            if not name or name in seen:
+                continue
+            if name in {"exec_in_container", "container_stats", "container_list", "query_skill_knowledge"}:
+                continue
+            adjusted.append(tool)
+            seen.add(name)
+
+        log_info(
+            f"{prefix} Active-container capability override: "
+            f"{[self._extract_tool_name(t) for t in adjusted]}"
+        )
+        verified_plan["needs_chat_history"] = True
+        return adjusted
+
+    def _materialize_container_query_policy(
+        self,
+        verified_plan: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        if not isinstance(verified_plan, dict):
+            return {}
+        strategy = self._get_effective_resolution_strategy(verified_plan)
+        if strategy not in {
+            "container_inventory",
+            "container_blueprint_catalog",
+            "container_state_binding",
+            "container_request",
+            "active_container_capability",
+        }:
+            return {}
+
+        if strategy == "container_inventory":
+            policy = {
+                "query_class": strategy,
+                "required_tools": ["container_list"],
+                "truth_mode": "runtime_inventory",
+            }
+        elif strategy == "container_blueprint_catalog":
+            policy = {
+                "query_class": strategy,
+                "required_tools": ["blueprint_list"],
+                "truth_mode": "blueprint_catalog",
+            }
+        elif strategy == "container_state_binding":
+            policy = {
+                "query_class": strategy,
+                "required_tools": ["container_inspect", "container_list"],
+                "truth_mode": "session_binding",
+            }
+        elif strategy == "container_request":
+            policy = {
+                "query_class": strategy,
+                "required_tools": ["request_container", "home_start"],
+                "truth_mode": "request_flow",
+            }
+        else:
+            policy = {
+                "query_class": strategy,
+                "required_tools": ["container_inspect"],
+                "truth_mode": "active_container_capability",
+            }
+        verified_plan["_container_query_policy"] = policy
+        return policy
+
+    def _apply_container_query_policy(
+        self,
+        user_text: str,
+        verified_plan: Dict[str, Any],
+        suggested_tools: List[Any],
+        *,
+        conversation_id: str = "",
+        prefix: str = "[Orchestrator]",
+    ) -> List[Any]:
+        if not isinstance(verified_plan, dict):
+            return suggested_tools
+
+        strategy = self._get_effective_resolution_strategy(verified_plan)
+        if not strategy:
+            if self._is_active_container_capability_query(user_text):
+                strategy = "active_container_capability"
+            elif self._is_container_state_binding_query(user_text):
+                strategy = "container_state_binding"
+            elif self._is_container_blueprint_catalog_query(user_text):
+                strategy = "container_blueprint_catalog"
+            elif self._is_container_request_query(user_text):
+                strategy = "container_request"
+            elif self._is_container_inventory_query(user_text):
+                strategy = "container_inventory"
+        if strategy not in {
+            "container_inventory",
+            "container_blueprint_catalog",
+            "container_state_binding",
+            "container_request",
+            "active_container_capability",
+        }:
+            return suggested_tools
+
+        policy = self._materialize_container_query_policy(verified_plan)
+        container_state = self._get_recent_container_state(conversation_id) if conversation_id else None
+        has_active_target = self._container_state_has_active_target(container_state)
+
+        if strategy == "container_inventory":
+            adjusted = ["container_list"]
+        elif strategy == "container_blueprint_catalog":
+            adjusted = ["blueprint_list"]
+        elif strategy == "container_request":
+            if self._is_home_container_start_query(user_text):
+                adjusted = ["home_start"]
+                verified_plan["_trion_home_start_fast_path"] = True
+                verified_plan["needs_chat_history"] = True
+                if policy:
+                    policy["truth_mode"] = "home_start_reuse"
+            else:
+                adjusted = ["request_container"]
+        elif strategy == "container_state_binding":
+            adjusted = ["container_inspect"] if has_active_target else ["container_list"]
+            verified_plan["needs_chat_history"] = True
+        else:
+            adjusted = suggested_tools
+
+        if strategy != "active_container_capability":
+            adjusted_names = [self._extract_tool_name(t) for t in adjusted]
+            if self._tool_name_list(suggested_tools) != adjusted_names:
+                log_info(
+                    f"{prefix} Container query policy override: strategy={strategy} "
+                    f"tools={adjusted_names}"
+                )
+            if policy:
+                policy["selected_tools"] = adjusted_names
+            return adjusted
+
+        if policy:
+            policy["selected_tools"] = self._tool_name_list(suggested_tools)
+        return suggested_tools
+
+    @staticmethod
+    def _merge_grounding_evidence_items(
+        existing: Any,
+        extra: Any,
+    ) -> List[Dict[str, Any]]:
+        merged: List[Dict[str, Any]] = []
+        seen = set()
+        for source in (existing or [], extra or []):
+            if not isinstance(source, list):
+                continue
+            for item in source:
+                if not isinstance(item, dict):
+                    continue
+                sig = (
+                    str(item.get("tool_name", "")).strip(),
+                    str(item.get("ref_id", "")).strip(),
+                    str(item.get("status", "")).strip().lower(),
+                    tuple(str(x).strip() for x in (item.get("key_facts") or [])[:3])
+                    if isinstance(item.get("key_facts"), list)
+                    else (),
+                )
+                if sig in seen:
+                    continue
+                seen.add(sig)
+                merged.append(item)
+        return merged
+
+    @staticmethod
+    def _derive_container_addon_tags_from_inspect(container_info: Dict[str, Any]) -> List[str]:
+        if not isinstance(container_info, dict):
+            return []
+        tags = {
+            "container-shell",
+            str(container_info.get("blueprint_id", "")).strip().lower(),
+            str(container_info.get("name", "")).strip().lower(),
+        }
+        image_ref = str(container_info.get("image", "")).strip().lower()
+        if image_ref:
+            tags.update(part for part in re.split(r"[^a-z0-9]+", image_ref) if len(part) >= 3)
+        if bool(container_info.get("running")):
+            tags.add("running")
+        return sorted(tag for tag in tags if tag and tag != "(none)")
+
+    @staticmethod
+    def _parse_list_skills_runtime_snapshot(raw_result: Any) -> Dict[str, Any]:
+        payload = raw_result
+        if isinstance(payload, dict) and isinstance(payload.get("structuredContent"), dict):
+            payload = payload.get("structuredContent", {})
+        if not isinstance(payload, dict):
+            return {}
+
+        installed_rows = payload.get("installed") if isinstance(payload.get("installed"), list) else []
+        available_rows = payload.get("available") if isinstance(payload.get("available"), list) else []
+        installed_names: List[str] = []
+        for row in installed_rows:
+            if isinstance(row, dict):
+                name = str(row.get("name") or "").strip()
+            else:
+                name = str(row or "").strip()
+            if name:
+                installed_names.append(name)
+
+        try:
+            installed_count = int(payload.get("installed_count"))
+        except Exception:
+            installed_count = len(installed_rows)
+        try:
+            available_count = int(payload.get("available_count"))
+        except Exception:
+            available_count = len(available_rows)
+
+        return {
+            "installed": installed_rows,
+            "installed_names": installed_names,
+            "installed_count": installed_count,
+            "available": available_rows,
+            "available_count": available_count,
+            "raw_payload": payload,
+        }
+
+    @staticmethod
+    def _parse_list_draft_skills_snapshot(raw_result: Any) -> Dict[str, Any]:
+        payload = raw_result
+        if isinstance(payload, dict) and isinstance(payload.get("structuredContent"), dict):
+            payload = payload.get("structuredContent", {})
+        if not isinstance(payload, dict):
+            return {}
+
+        draft_rows = payload.get("drafts") if isinstance(payload.get("drafts"), list) else []
+        draft_names: List[str] = []
+        for row in draft_rows:
+            if isinstance(row, dict):
+                name = str(row.get("name") or "").strip()
+            else:
+                name = str(row or "").strip()
+            if name:
+                draft_names.append(name)
+
+        return {
+            "drafts": draft_rows,
+            "draft_names": draft_names,
+            "draft_count": len(draft_rows),
+            "raw_payload": payload,
+        }
+
+    @staticmethod
+    def _summarize_skill_runtime_snapshot(snapshot: Dict[str, Any]) -> str:
+        if not isinstance(snapshot, dict):
+            return ""
+        installed_count = snapshot.get("installed_count")
+        draft_count = snapshot.get("draft_count")
+        available_count = snapshot.get("available_count")
+        installed_names = list(snapshot.get("installed_names") or [])
+        draft_names = list(snapshot.get("draft_names") or [])
+
+        lines = ["Live runtime skill snapshot:"]
+        if installed_count is not None:
+            lines.append(f"- installed_runtime_skills: {installed_count}")
+        if draft_count is not None:
+            lines.append(f"- draft_skills: {draft_count}")
+        if available_count is not None:
+            lines.append(f"- available_skills: {available_count}")
+        if installed_names:
+            lines.append(f"- installed_examples: {', '.join(installed_names[:6])}")
+        if draft_names:
+            lines.append(f"- draft_examples: {', '.join(draft_names[:6])}")
+        return "\n".join(lines).strip() if len(lines) > 1 else ""
+
+    @staticmethod
+    def _summarize_skill_registry_snapshot(snapshot: Dict[str, Any]) -> str:
+        if not isinstance(snapshot, dict):
+            return ""
+        active_names = list(snapshot.get("active_names") or [])
+        draft_names = list(snapshot.get("draft_names") or [])
+        lines = [
+            f"active_count: {int(snapshot.get('active_count', len(active_names)) or 0)}",
+            f"draft_count: {int(snapshot.get('draft_count', len(draft_names)) or 0)}",
+        ]
+        if active_names:
+            lines.append("active_names: " + ", ".join(active_names[:8]))
+        if draft_names:
+            lines.append("draft_names: " + ", ".join(draft_names[:8]))
+        return "\n".join(lines).strip()
+
+    @staticmethod
+    def _summarize_container_inspect_for_capability_context(container_info: Dict[str, Any]) -> str:
+        if not isinstance(container_info, dict):
+            return ""
+
+        resource_limits = container_info.get("resource_limits") or {}
+        cpu_count = resource_limits.get("cpu_count")
+        memory_mb = resource_limits.get("memory_mb")
+        mounts = container_info.get("mounts") if isinstance(container_info.get("mounts"), list) else []
+        ports = container_info.get("ports") if isinstance(container_info.get("ports"), list) else []
+        port_values: List[str] = []
+        for item in ports[:6]:
+            if isinstance(item, dict):
+                host_port = str(item.get("host_port") or item.get("published") or "").strip()
+                container_port = str(item.get("container_port") or item.get("target") or "").strip()
+                protocol = str(item.get("protocol") or "").strip()
+                if host_port and container_port:
+                    port_values.append(f"{host_port}->{container_port}/{protocol or 'tcp'}")
+                elif host_port or container_port:
+                    port_values.append(host_port or container_port)
+            elif str(item).strip():
+                port_values.append(str(item).strip())
+
+        lines = [
+            "Active container identity:",
+            f"- container_id: {str(container_info.get('container_id') or '').strip() or '(unknown)'}",
+            f"- name: {str(container_info.get('name') or '').strip() or '(unknown)'}",
+            f"- blueprint_id: {str(container_info.get('blueprint_id') or '').strip() or '(unknown)'}",
+            f"- image: {str(container_info.get('image') or '').strip() or '(unknown)'}",
+            f"- status: {str(container_info.get('status') or '').strip() or '(unknown)'}",
+            f"- network: {str(container_info.get('network') or '').strip() or '(unknown)'}",
+        ]
+        if cpu_count or memory_mb:
+            lines.append(f"- resource_limits: cpu={cpu_count or '?'} memory_mb={memory_mb or '?'}")
+        if mounts:
+            lines.append(f"- mounts: {', '.join(str(item).strip() for item in mounts[:4] if str(item).strip())}")
+        if port_values:
+            lines.append(f"- ports: {', '.join(port_values[:4])}")
+        deploy_warnings = container_info.get("deploy_warnings")
+        if isinstance(deploy_warnings, list) and deploy_warnings:
+            lines.append(
+                f"- deploy_warnings: {', '.join(str(item).strip() for item in deploy_warnings[:3] if str(item).strip())}"
+            )
+        return "\n".join(lines).strip()
+
+    async def _maybe_build_active_container_capability_context(
+        self,
+        *,
+        user_text: str,
+        conversation_id: str,
+        verified_plan: Dict[str, Any],
+        history_len: int = 0,
+    ) -> Dict[str, str]:
+        if not isinstance(verified_plan, dict):
+            return {}
+        if not self._is_active_container_capability_query(user_text):
+            return {}
+
+        container_state = self._get_recent_container_state(conversation_id, history_len=history_len)
+        if not self._container_state_has_active_target(container_state):
+            return {}
+
+        tool_hub = get_hub()
+        tool_hub.initialize()
+        preferred_ids = []
+        if isinstance(container_state, dict):
+            preferred_ids.extend(
+                [
+                    str(container_state.get("last_active_container_id", "")).strip(),
+                    str(container_state.get("home_container_id", "")).strip(),
+                ]
+            )
+
+        container_id = ""
+        for candidate in preferred_ids:
+            if candidate:
+                container_id = candidate
+                break
+        if not container_id:
+            container_id, _reason = await self._resolve_pending_container_id_async(
+                tool_hub,
+                conversation_id,
+                preferred_ids=preferred_ids,
+                history_len=history_len,
+            )
+        if not container_id:
+            return {}
+
+        try:
+            if hasattr(tool_hub, "call_tool_async"):
+                inspect_result = await tool_hub.call_tool_async(
+                    "container_inspect",
+                    {"container_id": container_id},
+                )
+            else:
+                inspect_result = await asyncio.to_thread(
+                    tool_hub.call_tool,
+                    "container_inspect",
+                    {"container_id": container_id},
+                )
+        except Exception as exc:
+            log_warn(
+                f"[Orchestrator] Active-container capability inspect skipped: {self._safe_str(exc, max_len=160)}"
+            )
+            return {}
+
+        if not isinstance(inspect_result, dict) or str(inspect_result.get("error", "")).strip():
+            return {}
+
+        self._update_container_state_from_tool_result(
+            conversation_id,
+            "container_inspect",
+            {"container_id": container_id},
+            inspect_result,
+            history_len=history_len,
+        )
+
+        inspect_summary = self._summarize_container_inspect_for_capability_context(inspect_result)
+        if not inspect_summary:
+            return {}
+
+        inspect_card, inspect_ref = self._build_tool_result_card(
+            "container_inspect",
+            inspect_summary,
+            "ok",
+            conversation_id,
+        )
+        evidence_items = [
+            self._build_grounding_evidence_entry(
+                "container_inspect",
+                inspect_summary,
+                "ok",
+                inspect_ref,
+            )
+        ]
+
+        addon_context_text = ""
+        addon_docs_text = ""
+        addon_tool_results = ""
+        try:
+            from intelligence_modules.container_addons.loader import load_container_addon_context
+
+            addon_context = await load_container_addon_context(
+                blueprint_id=str(inspect_result.get("blueprint_id") or "").strip(),
+                image_ref=str(inspect_result.get("image") or "").strip(),
+                instruction=user_text,
+                query_class="active_container_capability",
+                shell_tail="",
+                container_tags=self._derive_container_addon_tags_from_inspect(inspect_result),
+            )
+            selected_docs = list(addon_context.get("selected_docs") or [])
+            addon_context_text = str(addon_context.get("context_text") or "").strip()
+            if selected_docs:
+                addon_docs_text = ", ".join(
+                    str(item.get("id") or item.get("title") or "").strip()
+                    for item in selected_docs[:4]
+                    if isinstance(item, dict) and str(item.get("id") or item.get("title") or "").strip()
+                )
+            if addon_context_text:
+                addon_summary_parts = []
+                if addon_docs_text:
+                    addon_summary_parts.append(f"selected_docs: {addon_docs_text}")
+                addon_summary_parts.append(addon_context_text)
+                addon_summary = "\n".join(addon_summary_parts).strip()
+                addon_card, addon_ref = self._build_tool_result_card(
+                    "container_addons",
+                    addon_summary,
+                    "ok",
+                    conversation_id,
+                )
+                addon_tool_results = addon_card
+                evidence_items.append(
+                    self._build_grounding_evidence_entry(
+                        "container_addons",
+                        addon_summary,
+                        "ok",
+                        addon_ref,
+                    )
+                )
+        except Exception as exc:
+            log_warn(
+                "[Orchestrator] Active-container addon context skipped: "
+                f"{self._safe_str(exc, max_len=160)}"
+            )
+
+        merged_evidence = self._merge_grounding_evidence_items(
+            get_runtime_grounding_evidence(verified_plan),
+            evidence_items,
+        )
+        set_runtime_grounding_evidence(verified_plan, merged_evidence)
+
+        context_lines = [
+            "### ACTIVE CONTAINER CAPABILITY CONTEXT:",
+            inspect_summary,
+            "Treat the active container identity and addon excerpts below as higher priority than generic Linux assumptions.",
+        ]
+        if addon_docs_text:
+            context_lines.append(f"Relevant addon docs: {addon_docs_text}")
+        if addon_context_text:
+            context_lines.append("Relevant container addon context:")
+            context_lines.append(addon_context_text)
+
+        verified_plan["_active_container_capability_context"] = {
+            "container_id": container_id,
+            "blueprint_id": str(inspect_result.get("blueprint_id") or "").strip(),
+            "image": str(inspect_result.get("image") or "").strip(),
+            "addon_docs": addon_docs_text,
+        }
+        return {
+            "context_text": "\n".join(line for line in context_lines if str(line).strip()).strip(),
+            "tool_results_text": f"{inspect_card}{addon_tool_results}",
+        }
+
+    async def _maybe_build_skill_semantic_context(
+        self,
+        *,
+        user_text: str,
+        conversation_id: str,
+        verified_plan: Dict[str, Any],
+    ) -> Dict[str, str]:
+        if not isinstance(verified_plan, dict):
+            return {}
+        effective_strategy = self._get_effective_resolution_strategy(verified_plan)
+        if effective_strategy != "skill_catalog_context" and not self._is_skill_catalog_context_query(user_text):
+            return {}
+        if not bool(verified_plan.get("is_fact_query", False)):
+            return {}
+        skill_policy = verified_plan.get("_skill_catalog_policy")
+        if not isinstance(skill_policy, dict):
+            skill_policy = self._materialize_skill_catalog_policy(verified_plan)
+        skill_policy = skill_policy if isinstance(skill_policy, dict) else {}
+        required_tools = [
+            str(tool or "").strip()
+            for tool in list(skill_policy.get("required_tools") or [])
+            if str(tool or "").strip()
+        ]
+        if not required_tools:
+            required_tools = ["list_skills"]
+        selected_hints = [
+            str(hint or "").strip().lower()
+            for hint in list(
+                skill_policy.get("selected_hints")
+                or verified_plan.get("strategy_hints")
+                or []
+            )
+            if str(hint or "").strip()
+        ]
+
+        tool_hub = get_hub()
+        tool_hub.initialize()
+
+        evidence_items: List[Dict[str, Any]] = []
+        runtime_snapshot: Dict[str, Any] = {}
+        tool_result_cards: List[str] = []
+
+        if "list_skills" in required_tools:
+            try:
+                if hasattr(tool_hub, "call_tool_async"):
+                    list_skills_result = await tool_hub.call_tool_async(
+                        "list_skills",
+                        {"include_available": False},
+                    )
+                else:
+                    list_skills_result = await asyncio.to_thread(
+                        tool_hub.call_tool,
+                        "list_skills",
+                        {"include_available": False},
+                    )
+                parsed_snapshot = self._parse_list_skills_runtime_snapshot(list_skills_result)
+                if parsed_snapshot:
+                    runtime_snapshot.update(parsed_snapshot)
+                    raw_payload = parsed_snapshot.get("raw_payload") or {}
+                    raw_json = json.dumps(raw_payload, ensure_ascii=False, default=str)
+                    skills_card, skills_ref = self._build_tool_result_card(
+                        "list_skills",
+                        raw_json,
+                        "ok",
+                        conversation_id,
+                    )
+                    tool_result_cards.append(skills_card)
+                    evidence_items.append(
+                        self._build_grounding_evidence_entry(
+                            "list_skills",
+                            raw_json,
+                            "ok",
+                            skills_ref,
+                        )
+                    )
+            except Exception as exc:
+                log_warn(
+                    "[Orchestrator] Skill runtime snapshot via list_skills skipped: "
+                    f"{self._safe_str(exc, max_len=160)}"
+                )
+
+        if "list_draft_skills" in required_tools:
+            try:
+                if hasattr(tool_hub, "call_tool_async"):
+                    list_drafts_result = await tool_hub.call_tool_async(
+                        "list_draft_skills",
+                        {},
+                    )
+                else:
+                    list_drafts_result = await asyncio.to_thread(
+                        tool_hub.call_tool,
+                        "list_draft_skills",
+                        {},
+                    )
+                parsed_drafts = self._parse_list_draft_skills_snapshot(list_drafts_result)
+                if parsed_drafts:
+                    runtime_snapshot["drafts"] = parsed_drafts.get("drafts") or []
+                    runtime_snapshot["draft_names"] = list(parsed_drafts.get("draft_names") or [])
+                    runtime_snapshot["draft_count"] = parsed_drafts.get("draft_count")
+                    raw_payload = parsed_drafts.get("raw_payload") or {}
+                    raw_json = json.dumps(raw_payload, ensure_ascii=False, default=str)
+                    drafts_card, drafts_ref = self._build_tool_result_card(
+                        "list_draft_skills",
+                        raw_json,
+                        "ok",
+                        conversation_id,
+                    )
+                    tool_result_cards.append(drafts_card)
+                    evidence_items.append(
+                        self._build_grounding_evidence_entry(
+                            "list_draft_skills",
+                            raw_json,
+                            "ok",
+                            drafts_ref,
+                        )
+                    )
+            except Exception as exc:
+                log_warn(
+                    "[Orchestrator] Skill draft snapshot via list_draft_skills skipped: "
+                    f"{self._safe_str(exc, max_len=160)}"
+                )
+
+        try:
+            import urllib.request as _ur
+
+            skill_server = os.getenv("SKILL_SERVER_URL", "http://trion-skill-server:8088")
+            with _ur.urlopen(f"{skill_server}/v1/skills", timeout=2) as response:
+                registry_payload = json.loads(response.read())
+            active_names = [
+                str(item).strip()
+                for item in list(registry_payload.get("active") or [])
+                if str(item).strip()
+            ]
+            draft_names = [
+                str(item).strip()
+                for item in list(registry_payload.get("drafts") or [])
+                if str(item).strip()
+            ]
+            registry_snapshot = {
+                "active_names": active_names,
+                "active_count": len(active_names),
+                "draft_names": draft_names,
+                "draft_count": len(draft_names),
+            }
+            if registry_snapshot["active_count"] or registry_snapshot["draft_count"]:
+                runtime_snapshot.setdefault("installed_names", active_names[:])
+                runtime_snapshot.setdefault("installed_count", len(active_names))
+                runtime_snapshot["draft_names"] = draft_names
+                runtime_snapshot["draft_count"] = len(draft_names)
+
+                registry_summary = self._summarize_skill_registry_snapshot(registry_snapshot)
+                registry_card, registry_ref = self._build_tool_result_card(
+                    "skill_registry_snapshot",
+                    registry_summary,
+                    "ok",
+                    conversation_id,
+                )
+                tool_result_cards.append(registry_card)
+                evidence_items.append(
+                    self._build_grounding_evidence_entry(
+                        "skill_registry_snapshot",
+                        registry_summary,
+                        "ok",
+                        registry_ref,
+                    )
+                )
+        except Exception as exc:
+            log_warn(
+                "[Orchestrator] Skill registry snapshot skipped: "
+                f"{self._safe_str(exc, max_len=160)}"
+            )
+
+        addon_context_text = ""
+        addon_docs_text = ""
+        addon_doc_ids: List[str] = []
+        try:
+            from intelligence_modules.skill_addons.loader import load_skill_addon_context
+
+            addon_context = await load_skill_addon_context(
+                query=user_text,
+                tags=selected_hints,
+                runtime_snapshot=runtime_snapshot,
+            )
+            selected_docs = list(addon_context.get("selected_docs") or [])
+            addon_context_text = str(addon_context.get("context_text") or "").strip()
+            if selected_docs:
+                addon_doc_ids = [
+                    str(item.get("id") or item.get("title") or "").strip()
+                    for item in selected_docs[:8]
+                    if isinstance(item, dict) and str(item.get("id") or item.get("title") or "").strip()
+                ]
+                addon_docs_text = ", ".join(
+                    addon_doc_ids[:4]
+                )
+            if addon_context_text:
+                addon_summary_parts = []
+                if addon_docs_text:
+                    addon_summary_parts.append(f"selected_docs: {addon_docs_text}")
+                addon_summary_parts.append(addon_context_text)
+                addon_summary = "\n".join(addon_summary_parts).strip()
+                addon_card, addon_ref = self._build_tool_result_card(
+                    "skill_addons",
+                    addon_summary,
+                    "ok",
+                    conversation_id,
+                )
+                tool_result_cards.append(addon_card)
+                evidence_items.append(
+                    self._build_grounding_evidence_entry(
+                        "skill_addons",
+                        addon_summary,
+                        "ok",
+                        addon_ref,
+                    )
+                )
+        except Exception as exc:
+            log_warn(
+                "[Orchestrator] Skill addon context skipped: "
+                f"{self._safe_str(exc, max_len=160)}"
+            )
+
+        runtime_summary = self._summarize_skill_runtime_snapshot(runtime_snapshot)
+        if not runtime_summary and not addon_context_text:
+            return {}
+
+        merged_evidence = self._merge_grounding_evidence_items(
+            get_runtime_grounding_evidence(verified_plan),
+            evidence_items,
+        )
+        set_runtime_grounding_evidence(verified_plan, merged_evidence)
+
+        context_lines = [
+            "### SKILL CATALOG CONTEXT:",
+            "Treat live runtime snapshot facts as the inventory authority. Treat addon excerpts only as taxonomy and answering rules.",
+        ]
+        if runtime_summary:
+            context_lines.append(runtime_summary)
+        if addon_docs_text:
+            context_lines.append(f"Relevant skill addon docs: {addon_docs_text}")
+        if addon_context_text:
+            context_lines.append("Relevant skill addon context:")
+            context_lines.append(addon_context_text)
+
+        verified_plan["_skill_catalog_context"] = {
+            "installed_count": runtime_snapshot.get("installed_count"),
+            "draft_count": runtime_snapshot.get("draft_count"),
+            "available_count": runtime_snapshot.get("available_count"),
+            "selected_docs": addon_docs_text,
+            "selected_doc_ids": addon_doc_ids,
+            "policy_mode": str(skill_policy.get("mode") or "").strip(),
+            "required_tools": required_tools,
+            "selected_hints": selected_hints,
+        }
+        return {
+            "context_text": "\n".join(line for line in context_lines if str(line).strip()).strip(),
+            "tool_results_text": "".join(tool_result_cards),
+        }
 
     def _detect_skill_by_trigger(self, user_text: str) -> list:
         """
@@ -2807,7 +4147,7 @@ class PipelineOrchestrator:
         tool_hub_v.initialize()
 
         _NATIVE_TOOLS = {
-            "request_container", "stop_container", "exec_in_container",
+            "request_container", "home_start", "stop_container", "exec_in_container",
             "blueprint_list", "container_stats", "container_logs",
             "container_list", "container_inspect",
             "home_read", "home_write", "home_list",
@@ -2856,7 +4196,7 @@ class PipelineOrchestrator:
         # ── home_write-Filter: nie automatisch schreiben wenn Execution-Tools dabei ──
         # deepseek-r1:8b fügt home_write reflexartig hinzu bei komplexen Fragen.
         # Wenn ein Skill oder Execution-Tool läuft, ist home_write ein Nebeneffekt-Bug.
-        _execution_tools = {"run_skill", "exec_in_container", "request_container",
+        _execution_tools = {"run_skill", "exec_in_container", "request_container", "home_start",
                             "create_skill", "container_stats", "container_logs"}
         has_execution = any(
             (isinstance(t, dict) and t.get("tool") in _execution_tools)
@@ -3466,14 +4806,18 @@ class PipelineOrchestrator:
         Returns {"event_type": str, "event_data": dict} or None.
         session_id: conversation_id of the current chat (for Session ↔ Container tracking).
         """
-        if tool_name == "request_container" and isinstance(result, dict):
+        if tool_name in {"request_container", "home_start"} and isinstance(result, dict):
             cid = result.get("container_id", "")
             if result.get("status") == "running" and cid:
                 return {
                     "event_type": "container_started",
                     "event_data": {
                         "container_id": cid,
-                        "blueprint_id": tool_args.get("blueprint_id", "unknown"),
+                        "blueprint_id": (
+                            tool_args.get("blueprint_id")
+                            or result.get("blueprint_id")
+                            or "unknown"
+                        ),
                         "name": result.get("name", ""),
                         "purpose": user_text[:200],
                         "ttl_seconds": result.get("ttl_seconds"),
@@ -3548,46 +4892,15 @@ class PipelineOrchestrator:
         """
         Save an internal workspace event via Fast-Lane (workspace_event_save).
         Returns the SSE event dict to yield, or None on failure.
+        Delegates to WorkspaceEventEmitter.persist().
         """
-        try:
-            hub = get_hub()
-            hub.initialize()
-            result = hub.call_tool("workspace_event_save", {
-                "conversation_id": conversation_id,
-                "event_type": entry_type,
-                "event_data": {
-                    "content": content,
-                    "source_layer": source_layer,
-                },
-            })
-            # Robust parse: Fast-Lane returns ToolResult whose .content is a JSON string
-            # e.g. '{"id": 42, "status": "saved"}'
-            entry_id = None
-            if hasattr(result, "content"):
-                try:
-                    import json as _json
-                    parsed = _json.loads(result.content) if isinstance(result.content, str) else {}
-                    entry_id = parsed.get("id")
-                except Exception:
-                    pass
-            elif isinstance(result, dict):
-                raw = result.get("structuredContent", result)
-                entry_id = raw.get("id")
-
-            if entry_id is not None:
-                return {
-                    "type": "workspace_update",
-                    "source": "event",       # UI: read-only, no Edit/Delete
-                    "entry_id": entry_id,
-                    "content": content,
-                    "entry_type": entry_type,
-                    "source_layer": source_layer,
-                    "conversation_id": conversation_id,
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
-                }
-        except Exception as e:
-            log_error(f"[Orchestrator-Workspace] Save failed: {e}")
-        return None
+        from core.workspace_event_emitter import get_workspace_emitter
+        return get_workspace_emitter().persist(
+            conversation_id=conversation_id,
+            content=content,
+            entry_type=entry_type,
+            source_layer=source_layer,
+        ).sse_dict
 
     def _save_container_event(
         self,
@@ -3598,50 +4911,13 @@ class PipelineOrchestrator:
         Persist a container lifecycle event via workspace_event_save (Fast-Lane).
         container_evt must have keys: event_type (str), event_data (dict).
         Returns the SSE workspace_update dict to yield, or None on failure.
+        Delegates to WorkspaceEventEmitter.persist_container().
         """
-        event_type = container_evt.get("event_type", "container_event")
-        event_data = container_evt.get("event_data", {})
-        try:
-            hub = get_hub()
-            hub.initialize()
-            result = hub.call_tool("workspace_event_save", {
-                "conversation_id": conversation_id,
-                "event_type": event_type,
-                "event_data": event_data,
-            })
-            # Robust parse of ToolResult
-            entry_id = None
-            if hasattr(result, "content"):
-                try:
-                    import json as _json
-                    parsed = _json.loads(result.content) if isinstance(result.content, str) else {}
-                    entry_id = parsed.get("id")
-                except Exception:
-                    pass
-            elif isinstance(result, dict):
-                raw = result.get("structuredContent", result)
-                entry_id = raw.get("id")
-
-            if entry_id is not None:
-                # Normalize to UI-compatible format:
-                # content = human-readable summary, entry_type = event_type
-                _summary = event_data.get("purpose") or event_data.get("command", "")
-                _cid = event_data.get("container_id", "")
-                _bp = event_data.get("blueprint_id", "")
-                _content = f"{_bp}/{_cid[:12]}: {_summary[:120]}" if _cid else event_type
-                return {
-                    "type": "workspace_update",
-                    "source": "event",       # UI: read-only, no Edit/Delete
-                    "entry_id": entry_id,
-                    "content": _content,
-                    "entry_type": event_type,
-                    "event_data": event_data,
-                    "conversation_id": conversation_id,
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
-                }
-        except Exception as e:
-            log_error(f"[Orchestrator-ContainerEvent] Save failed: {e}")
-        return None
+        from core.workspace_event_emitter import get_workspace_emitter
+        return get_workspace_emitter().persist_container(
+            conversation_id=conversation_id,
+            container_evt=container_evt,
+        ).sse_dict
 
     @staticmethod
     def _build_control_workspace_summary(
@@ -4493,7 +5769,7 @@ class PipelineOrchestrator:
         policy = get_small_model_skill_prefetch_policy()
 
         # Explicit skill-intent signal: selected tools contain a skill action
-        _SKILL_TOOLS = {"list_skills", "autonomous_skill_task"}
+        _SKILL_TOOLS = set(self._READ_ONLY_SKILL_TOOLS).union({"autonomous_skill_task"})
         _has_skill_intent = bool(
             selected_tools
             and _SKILL_TOOLS & {
@@ -4774,37 +6050,6 @@ class PipelineOrchestrator:
             log_warn_fn=log_warn,
         )
     
-    async def _execute_output_layer(
-        self,
-        user_text: str,
-        verified_plan: Dict,
-        memory_data: str,
-        model: str,
-        chat_history: list,
-        control_decision: Optional[ControlDecision] = None,
-        execution_result: Optional[Dict[str, Any]] = None,
-        memory_required_but_missing: bool = False
-    ) -> str:
-        """Execute Output Layer (Step 3)."""
-        log_info("[Orchestrator] === LAYER 3: OUTPUT ===")
-        
-        if memory_required_but_missing:
-            log_info("[Orchestrator-Output] WARNING: Memory required but not found!")
-        
-        answer = await self.output.generate(
-            user_text=user_text,
-            verified_plan=verified_plan,
-            memory_data=memory_data,
-            model=model,
-            memory_required_but_missing=memory_required_but_missing,
-            chat_history=chat_history,
-            control_decision=control_decision,
-            execution_result=execution_result,
-        )
-        
-        log_info(f"[Orchestrator-Output] Generated {len(answer)} chars")
-        return answer
-    
     def _save_memory(
         self,
         conversation_id: str,
@@ -4875,7 +6120,6 @@ class PipelineOrchestrator:
             get_runtime_grounding_value(
                 verified_plan,
                 key="missing_evidence",
-                legacy_key="_grounding_missing_evidence",
                 default=False,
             )
         ):
@@ -4885,7 +6129,6 @@ class PipelineOrchestrator:
             get_runtime_grounding_value(
                 verified_plan,
                 key="violation_detected",
-                legacy_key="_grounding_violation_detected",
                 default=False,
             )
         ):

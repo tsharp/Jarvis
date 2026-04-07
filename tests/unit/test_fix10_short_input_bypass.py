@@ -96,81 +96,73 @@ async def test_tool_selector_long_input_not_enriched():
 # ── Fix B: Orchestrator context_summary weitergabe ──────────────────────────
 
 def test_stream_flow_extracts_last_assistant_message():
-    """orchestrator_stream_flow_utils muss letzten Assistenten-Message extrahieren."""
-    src = _src("core/orchestrator_stream_flow_utils.py")
-    # Find the Tool Selection block
-    tool_sel_idx = src.find("# Layer 0: Tool Selection")
-    assert tool_sel_idx != -1
-    block = src[tool_sel_idx:tool_sel_idx + 800]
-    assert "_last_assistant_msg" in block
-    assert 'msg.get("role") == "assistant"' in block
-    assert "context_summary=_last_assistant_msg" in block
+    """run_tool_selection_stage (pipeline_stages) muss letzten Assistenten-Message extrahieren."""
+    src = _src("core/orchestrator_pipeline_stages.py")
+    assert "last_assistant_msg" in src
+    assert 'msg.get("role") == "assistant"' in src
+    assert "context_summary=last_assistant_msg" in src
 
 
 def test_sync_flow_extracts_last_assistant_message():
-    """orchestrator_sync_flow_utils muss letzten Assistenten-Message extrahieren."""
+    """Sync-Flow muss run_tool_selection_stage aus pipeline_stages aufrufen."""
     src = _src("core/orchestrator_sync_flow_utils.py")
-    tool_sel_idx = src.find("select_tools(user_text")
-    assert tool_sel_idx != -1
-    # Search backwards for _last_assistant_msg
-    context_block = src[max(0, tool_sel_idx - 600):tool_sel_idx + 200]
-    assert "_last_assistant_msg" in context_block
-    assert "context_summary=_last_assistant_msg" in context_block
+    assert "run_tool_selection_stage" in src
+    assert "_last_assistant_msg" in src
 
 
 # ── Fix C: Short-Input Bypass ────────────────────────────────────────────────
 
 def test_stream_flow_has_short_input_bypass():
-    """orchestrator_stream_flow_utils muss Short-Input Bypass implementieren."""
-    src = _src("core/orchestrator_stream_flow_utils.py")
-    tool_sel_idx = src.find("# Layer 0: Tool Selection")
-    assert tool_sel_idx != -1
-    block = src[tool_sel_idx:tool_sel_idx + 1400]
-    assert "not selected_tools" in block
-    assert "len(user_text.split()) < 5" in block
-    assert "request_container" in block
-    assert "run_skill" in block
-    assert "home_write" in block
-    assert "Short-Input Bypass" in block
+    """pipeline_stages muss Short-Input Bypass implementieren; Stream-Flow muss ihn aufrufen."""
+    stages_src = _src("core/orchestrator_pipeline_stages.py")
+    assert "not selected_tools" in stages_src
+    assert "len(user_text.split()) < 5" in stages_src
+    assert "request_container" in stages_src
+    assert "run_skill" in stages_src
+    assert "home_write" in stages_src
+    assert "Short-Input Bypass" in stages_src
+    # Stream-Flow ruft die Stage auf
+    stream_src = _src("core/orchestrator_stream_flow_utils.py")
+    assert "run_tool_selection_stage" in stream_src
 
 
 def test_sync_flow_has_short_input_bypass():
-    """orchestrator_sync_flow_utils muss Short-Input Bypass implementieren."""
-    src = _src("core/orchestrator_sync_flow_utils.py")
-    tool_sel_idx = src.find("select_tools(user_text")
-    assert tool_sel_idx != -1
-    block = src[tool_sel_idx:tool_sel_idx + 900]
-    assert "not selected_tools" in block
-    assert "len(user_text.split()) < 5" in block
-    assert "request_container" in block
-    assert "Short-Input Bypass" in block
+    """pipeline_stages muss Short-Input Bypass implementieren; Sync-Flow muss ihn aufrufen."""
+    stages_src = _src("core/orchestrator_pipeline_stages.py")
+    assert "Short-Input Bypass" in stages_src
+    assert "request_container" in stages_src
+    # Sync-Flow ruft die Stage auf
+    sync_src = _src("core/orchestrator_sync_flow_utils.py")
+    assert "run_tool_selection_stage" in sync_src
 
 
 def test_bypass_injects_exactly_core_tools():
     """Bypass muss request_container, run_skill, home_write enthalten (home_write im else-Zweig)."""
-    src = _src("core/orchestrator_stream_flow_utils.py")
-    # home_write muss noch im else-Zweig vorhanden sein (nur ohne Kontext)
+    src = _src("core/orchestrator_pipeline_stages.py")
+    # home_write muss im else-Zweig (ohne Konversationskontext) vorhanden sein
     bypass_idx = src.find('selected_tools = ["request_container", "run_skill", "home_write"]')
-    assert bypass_idx != -1, "Bypass injection list (else-Zweig) not found in stream flow"
+    assert bypass_idx != -1, "Bypass injection list (else-Zweig) not found in pipeline_stages"
     # Und der Kontext-aware Zweig muss auch existieren
     ctx_bypass_idx = src.find('selected_tools = ["request_container", "run_skill"]')
-    assert ctx_bypass_idx != -1, "Context-aware bypass (ohne home_write) not found in stream flow"
+    assert ctx_bypass_idx != -1, "Context-aware bypass (ohne home_write) not found in pipeline_stages"
 
 
 def test_stream_flow_has_plan_bypass_after_thinking():
-    """Stream-Flow: Nach ThinkingLayer muss Plan-Bypass thinking_plan['suggested_tools'] befüllen."""
-    src = _src("core/orchestrator_stream_flow_utils.py")
-    assert "Short-Input Plan Bypass" in src
-    assert 'thinking_plan["suggested_tools"] = list(selected_tools)' in src
-    assert "[stream]" in src
+    """pipeline_stages muss Short-Input Plan Bypass enthalten; Stream-Flow muss run_plan_finalization aufrufen."""
+    stages_src = _src("core/orchestrator_pipeline_stages.py")
+    assert "Short-Input Plan Bypass" in stages_src
+    assert 'thinking_plan["suggested_tools"] = list(selected_tools)' in stages_src
+    stream_src = _src("core/orchestrator_stream_flow_utils.py")
+    assert "run_plan_finalization" in stream_src
 
 
 def test_sync_flow_has_plan_bypass_after_thinking():
-    """Sync-Flow: Nach ThinkingLayer muss Plan-Bypass thinking_plan['suggested_tools'] befüllen."""
-    src = _src("core/orchestrator_sync_flow_utils.py")
-    assert "Short-Input Plan Bypass" in src
-    assert 'thinking_plan["suggested_tools"] = list(selected_tools)' in src
-    assert "[sync]" in src
+    """pipeline_stages muss Short-Input Plan Bypass enthalten; Sync-Flow muss run_plan_finalization aufrufen."""
+    stages_src = _src("core/orchestrator_pipeline_stages.py")
+    assert "Short-Input Plan Bypass" in stages_src
+    assert 'thinking_plan["suggested_tools"] = list(selected_tools)' in stages_src
+    sync_src = _src("core/orchestrator_sync_flow_utils.py")
+    assert "run_plan_finalization" in sync_src
 
 
 def test_stream_flow_enriches_thinking_user_text():

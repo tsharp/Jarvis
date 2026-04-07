@@ -7,7 +7,12 @@ from core.grounding_state_utils import (
     inject_carryover_grounding_evidence,
     select_first_whitelisted_tool_run,
 )
-from core.plan_runtime_bridge import get_runtime_carryover_grounding_evidence
+from core.plan_runtime_bridge import (
+    get_runtime_carryover_grounding_evidence,
+    set_runtime_carryover_grounding_evidence,
+    set_runtime_grounding_evidence,
+    set_runtime_successful_tool_runs,
+)
 
 
 def test_grounding_evidence_has_content_detects_key_facts_or_output():
@@ -39,19 +44,21 @@ def test_extract_recent_grounding_state_marks_expired_or_stale():
 
 
 def test_build_grounding_state_payload_uses_successful_tool_runs_then_fallback():
+    plan1 = {}
+    set_runtime_grounding_evidence(plan1, [{"status": "ok", "key_facts": ["fact"], "tool_name": "search"}])
+    set_runtime_successful_tool_runs(plan1, [{"tool_name": "tool_a", "args": {"x": 1}}])
     payload = build_grounding_state_payload(
-        {
-            "_grounding_evidence": [{"status": "ok", "key_facts": ["fact"], "tool_name": "search"}],
-            "_successful_tool_runs": [{"tool_name": "tool_a", "args": {"x": 1}}],
-        },
+        plan1,
         sanitize_tool_args=lambda v: v if isinstance(v, dict) else {},
         evidence_has_content=grounding_evidence_has_content,
     )
     assert payload is not None
     assert payload["tool_runs"][0]["tool_name"] == "tool_a"
 
+    plan2 = {}
+    set_runtime_grounding_evidence(plan2, [{"status": "ok", "key_facts": ["fact"], "tool_name": "search"}])
     payload2 = build_grounding_state_payload(
-        {"_grounding_evidence": [{"status": "ok", "key_facts": ["fact"], "tool_name": "search"}]},
+        plan2,
         sanitize_tool_args=lambda v: v if isinstance(v, dict) else {},
         evidence_has_content=grounding_evidence_has_content,
     )
@@ -72,10 +79,9 @@ def test_inject_carryover_grounding_evidence_adds_evidence_and_tool_names():
 
 
 def test_has_usable_grounding_evidence_and_whitelist_selection():
-    assert has_usable_grounding_evidence(
-        {"_carryover_grounding_evidence": [{"status": "ok", "key_facts": ["x"]}]},
-        evidence_has_content=grounding_evidence_has_content,
-    )
+    plan = {}
+    set_runtime_carryover_grounding_evidence(plan, [{"status": "ok", "key_facts": ["x"]}])
+    assert has_usable_grounding_evidence(plan, evidence_has_content=grounding_evidence_has_content)
     candidate = select_first_whitelisted_tool_run(
         {"tool_runs": [{"tool_name": "a"}, {"tool_name": "b"}]},
         {"b"},
@@ -85,13 +91,12 @@ def test_has_usable_grounding_evidence_and_whitelist_selection():
 
 
 def test_count_successful_grounding_evidence_respects_allowed_statuses():
-    plan = {
-        "_grounding_evidence": [
-            {"status": "ok"},
-            {"status": "warning"},
-            {"status": "fail"},
-            {"status": "OK"},
-        ]
-    }
+    plan = {}
+    set_runtime_grounding_evidence(plan, [
+        {"status": "ok"},
+        {"status": "warning"},
+        {"status": "fail"},
+        {"status": "OK"},
+    ])
     assert count_successful_grounding_evidence(plan, ["ok"]) == 2
     assert count_successful_grounding_evidence(plan, ["ok", "warning"]) == 3

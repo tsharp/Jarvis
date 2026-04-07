@@ -1,8 +1,14 @@
+import json
 import time
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from core.plan_runtime_bridge import get_runtime_direct_response
+from core.plan_runtime_bridge import (
+    get_runtime_direct_response,
+    get_runtime_grounding_evidence,
+    set_runtime_tool_results,
+)
 
 
 def _make_orchestrator():
@@ -181,6 +187,42 @@ def test_resolve_execution_suggested_tools_prioritizes_home_container_strategy()
     assert verified_plan.get("needs_chat_history") is True
 
 
+def test_resolve_execution_suggested_tools_prioritizes_active_container_capability_strategy():
+    orch = _make_orchestrator()
+    orch._remember_container_state(
+        "conv-capability",
+        last_active_container_id="ctr-1",
+        known_containers=[
+            {
+                "container_id": "ctr-1",
+                "blueprint_id": "trion-home",
+                "status": "running",
+                "name": "trion-home",
+            }
+        ],
+    )
+    verified_plan = {
+        "suggested_tools": ["container_stats", "exec_in_container"],
+        "is_fact_query": True,
+        "dialogue_act": "request",
+    }
+    with patch.object(orch, "_normalize_tools", side_effect=lambda v: v), \
+         patch.object(orch, "_apply_query_budget_tool_policy", side_effect=lambda *_args, **_kwargs: _args[2]), \
+         patch.object(orch, "_apply_domain_tool_policy", side_effect=lambda *_args, **_kwargs: _args[1]):
+        out = orch._resolve_execution_suggested_tools(
+            "was kannst du in diesem container alles tun?",
+            verified_plan,
+            control_tool_decisions={},
+            stream=False,
+            enable_skill_trigger_router=False,
+            conversation_id="conv-capability",
+        )
+
+    names = [orch._extract_tool_name(x) for x in out]
+    assert names == ["container_inspect"]
+    assert verified_plan.get("needs_chat_history") is True
+
+
 def test_detect_tools_by_keyword_handles_home_container_info_query():
     orch = _make_orchestrator()
     out = orch._detect_tools_by_keyword("was weißt du über den trion-home container und wofür ist er da?")
@@ -188,6 +230,128 @@ def test_detect_tools_by_keyword_handles_home_container_info_query():
     names = [orch._extract_tool_name(x) for x in out]
     assert "container_list" in names
     assert "home_read" in names
+
+
+def test_detect_tools_by_keyword_routes_home_start_to_home_start_tool():
+    orch = _make_orchestrator()
+    out = orch._detect_tools_by_keyword("starte bitte den TRION Home Workspace")
+    assert out == ["home_start"]
+
+
+def test_detect_tools_by_keyword_routes_runtime_inventory_to_container_list():
+    orch = _make_orchestrator()
+    out = orch._detect_tools_by_keyword("Welche Container laufen gerade und welche sind gestoppt?")
+    assert out == ["container_list"]
+
+
+def test_detect_tools_by_keyword_routes_blueprint_catalog_to_blueprint_list():
+    orch = _make_orchestrator()
+    out = orch._detect_tools_by_keyword("Welche Blueprints gibt es und welche Container kann ich starten?")
+    assert out == ["blueprint_list"]
+
+
+def test_resolve_execution_suggested_tools_prioritizes_container_blueprint_catalog_strategy():
+    orch = _make_orchestrator()
+    verified_plan = {
+        "suggested_tools": ["container_list", "request_container"],
+        "is_fact_query": True,
+        "_authoritative_resolution_strategy": "container_blueprint_catalog",
+    }
+    with patch.object(orch, "_normalize_tools", side_effect=lambda v: v), \
+         patch.object(orch, "_prioritize_home_container_tools", side_effect=lambda *a, **k: a[2]), \
+         patch.object(orch, "_prioritize_active_container_capability_tools", side_effect=lambda *a, **k: a[2]), \
+         patch.object(orch, "_apply_query_budget_tool_policy", side_effect=lambda *_args, **_kwargs: _args[2]), \
+         patch.object(orch, "_apply_domain_tool_policy", side_effect=lambda *_args, **_kwargs: _args[1]):
+        out = orch._resolve_execution_suggested_tools(
+            "Welche Blueprints gibt es?",
+            verified_plan,
+            control_tool_decisions={},
+            stream=False,
+            enable_skill_trigger_router=False,
+        )
+
+    assert out == ["blueprint_list"]
+
+
+def test_resolve_execution_suggested_tools_rewrites_home_start_fast_path():
+    orch = _make_orchestrator()
+    verified_plan = {
+        "suggested_tools": ["request_container"],
+        "_authoritative_resolution_strategy": "container_request",
+    }
+    with patch.object(orch, "_normalize_tools", side_effect=lambda v: v), \
+         patch.object(orch, "_prioritize_home_container_tools", side_effect=lambda *a, **k: a[2]), \
+         patch.object(orch, "_prioritize_active_container_capability_tools", side_effect=lambda *a, **k: a[2]), \
+         patch.object(orch, "_apply_query_budget_tool_policy", side_effect=lambda *_args, **_kwargs: _args[2]), \
+         patch.object(orch, "_apply_domain_tool_policy", side_effect=lambda *_args, **_kwargs: _args[1]):
+        out = orch._resolve_execution_suggested_tools(
+            "starte bitte den TRION Home Workspace",
+            verified_plan,
+            control_tool_decisions={},
+            stream=False,
+            enable_skill_trigger_router=False,
+        )
+
+    assert out == ["home_start"]
+    assert verified_plan.get("_trion_home_start_fast_path") is True
+
+
+def test_build_container_event_content_emits_started_event_for_home_start():
+    orch = _make_orchestrator()
+    out = orch._build_container_event_content(
+        "home_start",
+        {
+            "status": "running",
+            "container_id": "ctr-home",
+            "blueprint_id": "trion-home",
+            "name": "TRION Home Workspace",
+        },
+        "starte bitte den TRION Home Workspace",
+        {},
+        session_id="conv-home",
+    )
+
+    assert out is not None
+    assert out["event_type"] == "container_started"
+    assert out["event_data"]["container_id"] == "ctr-home"
+    assert out["event_data"]["blueprint_id"] == "trion-home"
+    assert out["event_data"]["session_id"] == "conv-home"
+
+
+def test_resolve_execution_suggested_tools_prioritizes_container_state_binding_strategy():
+    orch = _make_orchestrator()
+    orch._remember_container_state(
+        "conv-binding",
+        last_active_container_id="ctr-2",
+        known_containers=[
+            {
+                "container_id": "ctr-2",
+                "blueprint_id": "trion-home",
+                "status": "running",
+                "name": "trion-home",
+            }
+        ],
+    )
+    verified_plan = {
+        "suggested_tools": ["container_list", "blueprint_list"],
+        "is_fact_query": True,
+        "_authoritative_resolution_strategy": "container_state_binding",
+    }
+    with patch.object(orch, "_normalize_tools", side_effect=lambda v: v), \
+         patch.object(orch, "_prioritize_home_container_tools", side_effect=lambda *a, **k: a[2]), \
+         patch.object(orch, "_prioritize_active_container_capability_tools", side_effect=lambda *a, **k: a[2]), \
+         patch.object(orch, "_apply_query_budget_tool_policy", side_effect=lambda *_args, **_kwargs: _args[2]), \
+         patch.object(orch, "_apply_domain_tool_policy", side_effect=lambda *_args, **_kwargs: _args[1]):
+        out = orch._resolve_execution_suggested_tools(
+            "Welcher Container ist gerade aktiv?",
+            verified_plan,
+            control_tool_decisions={},
+            stream=False,
+            enable_skill_trigger_router=False,
+            conversation_id="conv-binding",
+        )
+
+    assert out == ["container_inspect"]
 
 
 def test_recover_home_read_directory_with_fast_lane_returns_listing_and_file_content():
@@ -274,6 +438,208 @@ def test_select_preferred_container_id_prefers_running_home_container():
         cid = orch._select_preferred_container_id(rows, preferred_ids=["stopped1"])
 
     assert cid == "home001"
+
+
+@pytest.mark.asyncio
+async def test_active_container_capability_context_adds_addon_grounding():
+    orch = _make_orchestrator()
+    orch._remember_container_state(
+        "conv-capability",
+        last_active_container_id="ctr-1",
+        known_containers=[
+            {
+                "container_id": "ctr-1",
+                "blueprint_id": "trion-home",
+                "status": "running",
+                "name": "trion-home",
+            }
+        ],
+    )
+    orch._build_tool_result_card = MagicMock(
+        side_effect=lambda tool_name, raw_result, status, conversation_id: (
+            f"\n[TOOL-CARD: {tool_name} | ok | ref:{tool_name}-ref]\n- ok\n",
+            f"{tool_name}-ref",
+        )
+    )
+    orch._build_grounding_evidence_entry = MagicMock(
+        side_effect=lambda tool_name, raw_result, status, ref_id: {
+            "tool_name": tool_name,
+            "status": status,
+            "ref_id": ref_id,
+            "key_facts": [str(raw_result).splitlines()[0]],
+            "structured": {"output": str(raw_result)},
+        }
+    )
+
+    class _FakeHub:
+        def initialize(self):
+            return None
+
+        async def call_tool_async(self, tool_name, args):
+            assert tool_name == "container_inspect"
+            assert args == {"container_id": "ctr-1"}
+            return {
+                "container_id": "ctr-1",
+                "name": "trion-home",
+                "blueprint_id": "trion-home",
+                "image": "python:3.12-slim",
+                "status": "running",
+                "running": True,
+                "network": "bridge",
+                "mounts": ["/srv/work:/home/trion/workspace"],
+                "ports": [],
+                "resource_limits": {"cpu_count": 2, "memory_mb": 1024},
+            }
+
+    verified_plan = {"is_fact_query": True}
+    addon_loader = AsyncMock(
+        return_value={
+            "selected_docs": [{"id": "trion-home-runtime", "title": "TRION Home Runtime"}],
+            "context_text": "Persistent workspace under /home/trion.\nNo jq preinstalled.",
+        }
+    )
+    with patch("core.orchestrator.get_hub", return_value=_FakeHub()), \
+         patch(
+             "intelligence_modules.container_addons.loader.load_container_addon_context",
+             new=addon_loader,
+         ):
+        out = await orch._maybe_build_active_container_capability_context(
+            user_text="was kannst du in diesem container alles tun?",
+            conversation_id="conv-capability",
+            verified_plan=verified_plan,
+            history_len=3,
+        )
+
+    assert "ACTIVE CONTAINER CAPABILITY CONTEXT" in out["context_text"]
+    assert "Persistent workspace under /home/trion." in out["context_text"]
+    assert "container_inspect" in out["tool_results_text"]
+    assert "container_addons" in out["tool_results_text"]
+
+    evidence = get_runtime_grounding_evidence(verified_plan)
+    assert any(item.get("tool_name") == "container_inspect" for item in evidence)
+    assert any(item.get("tool_name") == "container_addons" for item in evidence)
+    assert addon_loader.await_args.kwargs["query_class"] == "active_container_capability"
+
+
+@pytest.mark.asyncio
+async def test_skill_semantic_context_adds_runtime_snapshot_and_addon_grounding():
+    orch = _make_orchestrator()
+    orch._build_tool_result_card = MagicMock(
+        side_effect=lambda tool_name, raw_result, status, conversation_id: (
+            f"\n[TOOL-CARD: {tool_name} | ok | ref:{tool_name}-ref]\n- ok\n",
+            f"{tool_name}-ref",
+        )
+    )
+    orch._build_grounding_evidence_entry = MagicMock(
+        side_effect=lambda tool_name, raw_result, status, ref_id: {
+            "tool_name": tool_name,
+            "status": status,
+            "ref_id": ref_id,
+            "key_facts": [str(raw_result).splitlines()[0]],
+            "structured": {"output": str(raw_result)},
+        }
+    )
+
+    class _FakeHub:
+        def initialize(self):
+            return None
+
+        async def call_tool_async(self, tool_name, args):
+            if tool_name == "list_skills":
+                assert args == {"include_available": False}
+                return {
+                    "structuredContent": {
+                        "installed": [
+                            {"name": "current_weather", "version": "1.0.0"},
+                            {"name": "system_hardware_info", "version": "1.0.0"},
+                        ],
+                        "installed_count": 2,
+                        "available": [],
+                        "available_count": 0,
+                    }
+                }
+            if tool_name == "list_draft_skills":
+                assert args == {}
+                return {
+                    "structuredContent": {
+                        "drafts": ["draft_alpha"],
+                    }
+                }
+            raise AssertionError(f"unexpected tool call: {tool_name}")
+
+    def _resp(data):
+        r = MagicMock()
+        r.read.return_value = json.dumps(data).encode()
+        r.__enter__ = MagicMock(return_value=r)
+        r.__exit__ = MagicMock(return_value=False)
+        return r
+
+    verified_plan = {
+        "is_fact_query": True,
+        "_authoritative_resolution_strategy": "skill_catalog_context",
+        "strategy_hints": ["draft_skills", "tools_vs_skills", "answering_rules"],
+        "_skill_catalog_policy": {
+            "mode": "inventory_read_only",
+            "required_tools": ["list_draft_skills", "list_skills"],
+            "force_sections": ["Runtime-Skills", "Einordnung"],
+            "draft_explanation_required": True,
+            "followup_split_required": False,
+            "allow_sequential": False,
+            "semantic_guardrails_only": True,
+            "selected_hints": ["draft_skills", "tools_vs_skills", "answering_rules"],
+        },
+    }
+    with patch("core.orchestrator.get_hub", return_value=_FakeHub()), \
+         patch(
+             "urllib.request.urlopen",
+             return_value=_resp({"active": ["current_weather", "system_hardware_info"], "drafts": ["draft_alpha"]}),
+         ), \
+         patch(
+             "intelligence_modules.skill_addons.loader.load_skill_addon_context",
+             new=AsyncMock(
+                 return_value={
+                     "selected_docs": [{"id": "skill-tools-vs-skills", "title": "Tools Versus Skills"}],
+                     "context_text": "Built-in Tools sind keine installierten Runtime-Skills.",
+                 }
+             ),
+         ):
+        out = await orch._maybe_build_skill_semantic_context(
+            user_text="Was ist der Unterschied zwischen Tools und Skills?",
+            conversation_id="conv-skills",
+            verified_plan=verified_plan,
+        )
+
+    assert "SKILL CATALOG CONTEXT" in out["context_text"]
+    assert "installed_runtime_skills: 2" in out["context_text"]
+    assert "draft_skills: 1" in out["context_text"]
+    assert "Built-in Tools sind keine installierten Runtime-Skills." in out["context_text"]
+    assert "list_draft_skills" in out["tool_results_text"]
+    assert "list_skills" in out["tool_results_text"]
+    assert "skill_addons" in out["tool_results_text"]
+
+    evidence = get_runtime_grounding_evidence(verified_plan)
+    assert any(item.get("tool_name") == "list_draft_skills" for item in evidence)
+    assert any(item.get("tool_name") == "list_skills" for item in evidence)
+    assert any(item.get("tool_name") == "skill_registry_snapshot" for item in evidence)
+    assert any(item.get("tool_name") == "skill_addons" for item in evidence)
+
+
+def test_sync_and_stream_flows_inject_skill_catalog_context_hook():
+    root = Path(__file__).resolve().parents[2]
+    sync_src = (root / "core" / "orchestrator_sync_flow_utils.py").read_text(encoding="utf-8")
+    stream_src = (root / "core" / "orchestrator_stream_flow_utils.py").read_text(encoding="utf-8")
+
+    assert "_maybe_build_skill_semantic_context(" in sync_src
+    assert '"skill_catalog_ctx"' in sync_src
+    assert '"skill_catalog"' in sync_src
+    assert "_maybe_build_skill_semantic_context(" in stream_src
+    assert '"skill_catalog_ctx"' in stream_src
+    assert '"type": "thinking_trace"' in stream_src
+    assert '"skill_catalog"' in stream_src
+    assert '"final_execution_tools"' in sync_src
+    assert '"final_execution_tools"' in stream_src
+    assert '"tool_route_status"' in sync_src
+    assert '"tool_route_status"' in stream_src
 
 
 def test_execute_tools_sync_autoresolves_pending_container_id_via_container_list():
@@ -1052,13 +1418,11 @@ def test_save_memory_skips_autosave_on_pending_intent():
 def test_save_memory_skips_autosave_on_tool_failure_or_skip():
     """B3: Tool-Failure + leere Antwort → Autosave blockiert (totaler Failure)."""
     orch = _make_orchestrator()
+    plan = {}
+    set_runtime_tool_results(plan, "### TOOL-SKIP (container_stats): missing_required=['container_id']")
     with patch("core.orchestrator.autosave_assistant") as autosave_mock, \
          patch("core.orchestrator.load_grounding_policy", return_value={}):
-        orch._save_memory(
-            conversation_id="conv-1",
-            verified_plan={"_tool_results": "### TOOL-SKIP (container_stats): missing_required=['container_id']"},
-            answer="",
-        )
+        orch._save_memory(conversation_id="conv-1", verified_plan=plan, answer="")
     autosave_mock.assert_not_called()
 
 
@@ -1094,6 +1458,7 @@ async def test_sync_short_circuits_on_pending_intent():
         "needs_sequential_thinking": False,
         "suggested_tools": ["create_skill"],
     })
+    from core.memory_resolution import MemoryResolution
     orch.build_effective_context = MagicMock(return_value=("", {
         "memory_used": False,
         "small_model_mode": False,
@@ -1101,7 +1466,7 @@ async def test_sync_short_circuits_on_pending_intent():
         "retrieval_count": 0,
         "context_sources": [],
         "context_chars_final": 0,
-    }))
+    }, MemoryResolution()))
     orch._execute_control_layer = AsyncMock(return_value=(
         {"approved": True, "corrections": {}},
         {
@@ -1110,7 +1475,7 @@ async def test_sync_short_circuits_on_pending_intent():
         },
     ))
     orch.control.decide_tools = AsyncMock(return_value=[])
-    orch._execute_output_layer = AsyncMock(return_value="should-not-run")
+    orch.output.generate = AsyncMock(return_value="should-not-run")
     orch._save_memory = MagicMock()
 
     with patch("core.orchestrator.INTENT_SYSTEM_AVAILABLE", False):
@@ -1125,7 +1490,7 @@ async def test_sync_short_circuits_on_pending_intent():
     assert response.done_reason == "confirmation_pending"
     assert "demo-skill" in response.content
     orch.control.decide_tools.assert_not_called()
-    orch._execute_output_layer.assert_not_called()
+    orch.output.generate.assert_not_called()
     orch._save_memory.assert_not_called()
 
 
@@ -1149,6 +1514,7 @@ async def test_sync_fail_closed_blocks_skill_tools_when_router_unavailable():
         "reason": "skill_router_unavailable",
     })
     orch._route_blueprint_request = MagicMock(return_value=None)
+    from core.memory_resolution import MemoryResolution
     orch.build_effective_context = MagicMock(return_value=("", {
         "memory_used": False,
         "small_model_mode": False,
@@ -1156,7 +1522,7 @@ async def test_sync_fail_closed_blocks_skill_tools_when_router_unavailable():
         "retrieval_count": 0,
         "context_sources": [],
         "context_chars_final": 0,
-    }))
+    }, MemoryResolution()))
 
     async def _control_side_effect(_user_text, thinking_plan, *_args, **_kwargs):
         captured["skill_gate_blocked"] = bool(thinking_plan.get("_skill_gate_blocked"))
@@ -1165,7 +1531,7 @@ async def test_sync_fail_closed_blocks_skill_tools_when_router_unavailable():
 
     orch._execute_control_layer = AsyncMock(side_effect=_control_side_effect)
     orch.control.decide_tools = AsyncMock(return_value=[])
-    orch._execute_output_layer = AsyncMock(return_value="ok")
+    orch.output.generate = AsyncMock(return_value="ok")
     orch._save_memory = MagicMock()
 
     request = CoreChatRequest(
@@ -1200,6 +1566,7 @@ async def test_sync_fail_closed_blocks_blueprint_when_router_unavailable():
         "blocked": True,
         "reason": "blueprint_router_unavailable",
     })
+    from core.memory_resolution import MemoryResolution
     orch.build_effective_context = MagicMock(return_value=("", {
         "memory_used": False,
         "small_model_mode": False,
@@ -1207,7 +1574,7 @@ async def test_sync_fail_closed_blocks_blueprint_when_router_unavailable():
         "retrieval_count": 0,
         "context_sources": [],
         "context_chars_final": 0,
-    }))
+    }, MemoryResolution()))
 
     async def _control_side_effect(_user_text, thinking_plan, *_args, **_kwargs):
         captured["blueprint_gate_blocked"] = bool(thinking_plan.get("_blueprint_gate_blocked"))
@@ -1216,7 +1583,7 @@ async def test_sync_fail_closed_blocks_blueprint_when_router_unavailable():
 
     orch._execute_control_layer = AsyncMock(side_effect=_control_side_effect)
     orch.control.decide_tools = AsyncMock(return_value=[])
-    orch._execute_output_layer = AsyncMock(return_value="ok")
+    orch.output.generate = AsyncMock(return_value="ok")
     orch._save_memory = MagicMock()
 
     request = CoreChatRequest(
@@ -1259,6 +1626,7 @@ async def test_stream_sets_pending_intent_and_emits_confirmation():
     })
     orch.control.apply_corrections = MagicMock(side_effect=lambda plan, verification: dict(plan))
     orch.control.decide_tools = AsyncMock(return_value=[])
+    from core.memory_resolution import MemoryResolution
     orch.build_effective_context = MagicMock(return_value=("", {
         "memory_used": False,
         "small_model_mode": False,
@@ -1266,7 +1634,7 @@ async def test_stream_sets_pending_intent_and_emits_confirmation():
         "retrieval_count": 0,
         "context_sources": [],
         "context_chars_final": 0,
-    }))
+    }, MemoryResolution()))
     orch._extract_workspace_observations = MagicMock(return_value=None)
     orch._save_workspace_entry = MagicMock(return_value=None)
     orch._check_hardware_gate_early = MagicMock(return_value=None)
@@ -1328,6 +1696,7 @@ async def test_stream_sensitive_tool_keeps_control_even_without_skill_keyword():
     })
     orch.control.apply_corrections = MagicMock(side_effect=lambda plan, verification: dict(plan))
     orch.control.decide_tools = AsyncMock(return_value=[])
+    from core.memory_resolution import MemoryResolution
     orch.build_effective_context = MagicMock(return_value=("", {
         "memory_used": False,
         "small_model_mode": False,
@@ -1335,7 +1704,7 @@ async def test_stream_sensitive_tool_keeps_control_even_without_skill_keyword():
         "retrieval_count": 0,
         "context_sources": [],
         "context_chars_final": 0,
-    }))
+    }, MemoryResolution()))
     orch._extract_workspace_observations = MagicMock(return_value=None)
     orch._save_workspace_entry = MagicMock(return_value=None)
     orch._check_hardware_gate_early = MagicMock(return_value=None)
@@ -1816,15 +2185,11 @@ def test_autosave_not_blocked_when_tool_failed_but_answer_present():
 def test_autosave_blocked_when_tool_failed_and_answer_empty():
     """B3: Tool-Failure + leere Antwort → Autosave wird weiterhin blockiert."""
     orch = _make_orchestrator()
+    plan = {}
+    set_runtime_tool_results(plan, "### TOOL-SKIP (container_stats): missing_required=['container_id']")
     with patch("core.orchestrator.autosave_assistant") as autosave_mock, \
          patch("core.orchestrator.load_grounding_policy", return_value={}):
-        orch._save_memory(
-            conversation_id="conv-1",
-            verified_plan={
-                "_tool_results": "### TOOL-SKIP (container_stats): missing_required=['container_id']",
-            },
-            answer="",
-        )
+        orch._save_memory(conversation_id="conv-1", verified_plan=plan, answer="")
     autosave_mock.assert_not_called()
 
 

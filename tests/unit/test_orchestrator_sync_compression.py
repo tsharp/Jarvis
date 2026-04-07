@@ -36,6 +36,7 @@ def _prepare_sync_happy_path(orch):
     })
     orch._route_skill_request = MagicMock(return_value=None)
     orch._route_blueprint_request = MagicMock(return_value=None)
+    from core.memory_resolution import MemoryResolution
     orch.build_effective_context = MagicMock(return_value=("", {
         "memory_used": False,
         "small_model_mode": False,
@@ -43,14 +44,14 @@ def _prepare_sync_happy_path(orch):
         "retrieval_count": 0,
         "context_sources": [],
         "context_chars_final": 0,
-    }))
+    }, MemoryResolution()))
     orch._execute_control_layer = AsyncMock(return_value=(
         {"approved": True, "corrections": {}},
         {"suggested_tools": []},
     ))
     orch._collect_control_tool_decisions = AsyncMock(return_value={})
     orch._resolve_execution_suggested_tools = MagicMock(return_value=[])
-    orch._execute_output_layer = AsyncMock(return_value="ok")
+    orch.output.generate = AsyncMock(return_value="ok")
     orch._save_memory = MagicMock()
 
 

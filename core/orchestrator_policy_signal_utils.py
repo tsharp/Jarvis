@@ -1,4 +1,4 @@
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 
 def sanitize_tone_signal(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -38,6 +38,10 @@ def ensure_dialogue_controls(
     tone_signal: Optional[Dict[str, Any]],
     *,
     override_threshold: float = 0.82,
+    user_text: str = "",
+    selected_tools: Optional[List[Any]] = None,
+    contains_explicit_tool_intent_fn: Optional[Callable[[str], bool]] = None,
+    has_non_memory_tool_runtime_signal_fn: Optional[Callable[[str], bool]] = None,
 ) -> Dict[str, Any]:
     plan = thinking_plan if isinstance(thinking_plan, dict) else {}
     signal = sanitize_tone_signal(tone_signal or {})
@@ -76,6 +80,74 @@ def ensure_dialogue_controls(
     plan["response_length_hint"] = length_hint
     plan["tone_confidence"] = max(0.0, min(1.0, conf))
     plan["_tone_signal"] = signal
+    resolve_conversation_mode(
+        plan,
+        user_text=user_text,
+        selected_tools=selected_tools,
+        contains_explicit_tool_intent_fn=contains_explicit_tool_intent_fn,
+        has_non_memory_tool_runtime_signal_fn=has_non_memory_tool_runtime_signal_fn,
+    )
+    return plan
+
+
+def looks_like_social_memory_candidate(text: str) -> bool:
+    lower = str(text or "").strip().lower()
+    if not lower:
+        return False
+    markers = (
+        "mein name ist ",
+        "ich heiße ",
+        "ich heisse ",
+        "du kannst mich ",
+        "nenn mich ",
+        "merk dir, dass ich ",
+        "merk dir meinen namen",
+        "mein vorname ist ",
+    )
+    return any(marker in lower for marker in markers)
+
+
+def resolve_conversation_mode(
+    thinking_plan: Dict[str, Any],
+    *,
+    user_text: str = "",
+    selected_tools: Optional[List[Any]] = None,
+    contains_explicit_tool_intent_fn: Optional[Callable[[str], bool]] = None,
+    has_non_memory_tool_runtime_signal_fn: Optional[Callable[[str], bool]] = None,
+) -> Dict[str, Any]:
+    plan = thinking_plan if isinstance(thinking_plan, dict) else {}
+    lower = str(user_text or "").lower()
+    act = str(plan.get("dialogue_act") or "").strip().lower()
+    social_act = act in {"smalltalk", "ack", "feedback"}
+    social_memory_candidate = looks_like_social_memory_candidate(user_text)
+    explicit_tool_intent = (
+        bool(contains_explicit_tool_intent_fn(user_text))
+        if callable(contains_explicit_tool_intent_fn)
+        else False
+    )
+    runtime_signal = (
+        bool(has_non_memory_tool_runtime_signal_fn(lower))
+        if callable(has_non_memory_tool_runtime_signal_fn)
+        else False
+    )
+    has_selected_tools = bool(selected_tools)
+
+    if social_memory_candidate:
+        mode = "conversational"
+    elif explicit_tool_intent or runtime_signal:
+        mode = "mixed" if social_act else "tool_grounded"
+    elif social_act:
+        mode = "conversational"
+    elif bool(plan.get("is_fact_query")):
+        mode = "factual_light"
+    elif has_selected_tools:
+        mode = "mixed"
+    else:
+        mode = "factual_light"
+
+    plan["conversation_mode"] = mode
+    plan["social_memory_candidate"] = bool(social_memory_candidate)
+    plan["grounding_relaxed_for_conversation"] = mode == "conversational"
     return plan
 
 

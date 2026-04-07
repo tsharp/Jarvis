@@ -123,38 +123,13 @@ async def process_request(
         log_warn_fn(f"[Orchestrator] Context compression skipped (sync path): {_ce_sync}")
     
     # ===============================================================
-    # STEP 2: Thinking Layer
-    # ===============================================================
-    # ===============================================================
     # STEP 1.5: Tool Selector (Layer 0)
     # ===============================================================
-    # Letzten Assistenten-Message als Kontext für ToolSelector extrahieren
-    _last_assistant_msg = ""
-    for _msg in reversed(list(getattr(request, "messages", None) or [])):
-        if isinstance(_msg, dict) and _msg.get("role") == "assistant":
-            _last_assistant_msg = str(_msg.get("content", ""))
-            break
-    selected_tools = await orch.tool_selector.select_tools(user_text, context_summary=_last_assistant_msg)
-    selected_tools = orch._filter_tool_selector_candidates(
-        selected_tools, user_text, forced_mode=forced_response_mode
-    )
-    # Short-Input Bypass: Wenn Semantic Search bei sehr kurzem Input leer bleibt,
-    # Core-Follow-up-Tools injizieren — ThinkingLayer entscheidet via Chat-History selbst.
-    # home_write nur ohne Konversationskontext — mit Kontext würde es Onboarding triggern.
-    if not selected_tools and len(user_text.split()) < 5:
-        if _last_assistant_msg:
-            selected_tools = ["request_container", "run_skill"]
-        else:
-            selected_tools = ["request_container", "run_skill", "home_write"]
-        log_info_fn("[Orchestrator] Short-Input Bypass: core follow-up tools injected [sync]")
-    query_budget_signal = await orch._classify_query_budget_signal(
-        user_text,
-        selected_tools=selected_tools,
-        tone_signal=tone_signal,
-    )
-    domain_route_signal = await orch._classify_domain_signal(
-        user_text,
-        selected_tools=selected_tools,
+    from core.orchestrator_pipeline_stages import run_tool_selection_stage
+    selected_tools, query_budget_signal, domain_route_signal, _last_assistant_msg = (
+        await run_tool_selection_stage(
+            orch, user_text, request, forced_response_mode, tone_signal, log_info_fn
+        )
     )
     
     # ===============================================================
@@ -168,7 +143,12 @@ async def process_request(
         if skip_thinking:
             log_info_fn("[Pipeline] Skipping ThinkingLayer for Master (settings: use_thinking_layer=False)")
             thinking_plan = orch.thinking._default_plan()
-            thinking_plan = orch._ensure_dialogue_controls(thinking_plan, tone_signal)
+            thinking_plan = orch._ensure_dialogue_controls(
+                thinking_plan,
+                tone_signal,
+                user_text=user_text,
+                selected_tools=selected_tools,
+            )
     if (
         not skip_thinking
         and orch._should_skip_thinking_from_query_budget(
@@ -180,7 +160,12 @@ async def process_request(
         skip_thinking = True
         log_info_fn("[Pipeline] Skipping ThinkingLayer via QueryBudget signal")
         thinking_plan = orch.thinking._default_plan()
-        thinking_plan = orch._ensure_dialogue_controls(thinking_plan, tone_signal)
+        thinking_plan = orch._ensure_dialogue_controls(
+            thinking_plan,
+            tone_signal,
+            user_text=user_text,
+            selected_tools=selected_tools,
+        )
     
     if not skip_thinking:
         # ── ThinkingLayer Cache-Check (Sync-Pfad) ──
@@ -191,7 +176,12 @@ async def process_request(
             log_info_fn("[Orchestrator] ThinkingLayer Cache SKIP: short input is context-dependent [sync]")
         if _cached_plan_sync:
             thinking_plan = _cached_plan_sync
-            thinking_plan = orch._ensure_dialogue_controls(thinking_plan, tone_signal)
+            thinking_plan = orch._ensure_dialogue_controls(
+                thinking_plan,
+                tone_signal,
+                user_text=user_text,
+                selected_tools=selected_tools,
+            )
             # Touch TTL on hit so repeated turns don't expire mid-benchmark.
             thinking_plan_cache.set(user_text, thinking_plan)
             log_info_fn(f"[Orchestrator] CACHE HIT ThinkingLayer (sync): intent='{thinking_plan.get('intent')}'")
@@ -213,152 +203,37 @@ async def process_request(
                 available_tools=selected_tools,
                 tone_signal=tone_signal,
             )
-            thinking_plan = orch._ensure_dialogue_controls(thinking_plan, tone_signal)
+            thinking_plan = orch._ensure_dialogue_controls(
+                thinking_plan,
+                tone_signal,
+                user_text=user_text,
+                selected_tools=selected_tools,
+            )
             thinking_plan["_trace_skills_prefetch"] = bool(_sync_skill_ctx)
             thinking_plan["_trace_skills_prefetch_mode"] = _sync_prefetch_mode
             thinking_plan_cache.set(user_text, thinking_plan)
             log_info_fn(f"[Orchestrator] ThinkingLayer plan cached (sync) prefetch={_sync_prefetch_mode}")
-    thinking_plan = orch._coerce_thinking_plan_schema(
-        thinking_plan,
-        user_text=user_text,
-    )
-    thinking_plan = orch._apply_query_budget_to_plan(
-        thinking_plan,
-        query_budget_signal,
-        user_text=user_text,
-    )
-    thinking_plan = orch._apply_domain_route_to_plan(
-        thinking_plan,
-        domain_route_signal,
-        user_text=user_text,
-    )
-    thinking_plan = orch._resolve_precontrol_policy_conflicts(
-        user_text,
-        thinking_plan,
-        conversation_id=conversation_id,
-    )
-
-    # Short-Input Plan Bypass: Wenn ThinkingLayer keine Tools zurückgab UND
-    # der Input sehr kurz war UND Bypass-Kandidaten verfügbar sind.
-    if (
-        not thinking_plan.get("suggested_tools")
-        and selected_tools
-        and len(user_text.split()) < 5
-    ):
-        thinking_plan["suggested_tools"] = list(selected_tools)
-        log_info_fn(
-            f"[Orchestrator] Short-Input Plan Bypass: suggested_tools injected "
-            f"from selected_tools={selected_tools} [sync]"
-        )
-
     # ===============================================================
-    # STEP 2.1: RESPONSE MODE POLICY (interactive | deep)
+    # STEP 2.1: PLAN FINALIZATION + RESPONSE MODE
     # ===============================================================
-    response_mode = orch._apply_response_mode_policy(
-        user_text,
-        thinking_plan,
-        forced_mode=forced_response_mode,
+    from core.orchestrator_pipeline_stages import run_plan_finalization
+    thinking_plan, response_mode = run_plan_finalization(
+        orch, user_text, request, thinking_plan, selected_tools,
+        query_budget_signal, domain_route_signal, forced_response_mode,
+        conversation_id, log_info_fn,
     )
     log_info_fn(f"[Orchestrator] response_mode={response_mode} (sync)")
-    log_info_fn(
-        "[Orchestrator] dialogue_controls "
-        f"act={thinking_plan.get('dialogue_act')} "
-        f"tone={thinking_plan.get('response_tone')} "
-        f"len={thinking_plan.get('response_length_hint')} "
-        f"conf={thinking_plan.get('tone_confidence')}"
-    )
-    orch._apply_temporal_context_fallback(
-        user_text,
-        thinking_plan,
-        chat_history=request.messages,
-    )
+
+    # WORKSPACE: Save thinking observations (sync-Pfad Parität zu stream_flow_utils)
+    _obs_text_sync = orch._extract_workspace_observations(thinking_plan)
+    if _obs_text_sync:
+        orch._save_workspace_entry(conversation_id, _obs_text_sync, "observation", "thinking")
 
     # ===============================================================
-    # STEP 1.7: SKILL DEDUP GATE (Sync-Pfad, fail-closed)
+    # STEP 1.7+1.8: PRE-CONTROL GATES (Skill Dedup, Container, Hardware)
     # ===============================================================
-    if "autonomous_skill_task" in thinking_plan.get("suggested_tools", []):
-        if not orch._contains_explicit_skill_intent(user_text):
-            thinking_plan["_skill_gate_blocked"] = True
-            thinking_plan["_skill_gate_reason"] = "no_explicit_skill_intent"
-            thinking_plan["suggested_tools"] = [
-                t for t in thinking_plan.get("suggested_tools", [])
-                if t not in {"autonomous_skill_task", "run_skill", "create_skill"}
-            ]
-            log_info_fn("[Orchestrator-Sync] Skill gate blocked — reason=no_explicit_skill_intent")
-        else:
-            _skill_decision_sync = orch._route_skill_request(user_text, thinking_plan)
-            if _skill_decision_sync and _skill_decision_sync.get("blocked"):
-                thinking_plan["_skill_gate_blocked"] = True
-                thinking_plan["_skill_gate_reason"] = _skill_decision_sync.get("reason", "skill_router_unavailable")
-                thinking_plan["suggested_tools"] = [
-                    t for t in thinking_plan.get("suggested_tools", [])
-                    if t not in {"autonomous_skill_task", "run_skill", "create_skill"}
-                ]
-                log_warn_fn(
-                    "[Orchestrator-Sync] Skill gate blocked — "
-                    f"reason={thinking_plan['_skill_gate_reason']}"
-                )
-            elif _skill_decision_sync:
-                thinking_plan["suggested_tools"] = ["run_skill"]
-                thinking_plan["_skill_router"] = _skill_decision_sync
-                log_info_fn(
-                    f"[Orchestrator-Sync] Skill Dedup Gate: '{_skill_decision_sync['skill_name']}' "
-                    f"(score={_skill_decision_sync['score']:.2f}) — run_skill statt create"
-                )
-
-    # ===============================================================
-    # STEP 1.8: BLUEPRINT ROUTER (Sync-Pfad)
-    # Identisch zu Streaming-Pfad — keine Divergenz.
-    # ===============================================================
-    if "request_container" in thinking_plan.get("suggested_tools", []):
-        # A3 Fix: container follow-ups often don't trigger needs_chat_history=True in Thinking
-        # because the text is short ("neuer Container bitte") without blueprint name.
-        # Always require chat history for container requests so Output has full context.
-        # Additionally, enrich the intent with blueprint mentions from recent history
-        # so the Blueprint Router can match the right blueprint.
-        if not thinking_plan.get("needs_chat_history"):
-            thinking_plan["needs_chat_history"] = True
-            _history_msgs = getattr(request, "messages", None) or []
-            _bp_hint = _extract_blueprint_hint_from_history(_history_msgs, user_text)
-            if _bp_hint:
-                _current_intent = str(thinking_plan.get("intent") or "").strip()
-                thinking_plan["intent"] = f"{_current_intent} {_bp_hint}".strip()
-                log_info_fn(f"[Orchestrator-Sync] A3 Fix: blueprint hint '{_bp_hint}' injected into intent")
-            else:
-                log_info_fn("[Orchestrator-Sync] A3 Fix: needs_chat_history=True (request_container follow-up)")
-
-        _bp_decision_sync = orch._route_blueprint_request(user_text, thinking_plan)
-        if _bp_decision_sync and _bp_decision_sync.get("blocked"):
-            thinking_plan["_blueprint_gate_blocked"] = True
-            thinking_plan["_blueprint_gate_reason"] = _bp_decision_sync.get(
-                "reason", "blueprint_router_unavailable"
-            )
-            log_warn_fn(
-                "[Orchestrator-Sync] Blueprint gate blocked — "
-                f"reason={thinking_plan['_blueprint_gate_reason']}"
-            )
-        elif _bp_decision_sync and not _bp_decision_sync.get("suggest"):
-            # Auto-route: score >= STRICT
-            thinking_plan["_blueprint_router"] = _bp_decision_sync
-            log_info_fn(f"[Orchestrator-Sync] Blueprint auto-routed: '{_bp_decision_sync['blueprint_id']}' (score={_bp_decision_sync['score']:.2f})")
-        elif _bp_decision_sync and _bp_decision_sync.get("suggest"):
-            # Suggest-Zone: score in [SUGGEST, STRICT) → Rückfrage, kein Starten
-            thinking_plan["_blueprint_suggest"] = _bp_decision_sync
-            thinking_plan["_blueprint_gate_blocked"] = True
-            log_info_fn(f"[Orchestrator-Sync] Blueprint suggest: Kandidaten={[c['id'] for c in _bp_decision_sync['candidates']]} — Rückfrage nötig")
-        else:
-            thinking_plan["_blueprint_gate_blocked"] = True
-            thinking_plan["_blueprint_no_match"] = True
-            _cur_tools_sync = list(thinking_plan.get("suggested_tools") or [])
-            if "blueprint_list" not in _cur_tools_sync:
-                thinking_plan["suggested_tools"] = _cur_tools_sync + ["blueprint_list"]
-            log_info_fn("[Orchestrator-Sync] Blueprint: kein Match — blueprint_list als Fallback-Signal injiziert")
-
-    _early_gate_msg_sync = orch._check_hardware_gate_early(user_text, thinking_plan)
-    if _early_gate_msg_sync:
-        log_info_fn("[Orchestrator-Sync] Early Hardware Gate signal — delegated to Control hard-block authority")
-        thinking_plan["_hardware_gate_triggered"] = True
-        thinking_plan["_hardware_gate_warning"] = str(_early_gate_msg_sync or "")[:1200]
+    from core.orchestrator_pipeline_stages import run_pre_control_gates
+    run_pre_control_gates(orch, user_text, thinking_plan, request, log_info_fn, log_warn_fn)
 
     # ===============================================================
     # STEP 3: Context Retrieval (unified via _build_effective_context)
@@ -366,7 +241,7 @@ async def process_request(
     log_info_fn("[Orchestrator] === CONTEXT RETRIEVAL ===")
     from config import get_small_model_mode as _get_smm
     _smm = _get_smm()
-    retrieved_memory, ctx_trace = orch.build_effective_context(
+    retrieved_memory, ctx_trace, mem_res = orch.build_effective_context(
         user_text=user_text,
         conv_id=conversation_id,
         small_model_mode=_smm,
@@ -422,8 +297,15 @@ async def process_request(
         control_decision=control_decision,
         stream=False,
     )
-    control_decision = control_decision.with_tools_allowed(_ctrl_decisions_sync.keys())
     persist_control_decision(verified_plan, control_decision)
+
+    # WORKSPACE: persist control decision (sync-Pfad Parität zu stream_flow_utils)
+    _ctrl_summary_sync = orch._build_control_workspace_summary(
+        verification,
+        skipped=False,
+        skip_reason="",
+    )
+    orch._save_workspace_entry(conversation_id, _ctrl_summary_sync, "control_decision", "control")
 
     # Control is the only hard-block authority.
     if orch._is_control_hard_block_decision(verification):
@@ -488,7 +370,7 @@ async def process_request(
                     )
                     continue
                 log_info_fn(f"[Orchestrator-Control] Extra memory lookup: {key}")
-                extra_text, extra_trace = orch.build_effective_context(
+                extra_text, extra_trace, _extra_res = orch.build_effective_context(
                     user_text=key,
                     conv_id=conversation_id,
                     small_model_mode=_smm,
@@ -578,6 +460,51 @@ async def process_request(
                 f"(tool_context={len(tool_context)}, failure_ctx merged if any)"
             )
 
+    _active_container_ctx = await orch._maybe_build_active_container_capability_context(
+        user_text=user_text,
+        conversation_id=conversation_id,
+        verified_plan=verified_plan,
+        history_len=len(request.messages),
+    )
+    _active_container_ctx_text = str((_active_container_ctx or {}).get("context_text") or "").strip()
+    if _active_container_ctx_text:
+        retrieved_memory = orch._append_context_block(
+            retrieved_memory,
+            _active_container_ctx_text,
+            "active_container_ctx",
+            ctx_trace,
+        )
+    _active_container_tool_results = str(
+        (_active_container_ctx or {}).get("tool_results_text") or ""
+    ).strip()
+    if _active_container_tool_results:
+        append_runtime_tool_results(
+            verified_plan,
+            f"\n{_active_container_tool_results}\n",
+        )
+
+    _skill_semantic_ctx = await orch._maybe_build_skill_semantic_context(
+        user_text=user_text,
+        conversation_id=conversation_id,
+        verified_plan=verified_plan,
+    )
+    _skill_semantic_ctx_text = str((_skill_semantic_ctx or {}).get("context_text") or "").strip()
+    if _skill_semantic_ctx_text:
+        retrieved_memory = orch._append_context_block(
+            retrieved_memory,
+            _skill_semantic_ctx_text,
+            "skill_catalog_ctx",
+            ctx_trace,
+        )
+    _skill_semantic_tool_results = str(
+        (_skill_semantic_ctx or {}).get("tool_results_text") or ""
+    ).strip()
+    if _skill_semantic_tool_results:
+        append_runtime_tool_results(
+            verified_plan,
+            f"\n{_skill_semantic_tool_results}\n",
+        )
+
     orch._inject_carryover_grounding_evidence(
         conversation_id,
         verified_plan,
@@ -617,6 +544,41 @@ async def process_request(
     # [CTX-PRE-OUTPUT]: orchestrator context string before OutputLayer adds persona/instructions/history.
     # [CTX-FINAL] is emitted inside OutputLayer after the full messages array is built.
     ctx_trace["mode"] = orch._compute_ctx_mode(ctx_trace)
+    if str(
+        verified_plan.get("_authoritative_resolution_strategy")
+        or verified_plan.get("resolution_strategy")
+        or ""
+    ).strip().lower() == "skill_catalog_context":
+        skill_ctx = verified_plan.get("_skill_catalog_context")
+        skill_ctx = skill_ctx if isinstance(skill_ctx, dict) else {}
+        skill_policy = verified_plan.get("_skill_catalog_policy")
+        skill_policy = skill_policy if isinstance(skill_policy, dict) else {}
+        selected_doc_ids = list(skill_ctx.get("selected_doc_ids") or [])
+        if not selected_doc_ids and str(skill_ctx.get("selected_docs") or "").strip():
+            selected_doc_ids = [
+                part.strip()
+                for part in str(skill_ctx.get("selected_docs") or "").split(",")
+                if str(part or "").strip()
+            ]
+        skill_route = verified_plan.get("_skill_catalog_tool_route")
+        skill_route = skill_route if isinstance(skill_route, dict) else {}
+        ctx_trace["skill_catalog"] = {
+            "selected_hints": list(verified_plan.get("strategy_hints") or []),
+            "selected_docs": selected_doc_ids,
+            "strict_mode": "answer_schema+semantic_postcheck",
+            "postcheck": "pending",
+            "thinking_suggested_tools": list(
+                verified_plan.get("_thinking_suggested_tools")
+                or verified_plan.get("suggested_tools")
+                or []
+            ),
+            "final_execution_tools": list(verified_plan.get("_final_execution_tools") or []),
+            "tool_route_status": skill_route.get("status"),
+            "tool_route_reason": skill_route.get("reason"),
+            "policy_mode": str(skill_policy.get("mode") or "").strip(),
+            "required_tools": list(skill_policy.get("required_tools") or []),
+            "force_sections": list(skill_policy.get("force_sections") or []),
+        }
     log_info_fn(
         f"[CTX-PRE-OUTPUT] mode={ctx_trace['mode']} "
         f"context_sources={','.join(ctx_trace['context_sources'])} "
@@ -636,13 +598,15 @@ async def process_request(
     # ===============================================================
     # STEP 5: Output Layer
     # ===============================================================
-    needs_memory = thinking_plan.get("needs_memory") or thinking_plan.get("is_fact_query")
-    high_risk = thinking_plan.get("hallucination_risk") == "high"
-    memory_required_but_missing = needs_memory and high_risk and not memory_used
-    resolved_output_model, model_resolution = orch._resolve_runtime_output_model(request.model)
-    verified_plan["_output_model_resolution"] = model_resolution
-    
-    answer = await orch._execute_output_layer(
+    from core.orchestrator_pipeline_stages import prepare_output_invocation
+    resolved_output_model, memory_required_but_missing = prepare_output_invocation(
+        orch, request, verified_plan, mem_res, response_mode=verified_plan.get("_response_mode", "interactive")
+    )
+
+    log_info_fn("[Orchestrator] === LAYER 3: OUTPUT ===")
+    if memory_required_but_missing:
+        log_info_fn("[Orchestrator-Output] WARNING: Memory required but not found!")
+    answer = await orch.output.generate(
         user_text=user_text,
         verified_plan=verified_plan,
         memory_data=retrieved_memory,
@@ -650,8 +614,9 @@ async def process_request(
         chat_history=request.messages,
         control_decision=control_decision,
         execution_result=verified_plan.get("_execution_result"),
-        memory_required_but_missing=memory_required_but_missing
+        memory_required_but_missing=memory_required_but_missing,
     )
+    log_info_fn(f"[Orchestrator-Output] Generated {len(answer)} chars")
 
     answer = await orch._apply_conversation_consistency_guard(
         conversation_id=conversation_id,
@@ -674,7 +639,20 @@ async def process_request(
     _done_reason_sync = str((_exec_result_sync or {}).get("done_reason") or "stop")
     if _done_reason_sync == "success":
         _done_reason_sync = "stop"
-    
+
+    # WORKSPACE: persist done entry (sync-Pfad Parität zu stream_flow_utils)
+    orch._save_workspace_entry(
+        conversation_id,
+        orch._build_done_workspace_summary(
+            _done_reason_sync,
+            response_mode=response_mode,
+            model=resolved_output_model,
+            memory_used=memory_used,
+        ),
+        "chat_done",
+        "orchestrator",
+    )
+
     return core_chat_response_cls(
         model=resolved_output_model,
         content=answer,

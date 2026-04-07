@@ -1,25 +1,18 @@
 """
-BlueprintSemanticRouter — Embedding-basierter Blueprint-Gate
+BlueprintSemanticRouter — Embedding-basierter Blueprint-Resolver.
 
-Deterministisches, LLM-freies Routing für Container-Anfragen:
+Der Router bleibt deterministisch und LLM-frei, liefert aber primär Kandidaten-
+Evidence für den ControlLayer. Die finale Auswahl bleibt damit bei Control.
 
-  score >= MATCH_THRESHOLD_STRICT (0.85)  → use_blueprint    (auto-route, kein User-Input nötig)
-  score >= MATCH_THRESHOLD_SUGGEST (0.68) → suggest_blueprint (TRION fragt nach, nennt Top-2 Kandidaten)
-  score <  MATCH_THRESHOLD_SUGGEST        → no_blueprint      (kein Match, kein Freestyle-Fallback!)
+Routing-Klassen:
 
-Warum zwei Schwellwerte:
-  Container-Aktionen sind keine read-only Aktionen — Fehlstarts sind teuer.
-  0.68 ist für python/node/db/shell-sandbox empirisch korrekt (mxbai-embed-large-v1),
-  aber nicht konservativ genug für blindes Auto-Routing.
-  Unter 0.85: TRION nennt Top-2 Kandidaten und fragt den User.
+  score >= MATCH_THRESHOLD_STRICT (0.85)  → use_blueprint
+  score >= MATCH_THRESHOLD_SUGGEST (0.68) → suggest_blueprint
+  score <  MATCH_THRESHOLD_SUGGEST        → no_blueprint
 
-Trust-Guard: nur Blueprints mit trust_level="verified" werden berücksichtigt.
-Kaputter metadata → treat as untrusted → skip.
-
-Phase 5 — Graph Hygiene:
-  Alle Graph-Kandidaten laufen durch apply_graph_hygiene() (core/graph_hygiene.py):
-    parse → trust_level-Filter → dedupe_latest_by_blueprint_id → sqlite_crosscheck (fail-closed)
-  Kein Fail-Open bei SQLite-Fehler (war vorher: _active_ids = None → skip filter).
+Wichtig:
+  `route()` bleibt für bestehende Aufrufer kompatibel, enthält aber jetzt immer
+  die gerankte Kandidatenliste als advisory Evidence.
 """
 
 from typing import List, Optional
@@ -110,6 +103,7 @@ class BlueprintSemanticRouter:
                 return BlueprintRouterDecision(
                     decision="no_blueprint",
                     reason="Kein Blueprint im Graph",
+                    candidates=[],
                 )
 
             # Trust-Level-Filter: nur "verified" Blueprints zulassen.
@@ -146,12 +140,21 @@ class BlueprintSemanticRouter:
                 return BlueprintRouterDecision(
                     decision="no_blueprint",
                     reason="Keine verifizierten, aktiven Blueprints nach Hygiene-Filter",
+                    candidates=[],
                 )
 
             # Bester Treffer entscheidet (candidates sind score-sorted descending)
             best = candidates[0]
             best_score = best.score
             best_id = best.blueprint_id
+            ranked = [
+                {
+                    "id": c.blueprint_id,
+                    "score": c.score,
+                }
+                for c in candidates[: max(1, int(top_k or 5))]
+                if c.blueprint_id
+            ]
 
             log_info(
                 f"[BlueprintRouter] Bester Kandidat: '{best_id}' score={best_score:.3f} "
@@ -174,6 +177,7 @@ class BlueprintSemanticRouter:
                         blueprint_id=_cid,
                         score=_cand.score,
                         reason=f"Explizit genannt + Semantic-Match ({_cand.score:.2f}) → auto-route '{_cid}'",
+                        candidates=ranked,
                     )
 
             if best_score >= MATCH_THRESHOLD_STRICT:
@@ -183,21 +187,21 @@ class BlueprintSemanticRouter:
                     blueprint_id=best_id,
                     score=best_score,
                     reason=f"Hohe Konfidenz ({best_score:.2f}) → auto-route '{best_id}'",
+                    candidates=ranked,
                 )
 
             elif best_score >= MATCH_THRESHOLD_SUGGEST:
-                top2 = [{"id": c.blueprint_id, "score": c.score} for c in candidates[:2]]
                 log_info(
                     f"[BlueprintRouter] SUGGEST → score={best_score:.3f} in "
                     f"[{MATCH_THRESHOLD_SUGGEST}, {MATCH_THRESHOLD_STRICT}) "
-                    f"— Kandidaten: {[c['id'] for c in top2]}"
+                    f"— Kandidaten: {[c['id'] for c in ranked[:2]]}"
                 )
                 return BlueprintRouterDecision(
                     decision="suggest_blueprint",
                     blueprint_id=best_id,
                     score=best_score,
                     reason=f"Nicht sicher genug für auto-route ({best_score:.2f}) — Rückfrage nötig",
-                    candidates=top2,
+                    candidates=ranked,
                 )
 
             elif best_score >= PARTIAL_THRESHOLD:
@@ -206,6 +210,7 @@ class BlueprintSemanticRouter:
                     decision="no_blueprint",
                     score=best_score,
                     reason=f"Partieller Treffer ({best_score:.2f}) — unter Suggest-Threshold {MATCH_THRESHOLD_SUGGEST}",
+                    candidates=ranked,
                 )
 
             else:
@@ -213,6 +218,7 @@ class BlueprintSemanticRouter:
                     decision="no_blueprint",
                     score=best_score,
                     reason=f"Kein passender Blueprint (bester Score: {best_score:.2f})",
+                    candidates=ranked,
                 )
 
         except Exception as e:
@@ -220,6 +226,7 @@ class BlueprintSemanticRouter:
             return BlueprintRouterDecision(
                 decision="no_blueprint",
                 reason=f"Router-Fehler: {e}",
+                candidates=[],
             )
 
     def _build_query(self, user_text: str, intent: str) -> str:

@@ -175,30 +175,30 @@ class TestThinkingLayerExecution:
 
 class TestOutputLayerExecution:
     """Test output layer execution"""
-    
+
     @pytest.mark.asyncio
-    async def test_execute_output_layer(self, mock_layers):
-        """Should call OutputLayer.generate"""
+    async def test_output_layer_generate_is_callable(self, mock_layers):
+        """OutputLayer.generate must be available and callable on the orchestrator."""
         try:
             from core.orchestrator import PipelineOrchestrator
-            
+
             with patch('core.orchestrator.ThinkingLayer', return_value=mock_layers["thinking"]), \
                  patch('core.orchestrator.ControlLayer', return_value=mock_layers["control"]), \
                  patch('core.orchestrator.OutputLayer', return_value=mock_layers["output"]), \
                  patch('core.orchestrator.get_hub', return_value=MagicMock()), \
                  patch('core.orchestrator.get_registry', return_value=MagicMock()), \
                  patch('core.orchestrator.ContextManager', return_value=MockContextManager()):
-                
+
                 orch = PipelineOrchestrator()
-                result = await orch._execute_output_layer(
+                result = await orch.output.generate(
                     user_text="Test",
                     verified_plan={"intent": "greeting", "_verified": True},
                     memory_data="",
                     model="qwen3",
                     chat_history=[],
-                    memory_required_but_missing=False
+                    memory_required_but_missing=False,
                 )
-                
+
                 assert result == "Generated response text"
                 mock_layers["output"].generate.assert_called_once()
         except ImportError as e:

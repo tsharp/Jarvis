@@ -138,7 +138,7 @@ def _build_small_mode_context(orch, cap: int):
         patch("config.get_jit_retrieval_max", return_value=1),
         patch("config.get_jit_retrieval_max_on_failure", return_value=2),
     ):
-        text, trace = orch.build_effective_context(
+        text, trace, _res = orch.build_effective_context(
             user_text="token probe",
             conv_id="conv-token-probe",
             small_model_mode=True,

@@ -35,6 +35,8 @@ AUSGABE: NUR dieses JSON, nichts anderes:
     "memory_keys": ["key1", "key2"],
     "needs_chat_history": true/false,
     "is_fact_query": true/false,
+    "resolution_strategy": "active_container_capability/home_container_info/skill_catalog_context/null",
+    "strategy_hints": [],
     "time_reference": "today|yesterday|day_before_yesterday|YYYY-MM-DD|null",
     "is_new_fact": false,
     "new_fact_key": null,
@@ -68,6 +70,14 @@ Tool-Erkennung:
 - "skill erstellen/create skill" → ["create_skill"]
 - "skills zeigen" → ["list_skills"]
 - "skill ausführen" → ["run_skill"]
+- semantische Skill-Fragen wie "welche skills hast du?", "welche arten von skills gibt es?" oder
+  "was ist der unterschied zwischen tools und skills?" → resolution_strategy: "skill_catalog_context"
+  und strategy_hints passend zur Frage, z. B. ["runtime_skills"], ["tools_vs_skills"], ["draft_skills"]
+- Container-Fragen semantisch trennen:
+  - "welche container laufen / sind installiert?" → resolution_strategy: "container_inventory"
+  - "welche blueprints / startbaren container gibt es?" → resolution_strategy: "container_blueprint_catalog"
+  - "welcher container ist aktiv / woran ist dieser turn gebunden?" → resolution_strategy: "container_state_binding"
+  - "starte / deploye einen container" → resolution_strategy: "container_request"
 
 Container Commander Tools:
 - "blueprints/container-typen/sandbox" → ["blueprint_list"]
@@ -93,6 +103,34 @@ Runtime-Härtung (wichtig):
   → memory_keys mit relevantem Projekt-/Kontext-Keys befüllen (z.B. [“python_project”, “last_container”])
 - Wenn needs_memory=true, dann memory_keys NICHT leer; sonst needs_memory=false setzen.
 - Nutze nur Tools aus "VERFÜGBARE TOOLS". Schlage keine nicht gelisteten Tools vor.
+- `resolution_strategy` beschreibt die bevorzugte semantische Aufloesung, nicht nur Tools.
+- Für Follow-ups wie "was kannst du in diesem container alles tun?" mit aktivem Container-Kontext:
+  - is_fact_query: true
+  - needs_chat_history: true
+  - resolution_strategy: "active_container_capability"
+  - generische Tools bleiben nur advisory
+- Für Container-Inventarfragen wie "welche Container laufen?" oder "welche Container sind installiert?":
+  - resolution_strategy: "container_inventory"
+  - `container_list` ist autoritativ
+  - `blueprint_list` ist dafür nicht die Hauptantwort
+- Für Container-Katalogfragen wie "welche Blueprints gibt es?" oder
+  "welche Container koennte ich starten?":
+  - resolution_strategy: "container_blueprint_catalog"
+  - `blueprint_list` ist autoritativ
+  - `container_list` ist dafür nicht die Hauptantwort
+- Für State-/Binding-Fragen wie "welcher Container ist gerade aktiv?" oder
+  "auf welchen Container ist dieser Turn gebunden?":
+  - resolution_strategy: "container_state_binding"
+  - Session-/Conversation-State und `container_inspect` sind autoritativ
+- Für Start-/Deploy-Fragen:
+  - resolution_strategy: "container_request"
+  - `request_container` ist der Interaktionspfad
+- Für Skill-Fragen wie "welche skills hast du?", "welche draft skills gibt es?" oder
+  "was ist der unterschied zwischen tools und skills?":
+  - resolution_strategy: "skill_catalog_context"
+  - `list_skills` beschreibt nur Runtime-Inventar und bleibt für Counts/Namen nur advisory
+  - strategy_hints sollen möglichst die semantische Kategorie tragen, z. B.
+    `runtime_skills`, `draft_skills`, `tools_vs_skills`, `session_skills`, `overview`, `answering_rules`
 - Wenn im Kontext aktive Container mit container_id stehen:
   - Für Host/IP/Status-Abfragen zuerst exec_in_container oder container_stats mit vorhandener container_id
   - container_list nur, wenn keine container_id vorhanden ist
@@ -251,6 +289,8 @@ class ThinkingLayer:
             "memory_keys": [],
             "needs_chat_history": False,
             "is_fact_query": False,
+            "resolution_strategy": None,
+            "strategy_hints": [],
             "time_reference": None,
             "is_new_fact": False,
             "new_fact_key": None,

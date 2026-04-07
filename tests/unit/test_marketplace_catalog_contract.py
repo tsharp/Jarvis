@@ -28,9 +28,10 @@ def test_commander_operations_exposes_catalog_routes():
 
 
 def test_terminal_cli_exposes_market_commands_for_user_flow():
-    src = _read("adapters/Jarvis/js/apps/terminal.js")
-    assert "{ cmd: 'market', desc: 'Marketplace: market sync|list|install <id>' }" in src
-    assert "case 'market': {" in src
-    assert "'/marketplace/catalog/sync'" in src
-    assert "/marketplace/catalog/install/${encodeURIComponent(id)}" in src
-    assert "/marketplace/catalog${query}" in src
+    config_src = _read("adapters/Jarvis/js/apps/terminal/config.js")
+    input_src = _read("adapters/Jarvis/js/apps/terminal/command-input.js")
+    assert "{ cmd: 'market', desc: 'Marketplace: market sync|list|install <id>' }" in config_src
+    assert "case 'market': {" in input_src
+    assert "'/marketplace/catalog/sync'" in input_src
+    assert "/marketplace/catalog/install/${encodeURIComponent(id)}" in input_src
+    assert "/marketplace/catalog${query}" in input_src

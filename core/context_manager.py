@@ -40,7 +40,7 @@ SYSTEM_CONV_ID = "system"
 
 class ContextResult:
     """Result of context retrieval operations"""
-    
+
     def __init__(
         self,
         memory_data: str = "",
@@ -52,14 +52,23 @@ class ContextResult:
         self.memory_used = memory_used
         self.system_tools = system_tools
         self.sources = sources or []
-    
+        # Explicit memory-key tracking — used for the hallucination guard.
+        # memory_used=True is too coarse (fires for laws, tools, containers, etc.).
+        # These fields carry the precise "requested but not found" signal.
+        self.memory_keys_requested: List[str] = []
+        self.memory_keys_found: List[str] = []
+        self.memory_keys_not_found: List[str] = []
+
     def to_dict(self) -> Dict:
         """Convert to dictionary for serialization"""
         return {
             "memory_data": self.memory_data,
             "memory_used": self.memory_used,
             "system_tools": self.system_tools,
-            "sources": self.sources
+            "sources": self.sources,
+            "memory_keys_requested": self.memory_keys_requested,
+            "memory_keys_found": self.memory_keys_found,
+            "memory_keys_not_found": self.memory_keys_not_found,
         }
 
 
@@ -338,6 +347,7 @@ class ContextManager:
                         call_timeout_s=per_call_timeout_s,
                         request_cache=request_cache,
                     )
+                    result.memory_keys_requested.extend(memory_keys)
                     for key in memory_keys:
                         content, found = key_results.get(key, ("", False))
                         if found:
@@ -345,6 +355,9 @@ class ContextManager:
                             result.memory_data += content + "\n"
                             result.memory_used = True
                             result.sources.append(f"memory:{key}")
+                            result.memory_keys_found.append(key)
+                        else:
+                            result.memory_keys_not_found.append(key)
 
             log_info(
                 f"[ContextManager] small_model_mode=True — skipped daily_protocol/skills/blueprints, "
@@ -472,13 +485,16 @@ class ContextManager:
                     call_timeout_s=per_call_timeout_s,
                     request_cache=request_cache,
                 )
-
+                result.memory_keys_requested.extend(memory_keys)
                 for key in memory_keys:
                     content, found = key_results.get(key, ("", False))
                     if found:
                         result.memory_data += content
                         result.memory_used = True
                         result.sources.append(f"memory:{key}")
+                        result.memory_keys_found.append(key)
+                    else:
+                        result.memory_keys_not_found.append(key)
         
         return result
     

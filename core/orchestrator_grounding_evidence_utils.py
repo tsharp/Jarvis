@@ -29,13 +29,14 @@ def build_grounding_evidence_entry(
     except Exception:
         parsed = None
     if isinstance(parsed, dict):
+        payload = parsed.get("structuredContent") if isinstance(parsed.get("structuredContent"), dict) else parsed
         if str(tool_name or "").strip() == "list_skills":
-            installed = parsed.get("installed")
-            available = parsed.get("available")
+            installed = payload.get("installed")
+            available = payload.get("available")
             installed_items = installed if isinstance(installed, list) else []
             available_items = available if isinstance(available, list) else []
-            installed_count = parsed.get("installed_count")
-            available_count = parsed.get("available_count")
+            installed_count = payload.get("installed_count")
+            available_count = payload.get("available_count")
             try:
                 installed_count = int(installed_count)
             except Exception:
@@ -60,10 +61,28 @@ def build_grounding_evidence_entry(
             if installed_names:
                 summary_lines.append("installed_names: " + ", ".join(installed_names))
             entry["key_facts"] = summary_lines
+        elif str(tool_name or "").strip() == "list_draft_skills":
+            drafts = payload.get("drafts")
+            draft_items = drafts if isinstance(drafts, list) else []
+            draft_names: List[str] = []
+            for row in draft_items:
+                if isinstance(row, dict):
+                    name = str(row.get("name") or "").strip()
+                else:
+                    name = str(row or "").strip()
+                if name:
+                    draft_names.append(name)
+                if len(draft_names) >= 8:
+                    break
+            draft_count = len(draft_items)
+            summary_lines = [f"draft_count: {draft_count}"]
+            if draft_names:
+                summary_lines.append("draft_names: " + ", ".join(draft_names))
+            entry["key_facts"] = summary_lines
 
         # Skills return {"result": "..."} — use result lines as key_facts so the
         # grounding evidence covers the full tool output (not just the first 3 raw lines).
-        result_str = str(parsed.get("result") or "").strip()
+        result_str = str(payload.get("result") or "").strip()
         if result_str:
             result_lines = [
                 line.strip()
@@ -73,7 +92,7 @@ def build_grounding_evidence_entry(
             if result_lines:
                 entry["key_facts"] = result_lines[:8]
 
-        metrics = parsed.get("metrics")
+        metrics = payload.get("metrics")
         if isinstance(metrics, dict):
             entry["metrics"] = {str(k): v for k, v in metrics.items() if str(k).strip()}
         elif isinstance(metrics, list):
@@ -95,12 +114,43 @@ def build_grounding_evidence_entry(
                 entry["metrics"] = safe_metrics
         structured = {}
         for key in ("output", "result", "description", "type", "success"):
-            if key in parsed:
-                structured[key] = parsed.get(key)
+            if key in payload:
+                structured[key] = payload.get(key)
+        if str(tool_name or "").strip() == "container_list":
+            rows = payload.get("containers")
+            if isinstance(rows, list):
+                structured["containers"] = [row for row in rows if isinstance(row, dict)]
+            if "count" in payload:
+                structured["count"] = payload.get("count")
+            if "filter" in payload:
+                structured["filter"] = payload.get("filter")
+        elif str(tool_name or "").strip() == "container_inspect":
+            for key in (
+                "container_id",
+                "short_id",
+                "name",
+                "blueprint_id",
+                "image",
+                "status",
+                "running",
+                "network",
+                "ip_address",
+            ):
+                if key in payload:
+                    structured[key] = payload.get(key)
+        elif str(tool_name or "").strip() == "blueprint_list":
+            rows = payload.get("blueprints")
+            if isinstance(rows, list):
+                structured["blueprints"] = [row for row in rows if isinstance(row, dict)]
+            if "count" in payload:
+                structured["count"] = payload.get("count")
         if str(tool_name or "").strip() == "list_skills":
             structured["installed_count"] = installed_count
             structured["available_count"] = available_count
             structured["installed_names"] = installed_names
+        elif str(tool_name or "").strip() == "list_draft_skills":
+            structured["draft_count"] = draft_count
+            structured["draft_names"] = draft_names
         if structured:
             entry["structured"] = structured
     return entry

@@ -32,6 +32,45 @@ def test_chat_forwards_non_content_events_to_panel_bridge():
     assert 'window.dispatchEvent(new CustomEvent("sse-event", { detail: chunk }))' in src
 
 
+def test_stream_thinking_event_contract_supports_legacy_and_current_chunk_fields():
+    src = _read("core/orchestrator_stream_flow_utils.py")
+    assert '"type": "thinking_stream"' in src
+    assert '"chunk": chunk' in src
+    assert '"thinking_chunk": chunk' in src
+
+
+def test_chat_reads_both_thinking_chunk_field_variants_and_uses_thinking_label():
+    src = _read("adapters/Jarvis/static/js/chat.js")
+    assert 'Thinking.createThinkingBox(baseMsgId, "Thinking", "brain")' in src
+    assert 'chunk.chunk || chunk.thinking_chunk || ""' in src
+    assert 'if (chunk.type === "thinking_trace") {' in src
+    assert "Thinking.finalizeThinking(controlThinkingId, chunk.thinking);" in src
+
+
+def test_thinking_box_renders_compact_strategy_and_trace_metadata():
+    src = _read("adapters/Jarvis/static/js/chat-thinking.js")
+    required_markers = [
+        'renderMetaRow("Strategy"',
+        'renderMetaRow("Memory"',
+        'renderMetaRow("Tools"',
+        'renderMetaRow("Exec Tools"',
+        'renderMetaRow("Catalog Hints"',
+        'renderMetaRow("Addon Docs"',
+        'renderMetaRow("Inventory Mode"',
+        'renderMetaRow("Postcheck"',
+        'renderMetaRow("Tool Route"',
+        'renderMetaRow("Route Reason"',
+        'renderMetaRow("Fact Query"',
+        'renderMetaRow("Uses History"',
+        'renderMetaRow("Source"',
+        'renderMetaRow("Reason"',
+        'thinking.source === "trace_final"',
+        "JSON.stringify(finalTrace, null, 2)",
+    ]
+    for marker in required_markers:
+        assert marker in src
+
+
 def test_activity_mappings_cover_core_runtime_events():
     src = _read("adapters/Jarvis/static/js/chat.js")
     required_markers = [

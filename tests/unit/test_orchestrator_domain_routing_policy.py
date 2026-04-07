@@ -272,7 +272,7 @@ def test_domain_gate_container_keeps_control_decisions():
             stream=False,
             enable_skill_trigger_router=False,
         )
-    assert out == ["create_skill", "request_container", "autonomy_cron_create_job"]
+    assert out == ["request_container"]
 
 
 def test_domain_gate_container_allows_storage_broker_tools():
@@ -469,6 +469,93 @@ def test_domain_gate_skill_does_not_reseed_when_skill_gate_blocked():
             enable_skill_trigger_router=False,
         )
     assert out == []
+
+
+def test_apply_domain_route_to_plan_prioritizes_read_only_tool_for_skill_catalog_context():
+    orch = _make_orchestrator()
+    thinking_plan = {
+        "suggested_tools": ["list_draft_skills", "autonomous_skill_task"],
+        "resolution_strategy": "skill_catalog_context",
+        "strategy_hints": ["draft_skills"],
+    }
+    signal = {
+        "domain_tag": "SKILL",
+        "domain_locked": True,
+        "operation": "unknown",
+    }
+
+    out = orch._apply_domain_route_to_plan(
+        thinking_plan,
+        signal,
+        user_text="Welche Draft-Skills gibt es gerade?",
+    )
+
+    assert out["suggested_tools"] == ["list_draft_skills"]
+    assert out.get("_domain_tool_seeded") is False
+    assert out.get("_skill_catalog_domain_priority") is True
+
+
+def test_apply_domain_route_to_plan_seeds_list_draft_skills_for_catalog_query():
+    orch = _make_orchestrator()
+    signal = {
+        "domain_tag": "SKILL",
+        "domain_locked": True,
+        "operation": "unknown",
+    }
+
+    out = orch._apply_domain_route_to_plan(
+        {
+            "_authoritative_resolution_strategy": "skill_catalog_context",
+            "strategy_hints": ["draft_skills"],
+        },
+        signal,
+        user_text="Welche Draft-Skills gibt es gerade?",
+    )
+
+    assert out["suggested_tools"] == ["list_draft_skills"]
+    assert out.get("_domain_tool_seeded") is True
+    assert out.get("_skill_catalog_domain_priority") is True
+
+
+def test_domain_gate_skill_catalog_context_replaces_action_tool_with_read_only_seed():
+    orch = _make_orchestrator()
+    verified_plan = {
+        "_domain_route": {
+            "domain_tag": "SKILL",
+            "domain_locked": True,
+            "operation": "unknown",
+        },
+        "_authoritative_resolution_strategy": "skill_catalog_context",
+        "strategy_hints": ["draft_skills"],
+        "suggested_tools": ["autonomous_skill_task"],
+    }
+    with patch.object(orch, "_normalize_tools", side_effect=lambda v: v), \
+         patch.object(orch, "_prioritize_home_container_tools", side_effect=lambda *a, **k: a[2]), \
+         patch.object(orch, "_apply_query_budget_tool_policy", side_effect=lambda *a, **k: a[2]), \
+         patch("config.get_query_budget_enable", return_value=False):
+        out = orch._resolve_execution_suggested_tools(
+            "Welche Draft-Skills gibt es gerade?",
+            verified_plan,
+            {},
+            stream=False,
+            enable_skill_trigger_router=False,
+        )
+    assert out == ["list_draft_skills"]
+    assert verified_plan["_thinking_suggested_tools"] == ["autonomous_skill_task"]
+    assert verified_plan["_final_execution_tools"] == ["list_draft_skills"]
+    assert verified_plan["_skill_catalog_tool_route"]["status"] == "rerouted"
+    assert "skill_catalog_priority" in verified_plan["_skill_catalog_tool_route"]["reason"]
+
+
+def test_keyword_fallback_skill_inventory_uses_list_draft_skills_for_draft_query():
+    orch = _make_orchestrator()
+    out = orch._detect_tools_by_keyword("Welche Draft-Skills gibt es gerade?")
+    assert out == ["list_draft_skills"]
+
+
+def test_skill_catalog_context_query_matches_draft_skills_hyphen_variant():
+    orch = _make_orchestrator()
+    assert orch._is_skill_catalog_context_query("Welche Draft-Skills gibt es gerade?") is True
 
 
 @pytest.mark.asyncio

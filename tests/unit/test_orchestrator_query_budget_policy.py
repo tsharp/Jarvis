@@ -388,6 +388,34 @@ def test_resolve_precontrol_policy_conflicts_keeps_sequential_for_recall_signal(
     assert out.get("_sequential_deferred") is not True
 
 
+def test_resolve_precontrol_policy_conflicts_disables_sequential_for_skill_catalog_inventory_fast_path():
+    orch = _make_orchestrator()
+    plan = {
+        "resolution_strategy": "skill_catalog_context",
+        "needs_sequential_thinking": True,
+        "sequential_thinking_required": True,
+        "sequential_complexity": 3,
+        "_domain_route": {
+            "domain_tag": "SKILL",
+            "domain_locked": True,
+            "operation": "list",
+        },
+        "suggested_tools": ["list_draft_skills", "list_skills"],
+    }
+    out = orch._resolve_precontrol_policy_conflicts(
+        "Welche Draft-Skills gibt es gerade? Nenne sie explizit.",
+        plan,
+    )
+    assert out["needs_sequential_thinking"] is False
+    assert out["sequential_thinking_required"] is False
+    assert out.get("_sequential_deferred") is True
+    assert out.get("_sequential_deferred_reason") == "skill_catalog_inventory_fast_path"
+    assert out.get("_policy_conflict_resolved") is True
+    assert "skill_catalog_inventory_fast_path_over_sequential_thinking" in str(
+        out.get("_policy_conflict_reason", "")
+    )
+
+
 def test_coerce_thinking_plan_schema_normalizes_string_bools_and_list_fields():
     orch = _make_orchestrator()
     raw = {

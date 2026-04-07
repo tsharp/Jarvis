@@ -125,14 +125,18 @@ def execute_tools_sync(
                     verified_plan=verified,
                 )
 
+            if tool_name == "request_container" and bool(verified.get("_trion_home_start_fast_path")):
+                tool_name = "home_start"
+                tool_args = {}
+
             if not tool_allowed_by_control_decision(control_decision, tool_name):
                 reason = "control_tool_not_allowed"
                 log_warn_fn(f"[Orchestrator-Sync] Skipping {tool_name} — {reason}")
-                execution_result.append_tool_status(tool_name=tool_name, status="unavailable", reason=reason)
+                execution_result.append_tool_status(tool_name=tool_name, status="routing_block", reason=reason)
                 grounding_evidence.append(
                     {
                         "tool_name": tool_name,
-                        "status": "unavailable",
+                        "status": "routing_block",
                         "reason": reason,
                     }
                 )
@@ -173,13 +177,13 @@ def execute_tools_sync(
                 )
                 execution_result.append_tool_status(
                     tool_name=tool_name,
-                    status="unavailable",
+                    status="routing_block",
                     reason=skill_reason,
                 )
                 grounding_evidence.append(
                     {
                         "tool_name": tool_name,
-                        "status": "unavailable",
+                        "status": "routing_block",
                         "reason": skill_reason,
                     }
                 )
@@ -226,7 +230,7 @@ def execute_tools_sync(
                         # No-match: Hard-Block bleibt
                         execution_result.append_tool_status(
                             tool_name=tool_name,
-                            status="unavailable",
+                            status="routing_block",
                             reason="no_blueprint_match",
                         )
                     continue
@@ -267,7 +271,7 @@ def execute_tools_sync(
                             )
                             execution_result.append_tool_status(
                                 tool_name=tool_name,
-                                status="unavailable",
+                                status="routing_block",
                                 reason=jit_reason,
                             )
                             continue
@@ -303,7 +307,7 @@ def execute_tools_sync(
                             )
                             execution_result.append_tool_status(
                                 tool_name=tool_name,
-                                status="unavailable",
+                                status="routing_block",
                                 reason="jit_suggest_requires_selection",
                             )
                             continue
@@ -331,7 +335,7 @@ def execute_tools_sync(
                             )
                             execution_result.append_tool_status(
                                 tool_name=tool_name,
-                                status="unavailable",
+                                status="routing_block",
                                 reason="no_jit_match",
                             )
                             continue

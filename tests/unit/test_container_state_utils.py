@@ -38,6 +38,18 @@ def test_merge_container_state_from_request_container_sets_last_active():
     assert any(r.get("container_id") == "x1" for r in merged["known_containers"])
 
 
+def test_merge_container_state_from_home_start_sets_home_container_id():
+    merged = merge_container_state_from_tool_result(
+        {"known_containers": [], "last_active_container_id": "", "home_container_id": ""},
+        tool_name="home_start",
+        tool_args={},
+        result={"container_id": "home1", "blueprint_id": "trion-home", "name": "trion-home"},
+        expected_home_blueprint_id="trion-home",
+    )
+    assert merged["last_active_container_id"] == "home1"
+    assert merged["home_container_id"] == "home1"
+
+
 def test_tool_requires_container_id_uses_allow_list():
     assert tool_requires_container_id("exec_in_container", ["exec_in_container"])
     assert not tool_requires_container_id("container_list", ["exec_in_container"])

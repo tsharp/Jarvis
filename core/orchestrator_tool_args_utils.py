@@ -76,6 +76,8 @@ def build_tool_args(
             content = user_text.strip()
         return {"conversation_id": "auto", "role": "user", "content": content}
     # Container Tools
+    elif tool_name == "home_start":
+        return {}
     elif tool_name == "request_container":
         lower = str(user_text or "").lower()
         if any(tok in lower for tok in ("steam-headless", "sunshine", "gaming station", "gaming-station", "zocken", "moonlight")):
@@ -117,6 +119,8 @@ def build_tool_args(
                     "PGID": "1000",
                     "STEAM_USER": "vault://STEAM_USERNAME",
                     "STEAM_PASS": "vault://STEAM_PASSWORD",
+                    "NVIDIA_VISIBLE_DEVICES": "all",
+                    "NVIDIA_DRIVER_CAPABILITIES": "all",
                 },
                 "memory_limit": "8g",
                 "cpu_limit": "4.0",

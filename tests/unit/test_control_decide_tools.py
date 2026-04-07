@@ -200,6 +200,12 @@ class TestControlDecideTools(unittest.TestCase):
         with patch("mcp.hub.get_hub", side_effect=RuntimeError("hub down")):
             self.assertTrue(layer._is_tool_available("container_list"))
 
+    def test_is_tool_available_keeps_home_start_native_when_hub_unavailable(self):
+        layer = ControlLayer()
+        layer.mcp_hub = None
+        with patch("mcp.hub.get_hub", side_effect=RuntimeError("hub down")):
+            self.assertTrue(layer._is_tool_available("home_start"))
+
     def test_decide_tools_filters_non_native_on_discovery_error(self):
         layer = ControlLayer()
         layer.set_mcp_hub(_BrokenDiscoveryHub())
@@ -255,6 +261,21 @@ class TestControlDecideTools(unittest.TestCase):
         plan = {"suggested_tools": ["list_skills", "run_skill"]}
         decided = asyncio.run(layer.decide_tools("Welche Skills sind installiert?", plan))
         self.assertEqual([item["name"] for item in decided], ["list_skills", "run_skill"])
+
+    def test_decide_tools_uses_selected_blueprint_for_request_container(self):
+        layer = ControlLayer()
+        layer.set_mcp_hub(_FakeHub())
+        plan = {
+            "suggested_tools": ["request_container"],
+            "_selected_blueprint_id": "gaming-station",
+        }
+
+        decided = asyncio.run(layer.decide_tools("starte den gaming container", plan))
+
+        self.assertEqual(
+            decided,
+            [{"name": "request_container", "arguments": {"blueprint_id": "gaming-station"}}],
+        )
 
 
 if __name__ == "__main__":

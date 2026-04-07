@@ -55,10 +55,20 @@ def initialize_pipeline_orchestrator(
     hub = get_hub_fn()
     orch.control.set_mcp_hub(hub)
     orch.ollama_base = ollama_base
+    from config import (
+        get_followup_tool_reuse_ttl_s,
+        get_followup_tool_reuse_ttl_turns,
+    )
+    from core.conversation_container_state import ConversationContainerStateStore
+
     orch._conversation_grounding_state = {}
     orch._conversation_grounding_lock = lock_factory()
-    orch._conversation_container_state = {}
-    orch._conversation_container_lock = lock_factory()
+    orch._container_state_store = ConversationContainerStateStore(
+        lock_factory=lock_factory,
+        ttl_s_fn=get_followup_tool_reuse_ttl_s,
+        ttl_turns_fn=get_followup_tool_reuse_ttl_turns,
+        home_blueprint_fn=orch._expected_home_blueprint_id,
+    )
     orch._conversation_consistency_state = {}
     orch._conversation_consistency_lock = lock_factory()
 
@@ -176,6 +186,11 @@ def build_effective_context(
     text = "\n".join(_safe_text(p) for p in parts if _safe_text(p)).strip()
     trace["context_chars"] = len(text)
     trace["memory_used"] = memory_used
+    # Precise key-level tracking for the hallucination guard.
+    # Do NOT use memory_used for guard decisions — it is too coarse.
+    trace["memory_keys_requested"] = list(getattr(ctx, "memory_keys_requested", []))
+    trace["memory_keys_found"] = list(getattr(ctx, "memory_keys_found", []))
+    trace["memory_keys_not_found"] = list(getattr(ctx, "memory_keys_not_found", []))
 
     if small_model_mode:
         from config import get_small_model_char_cap
@@ -235,10 +250,16 @@ def build_effective_context(
                 f"diff={len(text) - len(legacy):+d}chars"
             )
         trace["context_chars_final"] = len(legacy)
-        return legacy, trace
+        from core.memory_resolution import MemoryResolution
+        resolution = MemoryResolution.from_context_result(ctx, cleanup_payload or {})
+        trace.update(resolution.to_trace())
+        return legacy, trace, resolution
 
     trace["context_chars_final"] = trace["context_chars"]
-    return text, trace
+    from core.memory_resolution import MemoryResolution
+    resolution = MemoryResolution.from_context_result(ctx, cleanup_payload or {})
+    trace.update(resolution.to_trace())
+    return text, trace, resolution
 
 
 async def check_pending_confirmation(
@@ -635,6 +656,8 @@ async def execute_control_layer(
 
     persist_control_decision(verified_plan, control_decision)
     persist_execution_result(verified_plan, ExecutionResult())
+    orch._materialize_skill_catalog_policy(verified_plan)
+    orch._materialize_container_query_policy(verified_plan)
 
     from config import get_skill_auto_create_on_low_risk
 

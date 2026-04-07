@@ -131,6 +131,12 @@ def test_thinking_prompt_contains_container_id_preference_rule():
     assert "container_list nur, wenn keine container_id vorhanden ist" in THINKING_PROMPT
 
 
+def test_thinking_prompt_contains_skill_catalog_context_rules():
+    assert "skill_catalog_context" in THINKING_PROMPT
+    assert "welche skills hast du?" in THINKING_PROMPT
+    assert "unterschied zwischen tools und skills" in THINKING_PROMPT
+
+
 # ---------------------------------------------------------------------------
 # Tool-Amnesia Fix: needs_memory AUSNAHME-Regel für kontextsensitive Tool-Anfragen
 # ---------------------------------------------------------------------------

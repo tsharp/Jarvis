@@ -92,6 +92,38 @@ def resolve_precontrol_policy_conflicts(
                         )
                         resolved_reasons.append(rule)
 
+    if domain_tag == "SKILL" and not recall_signal:
+        resolution_strategy = str(
+            plan.get("_authoritative_resolution_strategy")
+            or plan.get("resolution_strategy")
+            or ""
+        ).strip().lower()
+        suggested_tools = plan.get("suggested_tools")
+        tool_names = [
+            extract_tool_name_fn(tool).strip().lower()
+            for tool in (suggested_tools if isinstance(suggested_tools, list) else [])
+            if extract_tool_name_fn(tool).strip()
+        ]
+        read_only_skill_inventory = bool(tool_names) and all(
+            name in {"list_skills", "list_draft_skills", "get_skill_info"}
+            for name in tool_names
+        )
+        if resolution_strategy == "skill_catalog_context" and read_only_skill_inventory:
+            if bool(plan.get("needs_sequential_thinking")) or bool(plan.get("sequential_thinking_required")):
+                plan["needs_sequential_thinking"] = False
+                plan["sequential_thinking_required"] = False
+                plan["_sequential_deferred"] = True
+                plan["_sequential_deferred_reason"] = "skill_catalog_inventory_fast_path"
+                rule = "skill_catalog_inventory_fast_path_over_sequential_thinking"
+                conflict_log.append(
+                    {
+                        "rule": rule,
+                        "domain_tag": domain_tag,
+                        "action": "disable_sequential_thinking",
+                    }
+                )
+                resolved_reasons.append(rule)
+
     if not bool(plan.get("_query_budget_factual_memory_forced")):
         if resolved_reasons:
             plan["_policy_conflict_resolution"] = conflict_log[-6:]

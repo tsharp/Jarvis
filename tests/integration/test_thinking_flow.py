@@ -39,15 +39,16 @@ async def test_flow_light_skips_control(mock_thinking_plan_light):
     with patch("core.bridge.ThinkingLayer"), \
          patch("core.bridge.ControlLayer"), \
          patch("core.bridge.OutputLayer"), \
-         patch("core.bridge.get_hub"), \
-         patch("core.bridge.SKIP_CONTROL_ON_LOW_RISK", True): # Force config
-         
+         patch("core.bridge.get_hub"):
+
         from core.bridge import CoreBridge
         bridge = CoreBridge()
-        
+
         # Setup Thinking Mock
         bridge.orchestrator.thinking.analyze = AsyncMock(return_value=mock_thinking_plan_light)
         bridge.orchestrator.output.generate = AsyncMock(return_value="Response")
+        # Force skip signal directly — what this test actually verifies
+        bridge.orchestrator._should_skip_control_layer = MagicMock(return_value=(True, "low_risk_skip"))
         # Phase 2: Explicitly mock control methods to enable assert_not_called
         bridge.orchestrator.control.verify = AsyncMock()
         bridge.orchestrator.control._check_sequential_thinking = AsyncMock()

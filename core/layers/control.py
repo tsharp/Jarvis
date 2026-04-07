@@ -57,6 +57,8 @@ except ImportError:
     log_warning("[ControlLayer] CIM Policy Engine not available")
 
 CIM_URL = "http://cim-server:8086"
+CONTAINER_AUTO_SELECT_MIN_SCORE = 0.76
+CONTAINER_AUTO_SELECT_MIN_MARGIN = 0.12
 
 CONTROL_PROMPT = """Du bist der CONTROL-Layer eines AI-Systems.
 Deine Aufgabe: Überprüfe den Plan vom Thinking-Layer BEVOR eine Antwort generiert wird.
@@ -73,6 +75,7 @@ JSON-Format:
         "needs_memory": null oder true/false,
         "memory_keys": null oder ["korrigierte", "keys"],
         "hallucination_risk": null oder "low/medium/high",
+        "resolution_strategy": null oder "container_inventory/container_blueprint_catalog/container_state_binding/container_request/active_container_capability/home_container_info/skill_catalog_context",
         "new_fact_key": null oder "korrigierter_key",
         "new_fact_value": null oder "korrigierter_value",
         "suggested_response_style": null oder "kurz/ausführlich/freundlich",
@@ -214,6 +217,7 @@ class ControlLayer:
             "hallucination_risk": (thinking_plan or {}).get("hallucination_risk", "medium"),
             "needs_memory": bool((thinking_plan or {}).get("needs_memory")),
             "is_fact_query": bool((thinking_plan or {}).get("is_fact_query")),
+            "resolution_strategy": str((thinking_plan or {}).get("resolution_strategy") or "").strip().lower() or None,
             "memory_keys": self._memory_keys((thinking_plan or {}).get("memory_keys", [])),
             "suggested_tools": self._tool_names((thinking_plan or {}).get("suggested_tools", [])),
             "suggested_response_style": (thinking_plan or {}).get("suggested_response_style"),
@@ -258,6 +262,28 @@ class ControlLayer:
             plan_payload["hardware_gate_warning"] = str(
                 (thinking_plan or {}).get("_hardware_gate_warning") or ""
             )[:240]
+        container_resolution = (thinking_plan or {}).get("_container_resolution")
+        if isinstance(container_resolution, dict) and container_resolution:
+            plan_payload["container_resolution"] = {
+                "decision": str(container_resolution.get("decision") or "").strip(),
+                "blueprint_id": str(container_resolution.get("blueprint_id") or "").strip(),
+                "score": container_resolution.get("score", 0.0),
+                "reason": str(container_resolution.get("reason") or "")[:200],
+            }
+        raw_candidates = (thinking_plan or {}).get("_container_candidates")
+        if isinstance(raw_candidates, list) and raw_candidates:
+            compact_candidates = []
+            for row in raw_candidates[:3]:
+                if not isinstance(row, dict):
+                    continue
+                compact_candidates.append(
+                    {
+                        "id": str(row.get("id") or row.get("blueprint_id") or "").strip(),
+                        "score": row.get("score", 0.0),
+                    }
+                )
+            if compact_candidates:
+                plan_payload["container_candidates"] = compact_candidates
 
         # Ensure plan payload stays compact even if optional fields grow.
         plan_json = json.dumps(plan_payload, ensure_ascii=False)
@@ -750,6 +776,16 @@ class ControlLayer:
         if not isinstance(verification, dict):
             return self._default_verification(thinking_plan)
 
+        # Normalize fields that LLMs sometimes return as null instead of empty container.
+        if not isinstance(verification.get("corrections"), dict):
+            verification["corrections"] = {}
+        if not isinstance(verification.get("warnings"), list):
+            verification["warnings"] = []
+        if not isinstance(verification.get("suggested_tools"), list):
+            verification["suggested_tools"] = []
+        if verification.get("final_instruction") is None:
+            verification["final_instruction"] = ""
+
         # Keep explicit LightCIM denials untouched except normalized authority fields.
         if verification.get("_light_cim"):
             verification["warnings"] = self._sanitize_warning_messages(verification.get("warnings", []))
@@ -852,11 +888,11 @@ class ControlLayer:
                     "[ControlLayer] Auto-corrected false query_budget_fast_path block "
                     f"for user_text={str(user_text or '')[:120]}"
                 )
-            if (
-                verification.get("approved") is False
-                and self._should_lift_solution_oriented_false_block(
-                    verification,
-                    thinking_plan,
+        if (
+            verification.get("approved") is False
+            and self._should_lift_solution_oriented_false_block(
+                verification,
+                thinking_plan,
                     user_text=user_text,
                 )
             ):
@@ -874,6 +910,16 @@ class ControlLayer:
                     "[ControlLayer] Auto-corrected spurious policy block via solution-oriented path "
                     f"for intent={str((thinking_plan or {}).get('intent') or '')[:120]}"
                 )
+        verification = self._apply_container_candidate_resolution(
+            verification,
+            thinking_plan,
+            user_text=user_text,
+        )
+        verification = self._apply_resolution_strategy_authority(
+            verification,
+            thinking_plan,
+            user_text=user_text,
+        )
         verification["warnings"] = self._sanitize_warning_messages(verification.get("warnings", []))
         return self._enforce_block_authority(
             verification,
@@ -961,7 +1007,7 @@ class ControlLayer:
 
         # Native/direct tools handled outside MCP discovery.
         native_tools = {
-            "request_container", "stop_container", "exec_in_container",
+            "request_container", "home_start", "stop_container", "exec_in_container",
             "blueprint_list", "container_list", "container_inspect", "container_stats", "container_logs",
             "home_read", "home_write", "home_list",
             "autonomous_skill_task", "run_skill", "create_skill",
@@ -1129,6 +1175,10 @@ class ControlLayer:
         Fill obvious args from CIM decision metadata when available.
         """
         cim = verified_plan.get("_cim_decision", {}) if isinstance(verified_plan, dict) else {}
+        if tool_name == "request_container":
+            blueprint_id = str((verified_plan or {}).get("_selected_blueprint_id") or "").strip()
+            if blueprint_id:
+                return {"blueprint_id": blueprint_id}
         skill_name = str(cim.get("skill_name") or "").strip()
         if not skill_name:
             return {}
@@ -1155,6 +1205,322 @@ class ControlLayer:
                 "code": code,
             }
         return {}
+
+    @staticmethod
+    def _normalize_container_candidates(thinking_plan: Dict[str, Any]) -> List[Dict[str, Any]]:
+        raw = []
+        if isinstance(thinking_plan, dict):
+            raw = thinking_plan.get("_container_candidates") or []
+            if not raw and isinstance(thinking_plan.get("_container_resolution"), dict):
+                raw = thinking_plan["_container_resolution"].get("candidates") or []
+
+        out: List[Dict[str, Any]] = []
+        seen = set()
+        for row in raw or []:
+            if not isinstance(row, dict):
+                continue
+            blueprint_id = str(row.get("id") or row.get("blueprint_id") or "").strip()
+            if not blueprint_id or blueprint_id in seen:
+                continue
+            seen.add(blueprint_id)
+            try:
+                score = float(row.get("score") or 0.0)
+            except Exception:
+                score = 0.0
+            out.append({"id": blueprint_id, "score": score})
+        out.sort(key=lambda item: item.get("score", 0.0), reverse=True)
+        return out
+
+    @staticmethod
+    def _normalize_resolution_strategy(value: Any) -> str:
+        strategy = str(value or "").strip().lower()
+        if strategy in {
+            "container_inventory",
+            "container_blueprint_catalog",
+            "container_state_binding",
+            "container_request",
+            "active_container_capability",
+            "home_container_info",
+            "skill_catalog_context",
+        }:
+            return strategy
+        return ""
+
+    def _apply_resolution_strategy_authority(
+        self,
+        verification: Dict[str, Any],
+        thinking_plan: Dict[str, Any],
+        *,
+        user_text: str = "",
+    ) -> Dict[str, Any]:
+        if not isinstance(verification, dict) or not isinstance(thinking_plan, dict):
+            return verification
+        if verification.get("approved") is False:
+            return verification
+        if self._has_hard_safety_markers(verification):
+            return verification
+        if self._user_text_has_hard_safety_keywords(user_text):
+            return verification
+        if self._user_text_has_malicious_intent(user_text):
+            return verification
+
+        corrections = verification.get("corrections", {})
+        if not isinstance(corrections, dict):
+            corrections = {}
+
+        requested = self._normalize_resolution_strategy(
+            corrections.get("resolution_strategy") or thinking_plan.get("resolution_strategy")
+        )
+        if not requested:
+            return verification
+
+        authoritative = requested
+        route = thinking_plan.get("_domain_route", {}) if isinstance(thinking_plan, dict) else {}
+        domain_tag = str((route or {}).get("domain_tag") or "").strip().upper()
+        if requested in {
+            "container_inventory",
+            "container_blueprint_catalog",
+            "container_state_binding",
+            "container_request",
+            "active_container_capability",
+        } and domain_tag not in {"", "CONTAINER"}:
+            authoritative = ""
+        if requested == "skill_catalog_context" and domain_tag not in {"", "SKILL"}:
+            authoritative = ""
+
+        if not authoritative:
+            return verification
+
+        corrections["resolution_strategy"] = authoritative
+        corrections["_authoritative_resolution_strategy"] = authoritative
+        verification["corrections"] = corrections
+        verification["_authoritative_resolution_strategy"] = authoritative
+        warnings = self._warning_list(verification.get("warnings", []))
+        if requested == "container_inventory":
+            inventory_mixing_tools = {
+                "blueprint_list",
+                "request_container",
+                "container_inspect",
+            }
+            suggested = self._tool_names((thinking_plan or {}).get("suggested_tools", []), limit=12)
+            if any(name in inventory_mixing_tools for name in suggested):
+                warnings.append(
+                    "Control validated container_inventory as the authoritative resolution strategy; blueprint, request, and capability tools stay advisory."
+                )
+        if requested == "container_blueprint_catalog":
+            catalog_mixing_tools = {
+                "container_list",
+                "container_inspect",
+                "request_container",
+            }
+            suggested = self._tool_names((thinking_plan or {}).get("suggested_tools", []), limit=12)
+            if any(name in catalog_mixing_tools for name in suggested):
+                warnings.append(
+                    "Control validated container_blueprint_catalog as the authoritative resolution strategy; runtime inventory and deploy intent stay advisory."
+                )
+        if requested == "container_state_binding":
+            state_mixing_tools = {
+                "blueprint_list",
+                "request_container",
+            }
+            suggested = self._tool_names((thinking_plan or {}).get("suggested_tools", []), limit=12)
+            if any(name in state_mixing_tools for name in suggested):
+                warnings.append(
+                    "Control validated container_state_binding as the authoritative resolution strategy; static catalog and deploy intent stay advisory."
+                )
+        if requested == "container_request":
+            request_mixing_tools = {
+                "blueprint_list",
+                "container_list",
+                "container_inspect",
+            }
+            suggested = self._tool_names((thinking_plan or {}).get("suggested_tools", []), limit=12)
+            if any(name in request_mixing_tools for name in suggested):
+                warnings.append(
+                    "Control validated container_request as the authoritative resolution strategy; inventory and catalog evidence stay secondary."
+                )
+        if requested == "active_container_capability":
+            generic_runtime = {
+                "exec_in_container",
+                "container_stats",
+                "container_list",
+                "query_skill_knowledge",
+            }
+            suggested = self._tool_names((thinking_plan or {}).get("suggested_tools", []), limit=12)
+            if any(name in generic_runtime for name in suggested):
+                warnings.append(
+                    "Control validated active_container_capability as the authoritative resolution strategy; generic runtime probes stay advisory."
+                )
+        if requested == "skill_catalog_context":
+            skill_inventory_tools = {
+                "list_skills",
+                "get_skill_info",
+            }
+            suggested = self._tool_names((thinking_plan or {}).get("suggested_tools", []), limit=12)
+            if any(name in skill_inventory_tools for name in suggested):
+                warnings.append(
+                    "Control validated skill_catalog_context as the authoritative resolution strategy; runtime skill inventory stays evidence, not the full semantic category model."
+                )
+        verification["warnings"] = warnings
+        if not verification.get("final_instruction"):
+            verification["final_instruction"] = (
+                f"Use the validated resolution strategy '{authoritative}' before generic tool fallbacks."
+            )
+        return verification
+
+    @staticmethod
+    def _is_container_request_plan(thinking_plan: Dict[str, Any]) -> bool:
+        if not isinstance(thinking_plan, dict):
+            return False
+        suggested = thinking_plan.get("suggested_tools") or []
+        suggested_names = [str(t.get("tool") if isinstance(t, dict) else t).strip() for t in suggested]
+        if any(name in {"request_container", "home_start"} for name in suggested_names):
+            return True
+
+        route = thinking_plan.get("_domain_route", {})
+        operation = str((route or {}).get("operation") or "").strip().lower()
+        domain_tag = str((route or {}).get("domain_tag") or "").strip().upper()
+        has_container_resolution = bool(
+            thinking_plan.get("_container_candidates")
+            or thinking_plan.get("_container_resolution")
+        )
+        return (
+            domain_tag == "CONTAINER"
+            and operation in {"create", "start", "run", "provision"}
+            and has_container_resolution
+        )
+
+    def _apply_container_candidate_resolution(
+        self,
+        verification: Dict[str, Any],
+        thinking_plan: Dict[str, Any],
+        *,
+        user_text: str = "",
+    ) -> Dict[str, Any]:
+        if not isinstance(verification, dict) or not self._is_container_request_plan(thinking_plan):
+            return verification
+        suggested = thinking_plan.get("suggested_tools") or []
+        suggested_names = [str(t.get("tool") if isinstance(t, dict) else t).strip() for t in suggested]
+        if bool(thinking_plan.get("_trion_home_start_fast_path")) or "home_start" in suggested_names:
+            return verification
+        if (
+            self._has_hard_safety_markers(verification)
+            or self._user_text_has_hard_safety_keywords(user_text)
+            or self._user_text_has_malicious_intent(user_text)
+        ):
+            return verification
+
+        resolution = thinking_plan.get("_container_resolution", {}) if isinstance(thinking_plan, dict) else {}
+        if not isinstance(resolution, dict):
+            resolution = {}
+        candidates = self._normalize_container_candidates(thinking_plan)
+        decision = str(resolution.get("decision") or "").strip().lower() or "no_blueprint"
+        warnings = self._warning_list(verification.get("warnings", []))
+        corrections = verification.get("corrections", {})
+        if not isinstance(corrections, dict):
+            corrections = {}
+
+        top = candidates[0] if candidates else {}
+        top_id = str(top.get("id") or "").strip()
+        top_score = float(top.get("score") or 0.0) if top else 0.0
+        second_score = float(candidates[1].get("score") or 0.0) if len(candidates) > 1 else 0.0
+        score_margin = top_score - second_score
+        merged_text = f"{str(user_text or '')} {str((thinking_plan or {}).get('intent') or '')}".lower()
+        explicit_match = bool(top_id and top_id.lower() in merged_text)
+
+        auto_select = False
+        if top_id:
+            if explicit_match or decision == "use_blueprint" or len(candidates) == 1:
+                auto_select = True
+            elif (
+                top_score >= CONTAINER_AUTO_SELECT_MIN_SCORE
+                and score_margin >= CONTAINER_AUTO_SELECT_MIN_MARGIN
+            ):
+                auto_select = True
+
+        if auto_select and top_id:
+            corrections["_selected_blueprint_id"] = top_id
+            corrections["_blueprint_gate_blocked"] = False
+            corrections["_blueprint_gate_reason"] = ""
+            corrections["_blueprint_no_match"] = False
+            corrections["_container_resolution"] = {
+                "decision": "selected",
+                "blueprint_id": top_id,
+                "score": top_score,
+                "reason": str(resolution.get("reason") or "control_selected_blueprint"),
+                "candidates": candidates[:3],
+            }
+            verification["corrections"] = corrections
+            verification["approved"] = True
+            verification["hard_block"] = False
+            verification["decision_class"] = "allow" if not warnings else "warn"
+            verification["block_reason_code"] = ""
+            verification["reason"] = "container_blueprint_selected_by_control"
+            if not verification.get("final_instruction"):
+                verification["final_instruction"] = (
+                    f"Nutze request_container mit blueprint_id='{top_id}'."
+                )
+            return verification
+
+        verification["approved"] = True
+        verification["hard_block"] = False
+        verification["decision_class"] = "warn"
+        verification["block_reason_code"] = ""
+
+        if candidates:
+            corrections["_blueprint_gate_blocked"] = True
+            corrections["_blueprint_gate_reason"] = "container_blueprint_clarification_required"
+            corrections["_blueprint_no_match"] = False
+            corrections["_blueprint_suggest"] = {
+                "blueprint_id": top_id,
+                "score": top_score,
+                "suggest": True,
+                "candidates": candidates[:3],
+            }
+            corrections["_container_resolution"] = {
+                "decision": "clarification_required",
+                "blueprint_id": top_id,
+                "score": top_score,
+                "reason": str(resolution.get("reason") or "multiple_blueprints_plausible"),
+                "candidates": candidates[:3],
+            }
+            warnings.append(
+                "Container blueprint selection needs clarification; Control kept the action gated until the user chooses."
+            )
+            verification["suggested_tools"] = ["blueprint_list"]
+            verification["_authoritative_suggested_tools"] = ["blueprint_list"]
+            verification["reason"] = "container_blueprint_clarification_required"
+            verification["final_instruction"] = (
+                "Zeige dem User die 2-3 passendsten Blueprints und frage, welchen er starten will. "
+                "Führe request_container noch nicht aus."
+            )
+        else:
+            corrections["_blueprint_gate_blocked"] = True
+            corrections["_blueprint_gate_reason"] = str(
+                resolution.get("reason") or "container_blueprint_no_match"
+            )
+            corrections["_blueprint_no_match"] = True
+            corrections["_container_resolution"] = {
+                "decision": "no_match",
+                "blueprint_id": "",
+                "score": float(resolution.get("score") or 0.0),
+                "reason": str(resolution.get("reason") or "container_blueprint_no_match"),
+                "candidates": [],
+            }
+            warnings.append(
+                "No verified blueprint match was strong enough; Control downgraded the request to blueprint discovery."
+            )
+            verification["suggested_tools"] = ["blueprint_list"]
+            verification["_authoritative_suggested_tools"] = ["blueprint_list"]
+            verification["reason"] = "container_blueprint_no_match"
+            verification["final_instruction"] = (
+                "Zeige dem User verfügbare Blueprints oder biete an, einen neuen Blueprint zu erstellen. "
+                "Führe request_container nicht frei aus."
+            )
+
+        verification["corrections"] = corrections
+        verification["warnings"] = warnings
+        return verification
 
     @staticmethod
     def _extract_requested_skill_name(user_text: str) -> str:
@@ -1871,6 +2237,7 @@ START YOUR ANALYSIS NOW with "## Step 1:"."""
                 "needs_memory": None,
                 "memory_keys": None,
                 "hallucination_risk": None,
+                "resolution_strategy": None,
                 "new_fact_key": None,
                 "new_fact_value": None,
                 "suggested_response_style": None,
@@ -1891,10 +2258,32 @@ START YOUR ANALYSIS NOW with "## Step 1:"."""
         corrected["_verified"] = True
         corrected["_final_instruction"] = verification.get("final_instruction", "")
         corrected["_warnings"] = self._sanitize_warning_messages(verification.get("warnings", []))
-        # Merge suggested_tools from CIM decision
-        if verification.get("suggested_tools"):
-            existing = corrected.get("suggested_tools", [])
-            corrected["suggested_tools"] = list(set(existing + verification["suggested_tools"]))
+        authoritative_tools = self._tool_names(
+            verification.get("_authoritative_suggested_tools", []),
+            limit=16,
+        )
+        if authoritative_tools:
+            corrected["_authoritative_suggested_tools"] = authoritative_tools
+            corrected["suggested_tools"] = list(authoritative_tools)
+        elif verification.get("suggested_tools"):
+            # Non-authoritative tool hints may still extend the turn state.
+            existing = self._tool_names(corrected.get("suggested_tools", []), limit=16)
+            merged = []
+            seen = set()
+            for name in existing + self._tool_names(verification.get("suggested_tools", []), limit=16):
+                if not name or name in seen:
+                    continue
+                seen.add(name)
+                merged.append(name)
+            corrected["suggested_tools"] = merged
+        authoritative_strategy = self._normalize_resolution_strategy(
+            verification.get("_authoritative_resolution_strategy")
+            or corrected.get("_authoritative_resolution_strategy")
+            or corrected.get("resolution_strategy")
+        )
+        if authoritative_strategy:
+            corrected["_authoritative_resolution_strategy"] = authoritative_strategy
+            corrected["resolution_strategy"] = authoritative_strategy
         # Merge CIM decision metadata
         if verification.get("_cim_decision"):
             corrected["_cim_decision"] = verification["_cim_decision"]
