@@ -1,172 +1,90 @@
+[![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.gg/HDsSbSQaC)
+
 # TRION
 
 TRION is a local-first autonomous AI system with a real runtime stack.
 It combines chat, tools, memory, container execution, and safety controls in one platform.
 
-## What You Get
+## 🚀 Quick Install & First Steps
 
-- Local web UI for chat, tools, settings, and runtime telemetry
-- Multi-service backend with memory, control layers, and skill execution
-- Managed sandbox containers for safe task execution
-- Operational scripts for reset/restore/recovery
-
-## 5-Minute Quick Start
-
-### 1) Prerequisites
-
-- Docker + Docker Compose
-- Python 3.12+
-- Ollama running locally at `http://localhost:11434`
-
-### 2) Prepare external Docker resources (required by this stack)
+**Note:** Make sure you have **Docker** installed and running on your machine before running the install script!
 
 ```bash
-docker network create big-bear-lobe-chat_default || true
-docker volume create trion_home_data || true
+curl -fsSL https://raw.githubusercontent.com/danny094/Jarvis/main/install.sh | bash
 ```
 
-### 3) Start the full stack
+**Next Steps:**
 
-```bash
-docker compose up -d
-```
+1. Open your browser and go to `http://localhost:8400` to access the TRION Web UI.
+2. Go to settings and add your preferred AI API Key securely to the Vault.
+3. Start a chat and ask TRION to write a simple script or test the home container!
 
-### 4) Open TRION
+## ✨ What You Get
 
-- Web UI: `http://localhost:8400`
-- Admin API health: `http://localhost:8200/health`
+- **Integrated Web Environment:** Full Docker integration directly within the web interface.
+- **Interactive Web Shell:** Work seamlessly with TRION via a built-in web shell connected to its container.
+- **Expandable Skills:** Easily create, manage, and execute custom SKILLS.
+- **MCP Integration:** Native support for the Model Context Protocol (MCP).
+- **Automation / Cronjobs:** Schedule autonomous tasks and recurring operations.
+- **Model Agnostic:** TRION can be powered by local AIs (like Ollama) as well as external API-based AIs.
+- **Advanced Memory System:** Features a complex multi-layered memory architecture, including Graph-based STM (Short-Term), MTM, and LTM (Long-Term Memory).
+- **Smart Context Storage:** Automatically saves context based on your chat activity.
+- **Daily Reflection ("Dreaming"):** TRION "dreams" every day at 4 a.m. – meaning it autonomously summarizes and consolidates the daily conversation logs.
 
-### 5) Verify runtime quickly
+## 🏠 TRION HOME CONTAINER
 
-```bash
-bash scripts/ops/trion_permissions_doctor.sh --check
-bash scripts/ops/check_digest_state.sh
-```
+TRION lives in its own dedicated, sandboxed container—its home. 
+Inside this secure environment, TRION can test projects, run code, and try out new things automatically. You can completely customize this workspace and even trigger autonomous container tasks using cron jobs.
 
-## Important Services and Ports
+## 🔒 Security First
 
-- `jarvis-webui` -> `8400`
-- `jarvis-admin-api` -> `8200`
-- `mcp-sql-memory` -> `8082`
-- `trion-runtime` -> `8401`
-- `validator-service` -> `8300`
-- `tool-executor` -> `8000`
+- **Encrypted API Keys:** Your API keys are entered once and securely stored using strict encryption.
+- **Zero Raw Access:** When working in the sandbox, TRION only has access to the *names* associated with the keys—never the raw keys themselves. It cannot accidentally expose or leak your API credentials.
 
-## Common Operations
+## 📸 Screenshots
 
-### Live restore to clean baseline (recommended for test resets)
+<div align="center">
+  <table>
+    <tr>
+      <td align="center" width="50%">
+        <b>🎨 Agents' Workspace</b><br><br>
+        <img src="https://github.com/user-attachments/assets/261cca35-c815-474a-bcda-a3c89438ae60" width="100%" />
+        <br><i>Displays the daily summary & reflections.</i>
+      </td>
+      <td align="center" width="50%">
+        <b>⚙️ Backend Control Layer</b><br><br>
+        <img src="https://github.com/user-attachments/assets/e9a7242c-f9f9-4c88-abdb-fc01035ad325" width="100%" />
+        <br><i>Visualizes the strict multi-tier intelligence flow.</i>
+      </td>
+    </tr>
+    <tr>
+      <td align="center" width="50%">
+        <b>🧩 Web UI Plugins</b><br><br>
+        <img src="https://github.com/user-attachments/assets/e421a6c7-4b57-4704-be23-e3d04525ecfe" width="100%" />
+        <br><i>Extending functionality via web-based integrations.</i>
+      </td>
+      <td align="center" width="50%">
+        <b>🔒 Security Vault</b><br><br>
+        <img src="https://github.com/user-attachments/assets/3c562338-9499-41a9-8da6-f1224a305d4b" width="100%" />
+        <br><i>Fully encrypted API keys isolated from the sandbox.</i>
+      </td>
+    </tr>
+    <tr>
+      <td align="center" width="50%">
+        <b>📦 Container Sandbox</b><br><br>
+        <img src="https://github.com/user-attachments/assets/15f48ae5-8d55-46e8-beac-e4a4f4c3a26b" width="100%" />
+        <br><i>Safe local execution environment for skills.</i>
+      </td>
+      <td align="center" width="50%">
+        <b>💬 Main Interface</b><br><br>
+        <img src="https://github.com/user-attachments/assets/153f44d8-ea25-465a-8b36-8d51e1de7395" width="100%" />
+        <br><i>Seamless and beautiful chat interaction.</i>
+      </td>
+    </tr>
+  </table>
+</div>
 
-```bash
-bash scripts/ops/trion_live_restore.sh --hard --reseed-skills --pause-admin --smoke-test
-```
-
-### Factory-style reset (offline-style)
-
-```bash
-bash scripts/ops/trion_reset.sh --hard --reseed-blueprints
-```
-
-### Keep TRION home container stopped after restore
-
-```bash
-bash scripts/ops/trion_live_restore.sh --hard --reseed-skills --skip-home-start
-```
-
-### Preview any destructive operation first
-
-```bash
-bash scripts/ops/trion_live_restore.sh --dry-run --hard --reseed-skills --pause-admin --smoke-test
-```
-
-## Operations Scripts (New)
-
-See full command reference in [`COMMANDS.md`](COMMANDS.md).
-
-| Script | Purpose |
-|---|---|
-| `scripts/ops/trion_permissions_doctor.sh` | Checks/fixes common write/lock/script permission issues |
-| `scripts/ops/trion_reset.sh` | Factory reset |
-| `scripts/ops/trion_live_reset.sh` | Reset while stack stays online |
-| `scripts/ops/trion_restore.sh` | Controlled restore / clean-install |
-| `scripts/ops/trion_live_restore.sh` | Live restore with readiness + smoke checks |
-| `scripts/ops/check_digest_state.sh` | Digest runtime telemetry check |
-
-## Troubleshooting
-
-### "Permission denied" on lock files or write paths
-
-```bash
-bash scripts/ops/trion_permissions_doctor.sh --check
-bash scripts/ops/trion_permissions_doctor.sh --fix-safe --fix-docker
-```
-
-### Web UI says "No containers running"
-
-Run a live restore that ensures `trion-home`:
-
-```bash
-bash scripts/ops/trion_live_restore.sh --hard --reseed-skills --pause-admin --smoke-test
-```
-
-### Smoke checks fail because services start slowly
-
-```bash
-TRION_SMOKE_MAX_WAIT_S=60 TRION_SMOKE_RETRIES=5 TRION_SMOKE_RETRY_DELAY_S=3 \
-bash scripts/ops/trion_live_restore.sh --hard --reseed-skills --pause-admin --smoke-test
-```
-
-### Digest status check
-
-```bash
-bash scripts/ops/check_digest_state.sh
-```
-
-## Architecture (Short Version)
-
-TRION uses a layered pipeline:
-
-- Layer 0: tool selection and context narrowing
-- Layer 1: reasoning/planning
-- Layer 2: control/safety checks
-- Layer 3: output orchestration and tool execution routing
-- Deterministic executor services for side effects
-
-For deeper docs and internals, see [`docs/digest_rollout_runbook.md`](docs/digest_rollout_runbook.md), [`CLAUDE.md`](CLAUDE.md), and the `Dokumentation/` directory.
-
-## Development Notes
-
-- Use `docker compose ps` to inspect service status
-- Use `docker logs -f jarvis-admin-api` for API debugging
-- Run gate tests with:
-
-```bash
-./scripts/test_gate.sh full
-```
-
-### Pictures and description
-
-<img width="1855" height="870" alt="Bildschirmfoto 2026-02-21 um 19 23 36" src="https://github.com/user-attachments/assets/261cca35-c815-474a-bcda-a3c89438ae60" />
-Agents' workspace displays the daily summary.
-
-<img width="633" height="896" alt="Bildschirmfoto 2026-02-21 um 19 22 50" src="https://github.com/user-attachments/assets/e9a7242c-f9f9-4c88-abdb-fc01035ad325" />
-The backend control layer
-
-<img width="1857" height="896" alt="Bildschirmfoto 2026-02-21 um 19 22 18" src="https://github.com/user-attachments/assets/e421a6c7-4b57-4704-be23-e3d04525ecfe" />
-Plugins for the web user interface
-
-<img width="1857" height="896" alt="Bildschirmfoto 2026-02-21 um 19 22 10" src="https://github.com/user-attachments/assets/3c562338-9499-41a9-8da6-f1224a305d4b" />
-API keys are securely encrypted.
-When creating a skill that requires an API key, the key name is stored to prevent the API key from being leaked.
-
-<img width="1857" height="896" alt="Bildschirmfoto 2026-02-21 um 19 21 59" src="https://github.com/user-attachments/assets/15f48ae5-8d55-46e8-beac-e4a4f4c3a26b" />
-Container sandbox environment
-
-<img width="1857" height="896" alt="Bildschirmfoto 2026-02-21 um 18 56 15" src="https://github.com/user-attachments/assets/153f44d8-ea25-465a-8b36-8d51e1de7395" />
-surface
-
-
-
-## Support
+## 🤝 Support
 
 If this project helps you, consider supporting development:
 
