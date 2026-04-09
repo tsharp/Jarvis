@@ -15,12 +15,20 @@ Der aktuelle Fokus liegt jetzt auf **Produktisierung und Härtung der Live-Pfade
 
 1. Storage-Broker-Repartitionierung / `mkfs` / Label-Anzeige sauberziehen
 2. Commander-/UI-Flows auf echte Nutzerpfade glätten
-3. Live-Pfade ohne den frueheren `gaming-station`-Sonderzweig weiter vereinheitlichen
+3. Live-Pfade weiter vereinheitlichen
 
 Archivhinweis 2026-04-01:
 
 - Der fruehere `gaming-station`-/Gaming-Container-Zweig ist gestoppt und archiviert.
 - Die Detailnotizen dazu liegen gesammelt unter [[Archiv/2026-04-gaming-station/00-Archiv-Index|Archiv/2026-04-gaming-station]].
+
+Freeze-Hinweis 2026-04-09:
+
+- Gaming / Sunshine / Moonlight ist komplett aus den aktiven Arbeitssträngen
+  herausgenommen.
+- Der Stand bleibt eingefroren und nur noch historisch referenziert.
+- Keine neuen Next Steps, keine Live-Härtung und keine weiteren Tests in diesem
+  Themenblock, sofern der Strang nicht explizit wieder aufgetaut wird.
 
 ## Was jetzt gut funktioniert
 
@@ -33,21 +41,13 @@ Archivhinweis 2026-04-01:
   Session-Binding jetzt sichtbar
 - lokaler Live-Recheck gegen echtes Ollama + reale Runtime-/Blueprint-Daten
   liefert fuer diese drei Fragetypen jetzt contract-konforme Endantworten
-- Gaming-Container ist als echter Testfall nutzbar
 - `runtime-hardware` ist als eigener v0-Service live
 - StorageBroker und Commander sind näher zusammengerückt
 - TRION kann direkt im Containerkontext analysieren
 - `trion shell` ist praktisch nutzbar
 - container-spezifisches Shellwissen ist vorbereitet
-- hostnahes Sunshine + Moonlight funktioniert grundsätzlich
-- `gaming-station` bleibt bei normalem Stop erhalten
-- `gaming-station` wird bei echtem `uninstall` jetzt wirklich entfernt
-- `gaming-station` startet nach `stop -> start` ohne erneuten Steam-Installer weiter
-- die laufende `gaming-station`-Generation ist jetzt konsistent mit dem aktuellen Host-Bridge-Blueprint
-- Steam-Home ist persistent unter `/data/.../steam-home`
 - der Commander-/Quota-Stand wird jetzt gegen den realen Docker-Zustand synchronisiert
 - Bind-Mount-Hostpfade unter `/data/...` werden jetzt nativ über `storage-host-helper` vorbereitet
-- Big Picture wird nachweislich wieder auf `1920x1080` stabilisiert, wenn das sichtbare Steam-Fenster zurück auf `1280x800` fällt
 
 ## Offene Punkte
 
@@ -219,91 +219,27 @@ Archivhinweis 2026-04-01:
   - danach echten Filesystem-Typ und `LABEL` auf dem Device pruefen
   - entscheiden, ob Broker-Servicepfade explizit in CasaOS sichtbar gemacht werden sollen oder bewusst Commander-only bleiben
 
-### Sunshine / Gaming Runtime
+### Eingefroren: Sunshine / Gaming / Moonlight
 
-- Der eigentliche Streaming-Pfad läuft jetzt hostnah statt im Container
-- Sunshine-WebUI, Pairing und Stream funktionieren
-- `HEVC` wurde bereits erfolgreich im Log beobachtet, bleibt aber weiterhin etwas, das je Session sauber mit dem Client ausgehandelt werden muss
-- noVNC bleibt eher Debug-/Installationspfad als Gaming-Hauptweg
-- Audio-/Input-Fehler sind im aktuellen Sunshine-Log nicht auffällig
-- Ein separater `gaming-test`-Deploy mit eigenem Dockerfile hat einen echten Integrationsfehler sichtbar gemacht:
-  - der fruehere Abort `mount: /proc: permission denied` war kein Storage-Broker-Fehler
-  - Ursache war der Flatpak-Init-Schritt im Base-Image `josh5/steam-headless`
-  - der abgeleitete Dockerfile-Pfad patched `/etc/cont-init.d/80-configure_flatpak.sh` jetzt so, dass dieser Schritt in unprivilegierten Containern nicht mehr den ganzen Start abbricht
-- derselbe Testpfad hatte danach noch zwei weitere harte Integrationsfehler:
-  - der Debian-/`zenity`-Steam-Installer tauchte im manuellen `primary`-Pfad erneut auf
-  - Ursache war wieder ein Drift zwischen aktuellem Generatorstand und gespeichertem Blueprint-Dockerfile im Store
-  - nach explizitem Store-Refresh ist der Steam-Bootstrap im manuellen `gaming-test`-Pfad jetzt promptfrei
-  - das von `nvidia-xconfig` erzeugte `xorg.conf` enthielt dort zusaetzlich wieder alte statische `Mouse0`-/`Keyboard0`-Sektionen
-  - der generierte `primary`-Pfad sanitiert `xorg.conf` jetzt nachtraeglich:
-    - statische Input-Sektionen raus
-    - `AutoAddDevices` / `AutoEnableDevices` an
-    - Ignore-Regeln fuer `Touch passthrough`, `Pen passthrough`, `Wireless Controller Touchpad`
-- derselbe Testpfad zeigt jetzt sauberer die verbleibende zweite Baustelle:
-  - `block_device_ref /dev/sdd1` wird bei explizitem Deploy-Opt-in real als Docker-Device durchgereicht
-  - mehrere alte nicht-Block-Hardware-Intents (`input`, `usb`, `device`) liefen im spaeteren Deploy dagegen auf `resource_not_found`
-  - der verbleibende Rest sitzt damit jetzt im nicht-Block-Resolve ueber spaeteren Deploy-Zeitpunkt und im Live-Input-/Xorg-Hotplug, nicht mehr im Storage-Broker, im `/proc`-Mount-Fail oder im Debian-Steam-Installer
-  - zusaetzlich wurde der falsche `dumb-udev`-Fallback im `primary`-Pfad beseitigt:
-    - `/run/udev` und `/run/udev/data` werden vor dem alten Image-Check angelegt
-    - der Live-Container nutzt damit echtes `systemd-udevd`
-  - fuer die Sunshine-Event-Nodes wurde danach noch eine explizite udev-Regel ergaenzt:
-    - `Mouse passthrough`
-    - `Mouse passthrough (absolute)`
-    - `Keyboard passthrough`
-    - auf `event21` / `event22` / `event23` liegen damit jetzt `ID_SEAT=seat0` und `G:seat` direkt auf dem Event-Node
-  - trotz dieses Fixes bleibt der letzte Rest offen:
-    - `udevadm monitor --kernel --udev --property --subsystem-match=input` zeigt bei `trigger add/change` fuer `event21` / `event22` / `event23` weiter nur `KERNEL`, kein `UDEV`
-    - `Xorg` loggt weiter keine `config/udev: Adding input device ...`-Zeilen
-    - `Xorg` oeffnet weiter kein `/dev/input/event*`
-    - morgen ist damit gezielt der udev->Xorg-Hotplug-Pfad dran, nicht mehr Sunshine oder Device-Passthrough
-- Host-Input funktioniert inzwischen auch praktisch fuer einen PS4-Controller:
-  - Host-Pairing erfolgreich
-  - Container erbt `js0` und die zugehoerigen `event*`
-  - bei HDMI-TV + Moonlight-Reconnect gibt es aber noch einen Host-Xorg-/libinput-Crashpfad ueber `Touch passthrough` / `Pen passthrough`
+- Der gesamte Gaming-/Sunshine-/Moonlight-Strang ist seit 2026-04-09
+  eingefroren.
+- Er ist kein aktiver Open-Issues- oder Next-Steps-Block mehr.
+- Historische Details bleiben ausschliesslich im Archiv:
+  [[Archiv/2026-04-gaming-station/00-Archiv-Index|Archiv/2026-04-gaming-station]].
 
 ### Gaming Station Runtime (gestoppt und archiviert)
 
-- Dieser Abschnitt bleibt nur noch als historische Referenz erhalten.
-- Der zugehoerige Arbeitszweig ist seit 2026-04-01 gestoppt und archiviert.
-
-- Der frühere Generations-Mismatch zwischen altem `primary`-Container und neuem Host-Bridge-Blueprint ist bereinigt
-- Dockerfile-basierte `gaming-station`-Images nutzen jetzt content-basierte Tags statt nur `latest`
-- Der frühere stale Commander-/HTTP-Quota-Zustand wurde durch Docker-State-Sync deutlich entschärft
-- Mount-Precreate für Host-Bind-Pfade unter `/data` läuft jetzt host-aware über `storage-host-helper`
-- Big-Picture-Fullscreen ist deutlich robuster, sollte aber bei weiteren echten Neustarts und Reconnects weiter beobachtet werden
-- Host-Bridge-Container wie `gaming-station` liefern im Container-Detail jetzt wieder sinnvolle Zugänge, obwohl der Container selbst keine Docker-Ports publiziert
-- dafür werden Host-Companion-`access_links` synthetisch in `ports`/`connection` des Detail-Response ergänzt
-- der GitHub-/Marketplace-basierte `install -> deploy`-Pfad funktioniert jetzt praktisch ebenfalls
-- der letzte Fullscreen-Fehler lag an einem fehlenden Window Manager in der Host-X-Session, nicht mehr am Container selbst
-- hostseitig wurde `openbox` ergänzt; damit erscheint `Steam Big Picture Mode` wieder als echtes `1920x1080`-Fenster
-- der verbleibende Paket-/Installer-Restpunkt ist jetzt vor allem:
-  - `openbox` als deklarierte Host-Abhaengigkeit mitzubringen, statt es nur lokal per `apt` nachzuinstallieren
-- beim Spieltest mit `7 Days to Die` zeigte sich noch ein Laufzeitrest:
-  - Steam kann im Launchpfad bei `ProcessingShaderCache` hängen
-  - der eigentliche Game-Binary startet dagegen grundsätzlich
-  - der alte aggressive Big-Picture-Helper konnte sich dabei erneut in den Vordergrund drängen und wurde deshalb lokal auf einen passiven Modus entschärft
-  - EOS-/Save-Userdata unter `/home/default/.local/share/7DaysToDie` war zeitweise `root:root`; Live-Fix per `chown`, Dauerfix jetzt als geplanter persistenter `userdata`-Mount im Core
-  - der Container lief zuvor mit zu wenig RAM; der laufende Stand wurde live auf `16g` angehoben
-  - spaeter wurde auch das CPU-Limit auf `6.0` angehoben
-  - ein frischer `stop/remove -> deploy`-Test mit dem neuen Stand lief erfolgreich durch
-  - im Unity-`Player.log` meldete `7 Days to Die` danach intern knapp `59-60 FPS`
-  - der verbleibende Performance-Eindruck wirkt damit eher wie Streaming-/Host-Xorg-/Timing-Reibung als wie ein kaputter Game-Container
+- Dieser Abschnitt bleibt nur noch als historischer Verweis erhalten.
+- Der zugehoerige Arbeitszweig ist gestoppt, archiviert und seit 2026-04-09
+  eingefroren.
+- Keine weitere operative Arbeit, keine weiteren Tests und keine Next Steps in
+  diesem Dokument.
 
 ### Marketplace / Composite Addon
 
-- `gaming-station` ist jetzt als optionales `composite_addon` vorbereitet
 - Bundle-Support kann `Blueprint + Host Companion + Paketdateien` gemeinsam tragen
 - Bundle-Support kann inzwischen auch `container_addons/...` gemeinsam tragen
 - Host-Companion-Dateien können über `storage-host-helper` nativ auf dem Host materialisiert werden
-- ein `binary_bootstrap` für `sunshine` ist vorbereitet
-- ein sicherer `gaming-station-shadow`-Pfad wurde live verifiziert, ohne den laufenden Host-Service zu beschädigen
-- ein kontrollierter lokaler Marketplace-Install gegen einen temporären Shadow-Bundle-Pfad wurde erfolgreich durchgeführt
-- ein echter GitHub-basierter Installflow läuft jetzt ebenfalls durch:
-  - `sync_remote_catalog(...)`
-  - `install_catalog_blueprint("gaming-station")`
-  - Bundle-Import
-  - Paket-Install
-  - Runtime-`container_addons`-Install
 - dabei wurde ein echter Export-/Import-Roundtrip-Bug gefunden und behoben:
   - `export_bundle()` muss Blueprint-Daten im JSON-Modus serialisieren, sonst landen Python-Tags wie `NetworkMode` im YAML
 - Bundle-Addons werden jetzt nicht mehr in den read-only Codepfad unter `/app/intelligence_modules/...` geschrieben
@@ -499,43 +435,19 @@ Archivhinweis 2026-04-01:
      - `GET /v2/local_storage/merge` liefert weiter `503`, weil `EnableMergerFS=false`
      - CasaOS fuehrt aktuell `sdb` und `sdc`, aber nicht `sdd`
      - Broker-Servicepfade wie `/data/services/containers` erscheinen dort aktuell nicht automatisch
-2. Historischen `gaming-station`-Stand nur noch archiviert referenzieren
-   - keine weitere operative Arbeit in diesem Dokument, nur noch Verweise auf das Archiv
-   - Host-Companion/AppImage-Pfad weiter beobachten
-3. `runtime-hardware`-Folgepolish weiterfuehren
+2. `runtime-hardware`-Folgepolish weiterfuehren
    - sprechende Storage-/Block-Device-Namen
    - weitere UI-/Preset-Haertung
    - nicht-Block-Hardware-Intents (`input`/`usb`/`device`) gegen spaetere Re-Deploys stabilisieren
    - pruefen, ob die `Simple`-Auswahl dort staerkere stabile Schluessel statt roher Hostknoten braucht
-4. den neuesten GitHub-/Marketplace-Paketstand erneut importieren, damit Host-Companion- und Paket-Haertungen auch im Runtime-Paketstore liegen
-5. HEVC-/Bitrate-/Client-Abstimmung für Moonlight weiter feinjustieren
-   - insbesondere keine unnötig hohen `150 Mbps` bei `1080p`
-   - `Frame Pacing` nur mit Bedacht
-6. weitere echte Restart-/Reconnect-Zyklen gegen Big-Picture-Fullscreen prüfen
-7. weitere Containerprofile ergänzen, z. B. Datenbank-, MCP-, Web- und Service-Container
-8. Shell-Policy weiter schärfen, vor allem für GUI- und Write-Aktionen
-9. spaeter Mikro-Loops und erst danach echte Shell-Autonomie nachziehen
-10. bei Bedarf Blueprint-seitige Addon-Registrierung ergänzen
-11. Commander-UI optional klarer anzeigen lassen, wenn ein Service `stopped and preserved` ist
-12. den trägen Tabwechsel / verspätete Panel-Updates im Commander gezielt untersuchen
-13. `7 Days to Die`/Steam-Launchpfad härten:
-   - Shader-Precache für problematische Testsituationen entschärfen
-   - prüfen, warum `steam://open/bigpicture` während eines laufenden Spiels erneut auftaucht
-   - `nofile`-Limit für die Runtime anheben
-14. Sunshine-/Host-Xorg-Pfad weiter glätten:
-   - wiederkehrende `libinput`-/`InitPointerDeviceStruct()`-Meldungen in der Host-Xorg-Session beobachten
-   - prüfen, ob dort noch Input-/Frametime-Reibung fuer Moonlight entsteht
-   - insbesondere im Auge behalten, dass Host-Service-Neustarts gleichzeitig Stream und lokales TV-Bild wegziehen koennen
-   - den vorbereiteten Xorg-Ignore-Fix fuer `Touch passthrough`, `Pen passthrough` und `Wireless Controller Touchpad` auf dem Host materialisieren und gegen HDMI+Moonlight-Reconnect testen
-   - nach Crash/Restart den Moonlight-Clientzustand mitpruefen; `RTSP handshake failed: 60` trat trotz `ufw inactive` und laufendem `sunshine-host.service` auf und wirkt derzeit eher wie ein staler Session-/Pairing-Zustand
-15. manuellen `gaming-test`-`primary`-Pfad zu Ende haerten:
-   - verifizieren, dass der neue promptfreie Steam-Bootstrap stabil bleibt
-   - verifizieren, dass das sanitisierte `xorg.conf` jetzt auch im Live-Inputtest sauber mit Sunshine-Hotplug arbeitet
-   - den noch offenen `resource_not_found`-Resolver-Block fuer nicht-Block-Intents getrennt vom Xorg-Thema weiter verfolgen
-16. neuen `userdata`-Mount bei nächstem Recreate/Neu-Deploy praktisch verifizieren:
-   - `/data/services/gaming-station/data/userdata -> /home/default/.local/share`
-   - EOS-/Save-Dateien müssen danach ohne manuellen `chown` sauber entstehen
-17. Architekturpfad fuer `core/orchestrator.py` nach Phase `1`, Semantik-Block
+3. den neuesten GitHub-/Marketplace-Paketstand erneut importieren, damit Host-Companion- und Paket-Haertungen auch im Runtime-Paketstore liegen
+4. weitere Containerprofile ergänzen, z. B. Datenbank-, MCP-, Web- und Service-Container
+5. Shell-Policy weiter schärfen, vor allem für GUI- und Write-Aktionen
+6. spaeter Mikro-Loops und erst danach echte Shell-Autonomie nachziehen
+7. bei Bedarf Blueprint-seitige Addon-Registrierung ergänzen
+8. Commander-UI optional klarer anzeigen lassen, wenn ein Service `stopped and preserved` ist
+9. den trägen Tabwechsel / verspätete Panel-Updates im Commander gezielt untersuchen
+10. Architekturpfad fuer `core/orchestrator.py` nach Phase `1`, Semantik-Block
    Response-Guard-Block und Output-Glue-Block weiterfuehren
    - naechster Block: groessere stateful/runtime-nahe Pfade
    - stateful Streaming-/Sync-/Lifecycle-Pfade weiter bewusst spaeter anfassen
