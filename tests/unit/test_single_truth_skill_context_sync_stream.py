@@ -19,6 +19,8 @@ import types
 import unittest
 from unittest.mock import MagicMock, patch
 
+from tests._orchestrator_layout import read_orchestrator_source
+
 def _detect_project_root() -> str:
     env_root = str(os.getenv("JARVIS_PROJECT_ROOT") or "").strip()
     candidates = []
@@ -52,7 +54,6 @@ def _detect_project_root() -> str:
 _PROJECT_ROOT = _detect_project_root()
 _CONFIG_PATH = os.path.join(_PROJECT_ROOT, "config.py")
 _CM_PATH = os.path.join(_PROJECT_ROOT, "core", "context_manager.py")
-_ORCH_PATH = os.path.join(_PROJECT_ROOT, "core", "orchestrator.py")
 
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
@@ -67,14 +68,22 @@ def _load_config_fresh():
         if k == "config":
             del sys.modules[k]
     _utils_pkg = types.ModuleType("utils")
+    _utils_pkg.__path__ = []
     _settings_mod = types.ModuleType("utils.settings")
     _settings_obj = MagicMock()
     _settings_obj.get = MagicMock(side_effect=lambda key, default=None: default)
     _settings_mod.settings = _settings_obj
+    _service_endpoint_mod = types.ModuleType("utils.service_endpoint_resolver")
+    _service_endpoint_mod.default_service_endpoint = lambda _service, port: f"http://localhost:{port}"
     _utils_pkg.settings = _settings_mod
-    orig = {k: sys.modules.get(k) for k in ("utils", "utils.settings")}
+    _utils_pkg.service_endpoint_resolver = _service_endpoint_mod
+    orig = {
+        k: sys.modules.get(k)
+        for k in ("utils", "utils.settings", "utils.service_endpoint_resolver")
+    }
     sys.modules["utils"] = _utils_pkg
     sys.modules["utils.settings"] = _settings_mod
+    sys.modules["utils.service_endpoint_resolver"] = _service_endpoint_mod
     try:
         spec = importlib.util.spec_from_file_location("config", _CONFIG_PATH)
         mod = importlib.util.module_from_spec(spec)
@@ -111,20 +120,39 @@ def _load_cm_class():
     _utils_logger.log_info = lambda *a, **k: None
     _utils_logger.log_warn = lambda *a, **k: None
     _utils_logger.log_error = lambda *a, **k: None
+    _utils_logger.log_debug = lambda *a, **k: None
+    _service_endpoint_mod = types.ModuleType("utils.service_endpoint_resolver")
+    _service_endpoint_mod.default_service_endpoint = lambda _service, port: f"http://localhost:{port}"
+    _core_pkg = types.ModuleType("core")
+    _core_pkg.__path__ = [os.path.join(_PROJECT_ROOT, "core")]
+    _trion_laws_mod = types.ModuleType("core.trion_laws_policy")
+    _trion_laws_mod.load_trion_laws_policy = MagicMock(return_value={})
 
-    _stub_keys = ("mcp", "mcp.client", "utils.logger")
+    _stub_keys = (
+        "mcp",
+        "mcp.client",
+        "utils.logger",
+        "utils.service_endpoint_resolver",
+        "core",
+        "core.trion_laws_policy",
+    )
     saved = {k: sys.modules.get(k) for k in _stub_keys}
 
     _utils_existed = "utils" in sys.modules
     saved_utils = sys.modules.get("utils")
     if not _utils_existed:
         _mini_utils = types.ModuleType("utils")
+        _mini_utils.__path__ = []
         _mini_utils.logger = _utils_logger
+        _mini_utils.service_endpoint_resolver = _service_endpoint_mod
         sys.modules["utils"] = _mini_utils
 
     sys.modules["mcp"] = _mcp_pkg
     sys.modules["mcp.client"] = _mcp_client
     sys.modules["utils.logger"] = _utils_logger
+    sys.modules["utils.service_endpoint_resolver"] = _service_endpoint_mod
+    sys.modules["core"] = _core_pkg
+    sys.modules["core.trion_laws_policy"] = _trion_laws_mod
 
     try:
         sys.modules.pop("_cm_c6_test", None)
@@ -191,8 +219,7 @@ _EMPTY_PLAN = {
 # ---------------------------------------------------------------------------
 
 def _get_maybe_prefetch_source():
-    with open(_ORCH_PATH, "r", encoding="utf-8") as f:
-        source = f.read()
+    source = read_orchestrator_source()
     marker = "    def _maybe_prefetch_skills("
     start = source.find(marker)
     if start == -1:

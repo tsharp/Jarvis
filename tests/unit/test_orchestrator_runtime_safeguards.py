@@ -647,6 +647,7 @@ def test_execute_tools_sync_autoresolves_pending_container_id_via_container_list
     orch.tool_intelligence.handle_tool_result = MagicMock(
         return_value={"is_error": False, "error_msg": "", "retry_result": None}
     )
+    session_id = f"conv-auto-resolve-{time.time_ns()}"
 
     class _FakeHub:
         def __init__(self):
@@ -686,7 +687,7 @@ def test_execute_tools_sync_autoresolves_pending_container_id_via_container_list
             ["container_inspect"],
             "Bitte finde die Host-IP.",
             control_tool_decisions={},
-            session_id="conv-auto-resolve",
+            session_id=session_id,
             verified_plan={},
         )
 
@@ -742,6 +743,7 @@ def test_execute_tools_sync_autoresolves_pending_exec_in_container():
     orch.tool_intelligence.handle_tool_result = MagicMock(
         return_value={"is_error": False, "error_msg": "", "retry_result": None}
     )
+    session_id = f"conv-exec-auto-resolve-{time.time_ns()}"
 
     class _FakeHub:
         def __init__(self):
@@ -784,7 +786,7 @@ def test_execute_tools_sync_autoresolves_pending_exec_in_container():
             control_tool_decisions={
                 "exec_in_container": {"container_id": "PENDING", "command": "ip route"}
             },
-            session_id="conv-exec-auto-resolve",
+            session_id=session_id,
             verified_plan={},
         )
 

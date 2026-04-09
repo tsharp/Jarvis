@@ -41,6 +41,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from tests._orchestrator_layout import read_orchestrator_source
+
 # ---------------------------------------------------------------------------
 # Hilfsfunktionen
 # ---------------------------------------------------------------------------
@@ -69,7 +71,7 @@ class TestNoRawDictInOrchestrator:
 
     def test_orchestrator_has_no_raw_container_state_dict(self):
         """orchestrator.py darf _conversation_container_state nicht als Dict-Attribut haben."""
-        src = _read("core/orchestrator.py")
+        src = read_orchestrator_source()
         # Erlaubt: Methodenaufrufe auf dem Store, aber kein direktes _conversation_container_state = {}
         hits = re.findall(r'_conversation_container_state\s*=\s*\{', src)
         assert not hits, (
@@ -79,7 +81,7 @@ class TestNoRawDictInOrchestrator:
 
     def test_orchestrator_has_no_raw_container_lock(self):
         """orchestrator.py darf _conversation_container_lock nicht direkt anlegen."""
-        src = _read("core/orchestrator.py")
+        src = read_orchestrator_source()
         hits = re.findall(r'_conversation_container_lock\s*=', src)
         assert not hits, (
             f"orchestrator.py setzt _conversation_container_lock direkt ({len(hits)}×). "
@@ -146,11 +148,11 @@ class TestOrchestratorWrapper:
 
     def test_orchestrator_has_get_recent_wrapper(self):
         """_get_recent_container_state muss an _container_state_store.get_recent delegieren."""
-        src = _read("core/orchestrator.py")
+        src = read_orchestrator_source()
         match = re.search(
             r'def _get_recent_container_state\b.*?(?=\n    def |\Z)', src, re.DOTALL
         )
-        assert match, "orchestrator.py: _get_recent_container_state Methode nicht gefunden"
+        assert match, "PipelineOrchestrator source: _get_recent_container_state Methode nicht gefunden"
         body = match.group(0)
         assert "_container_state_store" in body, (
             "orchestrator._get_recent_container_state delegiert nicht an _container_state_store. "
@@ -159,11 +161,11 @@ class TestOrchestratorWrapper:
 
     def test_orchestrator_has_remember_wrapper(self):
         """_remember_container_state muss an _container_state_store.remember delegieren."""
-        src = _read("core/orchestrator.py")
+        src = read_orchestrator_source()
         match = re.search(
             r'def _remember_container_state\b.*?(?=\n    def |\Z)', src, re.DOTALL
         )
-        assert match, "orchestrator.py: _remember_container_state Methode nicht gefunden"
+        assert match, "PipelineOrchestrator source: _remember_container_state Methode nicht gefunden"
         body = match.group(0)
         assert "_container_state_store" in body, (
             "orchestrator._remember_container_state delegiert nicht an _container_state_store. "
@@ -172,11 +174,11 @@ class TestOrchestratorWrapper:
 
     def test_orchestrator_has_update_from_tool_result_wrapper(self):
         """_update_container_state_from_tool_result muss an _container_state_store.update_from_tool_result delegieren."""
-        src = _read("core/orchestrator.py")
+        src = read_orchestrator_source()
         match = re.search(
             r'def _update_container_state_from_tool_result\b.*?(?=\n    def |\Z)', src, re.DOTALL
         )
-        assert match, "orchestrator.py: _update_container_state_from_tool_result Methode nicht gefunden"
+        assert match, "PipelineOrchestrator source: _update_container_state_from_tool_result Methode nicht gefunden"
         body = match.group(0)
         assert "_container_state_store" in body, (
             "orchestrator._update_container_state_from_tool_result delegiert nicht an _container_state_store. "

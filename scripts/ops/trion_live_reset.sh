@@ -37,6 +37,7 @@ MEM_CONTAINER="mcp-sql-memory"
 MEM_DB="/app/data/memory.db"
 CMD_CONTAINER="jarvis-admin-api"
 CMD_DB="/app/data/commander.db"
+ADMIN_EXEC_USER="${TRION_ADMIN_EXEC_USER:-1000:1000}"
 DIGEST_WORKER="digest-worker"
 DIGEST_DIR="${COMPOSE_DIR}/memory_speicher"
 PROTOCOL_DIR="${COMPOSE_DIR}/memory"
@@ -350,7 +351,7 @@ else
         CMD_TABLES=("${CMD_SOFT_TABLES[@]}")
     fi
     PY_CMD_TABLES=$(py_list "${CMD_TABLES[@]}")
-    docker exec "$CMD_CONTAINER" python3 - <<PYEOF
+    docker exec --user "${ADMIN_EXEC_USER}" "$CMD_CONTAINER" python3 - <<PYEOF
 import sqlite3
 conn = sqlite3.connect("${CMD_DB}")
 conn.execute("PRAGMA busy_timeout=5000")
@@ -380,7 +381,7 @@ if $OPT_HARD && $OPT_RESEED; then
     if $OPT_DRY; then
         skip "[dry-run] Would run seed_default_blueprints()"
     else
-        docker exec "$CMD_CONTAINER" python3 - <<'PYEOF'
+        docker exec --user "${ADMIN_EXEC_USER}" "$CMD_CONTAINER" python3 - <<'PYEOF'
 from container_commander.blueprint_store import seed_default_blueprints
 seed_default_blueprints()
 print("  default blueprints seeded")
@@ -395,7 +396,7 @@ if $OPT_HARD; then
     if $OPT_DRY; then
         skip "[dry-run] Would remove /trion-home/*"
     else
-        docker exec "$CMD_CONTAINER" sh -c 'rm -rf /trion-home/* /trion-home/.[!.]* 2>/dev/null || true'
+        docker exec --user "${ADMIN_EXEC_USER}" "$CMD_CONTAINER" sh -c 'rm -rf /trion-home/* /trion-home/.[!.]* 2>/dev/null || true'
         ok "/trion-home cleared"
     fi
     echo ""

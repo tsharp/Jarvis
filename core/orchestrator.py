@@ -94,11 +94,6 @@ from core.archive_embedding_queue import (
     get_archive_embedding_queue as _get_archive_embedding_queue,
 )
 from core.master_settings import get_master_settings
-from core.container_state_utils import (
-    normalize_container_entries as util_normalize_container_entries,
-    select_preferred_container_id as util_select_preferred_container_id,
-    tool_requires_container_id as util_tool_requires_container_id,
-)
 from core.host_runtime_policy import enforce_host_runtime_exec_first
 from core.orchestrator_prompt_utils import (
     expected_home_blueprint_id as util_expected_home_blueprint_id,
@@ -114,19 +109,8 @@ from core.orchestrator_prompt_utils import (
     safe_str as util_safe_str,
     sanitize_tool_args_for_state as util_sanitize_tool_args_for_state,
 )
-from core.orchestrator_runtime_utils import (
-    build_followup_tool_reuse_specs as util_build_followup_tool_reuse_specs,
-    parse_container_list_result_for_selection as util_parse_container_list_result_for_selection,
-    should_attempt_followup_tool_reuse as util_should_attempt_followup_tool_reuse,
-    stringify_reuse_tool_names as util_stringify_reuse_tool_names,
-)
 from core.grounding_state_utils import (
-    build_grounding_state_payload as util_build_grounding_state_payload,
     count_successful_grounding_evidence as util_count_successful_grounding_evidence,
-    extract_recent_grounding_state as util_extract_recent_grounding_state,
-    grounding_evidence_has_content as util_grounding_evidence_has_content,
-    has_usable_grounding_evidence as util_has_usable_grounding_evidence,
-    inject_carryover_grounding_evidence as util_inject_carryover_grounding_evidence,
     select_first_whitelisted_tool_run as util_select_first_whitelisted_tool_run,
 )
 from core.orchestrator_temporal_utils import (
@@ -134,19 +118,196 @@ from core.orchestrator_temporal_utils import (
     looks_like_temporal_context_query as util_looks_like_temporal_context_query,
 )
 from core.orchestrator_policy_signal_utils import (
-    ensure_dialogue_controls as util_ensure_dialogue_controls,
-    apply_query_budget_to_plan as util_apply_query_budget_to_plan,
     has_memory_recall_signal as util_has_memory_recall_signal,
     has_non_memory_tool_runtime_signal as util_has_non_memory_tool_runtime_signal,
     sanitize_tone_signal as util_sanitize_tone_signal,
-    should_force_query_budget_factual_memory as util_should_force_query_budget_factual_memory,
-    should_skip_thinking_from_query_budget as util_should_skip_thinking_from_query_budget,
 )
-from core.orchestrator_precontrol_policy_utils import (
-    resolve_precontrol_policy_conflicts as util_resolve_precontrol_policy_conflicts,
+from core.orchestrator_modules.policy.runtime import (
+    apply_query_budget_to_plan_runtime as util_apply_query_budget_to_plan_runtime,
+    apply_query_budget_tool_policy_runtime as util_apply_query_budget_tool_policy_runtime,
+    classify_domain_signal as util_classify_domain_signal,
+    classify_query_budget_signal as util_classify_query_budget_signal,
+    classify_tone_signal as util_classify_tone_signal,
+    ensure_dialogue_controls_runtime as util_ensure_dialogue_controls_runtime,
+    resolve_precontrol_policy_conflicts_runtime as util_resolve_precontrol_policy_conflicts_runtime,
+    should_force_query_budget_factual_memory_runtime as util_should_force_query_budget_factual_memory_runtime,
+    should_skip_thinking_from_query_budget_runtime as util_should_skip_thinking_from_query_budget_runtime,
 )
-from core.orchestrator_query_budget_tool_policy_utils import (
-    apply_query_budget_tool_policy as util_apply_query_budget_tool_policy,
+from core.orchestrator_modules.runtime.state import (
+    get_recent_container_state as util_get_recent_container_state,
+    get_recent_grounding_state as util_get_recent_grounding_state,
+    grounding_evidence_has_content_runtime as util_grounding_evidence_has_content_runtime,
+    has_usable_grounding_evidence_runtime as util_has_usable_grounding_evidence_runtime,
+    inject_carryover_grounding_evidence_runtime as util_inject_carryover_grounding_evidence_runtime,
+    normalize_container_entries as util_normalize_container_entries,
+    remember_container_state as util_remember_container_state,
+    remember_conversation_grounding_state as util_remember_conversation_grounding_state,
+    resolve_followup_tool_reuse_runtime as util_resolve_followup_tool_reuse_runtime,
+    resolve_pending_container_id_async as util_resolve_pending_container_id_async,
+    resolve_pending_container_id_sync as util_resolve_pending_container_id_sync,
+    select_preferred_container_id as util_select_preferred_container_id,
+    tool_requires_container_id as util_tool_requires_container_id,
+    update_container_state_from_tool_result as util_update_container_state_from_tool_result,
+)
+from core.orchestrator_modules.policy.domain_container import (
+    apply_container_query_policy as util_apply_container_query_policy,
+    apply_domain_route_to_plan as util_apply_domain_route_to_plan,
+    apply_domain_tool_policy as util_apply_domain_tool_policy,
+    container_state_has_active_target as util_container_state_has_active_target,
+    finalize_execution_suggested_tools as util_finalize_execution_suggested_tools,
+    get_effective_resolution_strategy as util_get_effective_resolution_strategy,
+    is_active_container_capability_query as util_is_active_container_capability_query,
+    is_container_blueprint_catalog_query as util_is_container_blueprint_catalog_query,
+    is_container_inventory_query as util_is_container_inventory_query,
+    is_container_request_query as util_is_container_request_query,
+    is_container_state_binding_query as util_is_container_state_binding_query,
+    is_skill_catalog_context_query as util_is_skill_catalog_context_query,
+    looks_like_host_runtime_lookup as util_looks_like_host_runtime_lookup,
+    materialize_container_query_policy as util_materialize_container_query_policy,
+    materialize_skill_catalog_policy as util_materialize_skill_catalog_policy,
+    prioritize_active_container_capability_tools as util_prioritize_active_container_capability_tools,
+    prioritize_home_container_tools as util_prioritize_home_container_tools,
+    record_execution_tool_trace as util_record_execution_tool_trace,
+    rewrite_home_start_request_tools as util_rewrite_home_start_request_tools,
+    select_read_only_skill_tool_for_query as util_select_read_only_skill_tool_for_query,
+    seed_tool_for_domain_route as util_seed_tool_for_domain_route,
+    should_prioritize_skill_catalog_route as util_should_prioritize_skill_catalog_route,
+    tool_name_list as util_tool_name_list,
+)
+from core.orchestrator_modules.context.semantic import (
+    derive_container_addon_tags_from_inspect as util_derive_container_addon_tags_from_inspect,
+    maybe_build_active_container_capability_context as util_maybe_build_active_container_capability_context,
+    maybe_build_skill_semantic_context as util_maybe_build_skill_semantic_context,
+    parse_list_draft_skills_snapshot as util_parse_list_draft_skills_snapshot,
+    parse_list_skills_runtime_snapshot as util_parse_list_skills_runtime_snapshot,
+    summarize_container_inspect_for_capability_context as util_summarize_container_inspect_for_capability_context,
+    summarize_skill_registry_snapshot as util_summarize_skill_registry_snapshot,
+    summarize_skill_runtime_snapshot as util_summarize_skill_runtime_snapshot,
+)
+from core.orchestrator_modules.runtime.response_guard import (
+    apply_conversation_consistency_guard as util_apply_conversation_consistency_guard,
+    get_recent_consistency_entries as util_get_recent_consistency_entries,
+    maybe_auto_recover_grounding_once as util_maybe_auto_recover_grounding_once,
+    remember_consistency_entries as util_remember_consistency_entries,
+)
+from core.orchestrator_modules.output.glue import (
+    build_tool_result_card as util_build_tool_result_card,
+    compute_ctx_mode as util_compute_ctx_mode,
+    extract_workspace_observations as util_extract_workspace_observations,
+    format_tool_result as util_format_tool_result,
+    merge_grounding_evidence_items as util_merge_grounding_evidence_items,
+)
+from core.orchestrator_modules.context.workspace import (
+    build_master_workspace_summary as util_build_master_workspace_summary,
+    clip_tool_context as util_clip_tool_context,
+    compute_retrieval_policy as util_compute_retrieval_policy,
+    persist_master_workspace_event as util_persist_master_workspace_event,
+)
+from core.orchestrator_modules.context.compact import (
+    apply_effective_context_guardrail as util_apply_effective_context_guardrail,
+    get_compact_context as util_get_compact_context,
+)
+from core.orchestrator_modules.context.container_candidates import (
+    prepare_container_candidate_evidence as util_prepare_container_candidate_evidence,
+)
+from core.orchestrator_modules.interaction_runtime import (
+    apply_response_mode_policy as util_apply_response_mode_policy,
+    detect_skill_by_trigger as util_detect_skill_by_trigger,
+    detect_tools_by_keyword as util_detect_tools_by_keyword,
+    extract_requested_skill_name as util_extract_requested_skill_name,
+    extract_tool_name as util_extract_tool_name,
+    filter_think_tools as util_filter_think_tools,
+    is_explicit_deep_request as util_is_explicit_deep_request,
+    is_explicit_think_request as util_is_explicit_think_request,
+    is_home_container_info_query as util_is_home_container_info_query,
+    is_home_container_start_query as util_is_home_container_start_query,
+    filter_tool_selector_candidates as util_filter_tool_selector_candidates,
+    recover_home_read_directory_with_fast_lane as util_recover_home_read_directory_with_fast_lane,
+    requested_response_mode as util_requested_response_mode,
+    resolve_runtime_output_model as util_resolve_runtime_output_model,
+    route_blueprint_request as util_route_blueprint_request,
+    route_skill_request as util_route_skill_request,
+    sanitize_skill_name_candidate as util_sanitize_skill_name_candidate,
+)
+from core.orchestrator_modules.workspace_events import (
+    build_container_event_content as util_build_container_event_content,
+    save_container_event as util_save_container_event,
+    save_workspace_entry as util_save_workspace_entry,
+)
+from core.orchestrator_modules.execution.resolution import (
+    collect_control_tool_decisions as util_collect_control_tool_decisions,
+    resolve_execution_suggested_tools as util_resolve_execution_suggested_tools,
+)
+from core.orchestrator_modules.postprocess import (
+    post_task_processing as util_post_task_processing,
+    save_memory as util_save_memory,
+)
+from core.orchestrator_modules.policy.cron_intent import (
+    bind_cron_conversation_id as util_bind_cron_conversation_id,
+    build_cron_name as util_build_cron_name,
+    build_cron_objective as util_build_cron_objective,
+    build_direct_cron_create_response as util_build_direct_cron_create_response,
+    contains_explicit_skill_intent as util_contains_explicit_skill_intent,
+    contains_explicit_tool_intent as util_contains_explicit_tool_intent,
+    contains_keyword_intent as util_contains_keyword_intent,
+    extract_cron_ack_message_from_objective as util_extract_cron_ack_message_from_objective,
+    extract_cron_expression_from_text as util_extract_cron_expression_from_text,
+    extract_cron_job_id_from_text as util_extract_cron_job_id_from_text,
+    extract_cron_schedule_from_text as util_extract_cron_schedule_from_text,
+    extract_direct_cron_reminder_text as util_extract_direct_cron_reminder_text,
+    extract_interval_hint_from_cron as util_extract_interval_hint_from_cron,
+    extract_one_shot_run_at_from_text as util_extract_one_shot_run_at_from_text,
+    extract_tool_domain_tag as util_extract_tool_domain_tag,
+    format_utc_compact as util_format_utc_compact,
+    has_cron_schedule_signal as util_has_cron_schedule_signal,
+    is_explicit_cron_create_intent as util_is_explicit_cron_create_intent,
+    looks_like_self_state_request as util_looks_like_self_state_request,
+    maybe_downgrade_cron_create_signal as util_maybe_downgrade_cron_create_signal,
+    normalize_tools as util_normalize_tools,
+    prevalidate_cron_policy_args as util_prevalidate_cron_policy_args,
+    suggest_cron_expression_for_min_interval as util_suggest_cron_expression_for_min_interval,
+)
+from core.orchestrator_modules.catalog import (
+    ACTIVE_CONTAINER_CAPABILITY_EXCLUDE_MARKERS,
+    ACTIVE_CONTAINER_CAPABILITY_MARKERS,
+    ACTIVE_CONTAINER_DEICTIC_MARKERS,
+    CONTAINER_BLUEPRINT_QUERY_MARKERS,
+    CONTAINER_ID_REQUIRED_TOOLS,
+    CONTAINER_INVENTORY_QUERY_MARKERS,
+    CONTAINER_REQUEST_QUERY_MARKERS,
+    CONTAINER_STATE_QUERY_MARKERS,
+    CONTROL_SKIP_BLOCK_KEYWORDS,
+    CONTROL_SKIP_BLOCK_TOOLS,
+    CONTROL_SKIP_HARD_SAFETY_KEYWORDS,
+    CRON_META_GUARD_MARKERS,
+    DOMAIN_CONTAINER_OP_TO_TOOL,
+    DOMAIN_CONTAINER_TOOLS,
+    DOMAIN_CRON_OP_TO_TOOL,
+    DOMAIN_CRON_TOOLS,
+    DOMAIN_SKILL_TOOLS,
+    FOLLOWUP_ASSISTANT_ACTION_MARKERS,
+    FOLLOWUP_CONFIRM_MARKERS,
+    FOLLOWUP_CONFIRM_PREFIXES,
+    FOLLOWUP_CONFIRM_STATE_ONLY_MARKERS,
+    FOLLOWUP_FACT_MARKERS,
+    FOLLOWUP_FACT_PREFIXES,
+    HOME_CONTAINER_PURPOSE_MARKERS,
+    HOME_CONTAINER_QUERY_MARKERS,
+    HOME_CONTAINER_START_MARKERS,
+    LOW_SIGNAL_ACTION_TOOLS,
+    LOW_SIGNAL_TOOLS,
+    QUERY_BUDGET_HEAVY_TOOLS,
+    READ_ONLY_SKILL_TOOLS,
+    SKILL_ACTION_TOOLS,
+    SKILL_CATALOG_EXCLUDE_MARKERS,
+    SKILL_CATALOG_QUERY_MARKERS,
+    SKILL_INTENT_KEYWORDS,
+    SKILL_INTENT_WORD_KEYWORDS,
+    TEMPORAL_CONTEXT_MARKERS,
+    TOOL_DOMAIN_TAG_RE,
+    TOOL_DOMAIN_TAG_SHORT_RE,
+    TOOL_INTENT_KEYWORDS,
+    TOOL_INTENT_WORD_KEYWORDS,
 )
 from core.autosave_dedupe import get_autosave_dedupe_guard
 from core.embedding_client import embed_text as embed_text_runtime
@@ -196,6 +357,27 @@ from core.orchestrator_sync_flow_utils import (
 )
 from core.orchestrator_stream_flow_utils import (
     process_stream_with_events as util_process_stream_with_events,
+)
+from core.orchestrator_modules.pipeline_facade import (
+    append_context_block as util_append_context_block,
+    apply_final_cap as util_apply_final_cap,
+    build_failure_compact_block as util_build_failure_compact_block,
+    build_summary_from_structure as util_build_summary_from_structure,
+    execute_thinking_layer as util_execute_thinking_layer,
+    maybe_prefetch_skills as util_maybe_prefetch_skills,
+    tool_context_has_failures_or_skips as util_tool_context_has_failures_or_skips,
+    tool_context_has_success as util_tool_context_has_success,
+    verify_container_running as util_verify_container_running,
+)
+from core.orchestrator_modules.api_facade import (
+    bind_policy_catalog_attrs as util_bind_policy_catalog_attrs,
+    check_pending_confirmation as util_api_check_pending_confirmation,
+    execute_autonomous_objective as util_api_execute_autonomous_objective,
+    execute_control_layer as util_api_execute_control_layer,
+    process_chunked_stream as util_api_process_chunked_stream,
+    process_request as util_api_process_request,
+    process_stream_with_events as util_api_process_stream_with_events,
+    save_memory as util_api_save_memory,
 )
 from utils.role_endpoint_resolver import resolve_role_endpoint
 from utils.model_runtime_resolver import resolve_runtime_chat_model
@@ -273,499 +455,6 @@ class PipelineOrchestrator:
             lock_factory=threading.Lock,
             log_info_fn=log_info,
         )
-
-    _CONTROL_SKIP_BLOCK_TOOLS = {
-        "create_skill",
-        "autonomous_skill_task",
-        "home_start",
-        "request_container",
-        "exec_in_container",
-        "home_write",
-        "autonomy_cron_create_job",
-        "autonomy_cron_update_job",
-        "autonomy_cron_delete_job",
-        "autonomy_cron_run_now",
-    }
-    _CONTROL_SKIP_BLOCK_KEYWORDS = (
-        "skill",
-        "erstelle",
-        "create",
-        "programmier",
-        "baue",
-        "bau",
-        "funktion",
-        "neue funktion",
-        "new function",
-    )
-    _CONTROL_SKIP_HARD_SAFETY_KEYWORDS = (
-        "rm -rf",
-        "sudo rm",
-        "virus",
-        "malware",
-        "trojan",
-        "ransomware",
-        "keylogger",
-        "botnet",
-        "hack",
-        "exploit",
-        "passwort auslies",
-        "passwörter auslies",
-        "passwoerter auslies",
-        "delete all files",
-        "alle dateien loesch",
-        "alle dateien lösch",
-    )
-    _TOOL_INTENT_KEYWORDS = (
-        "tool",
-        "tools",
-        "skill",
-        "skills",
-        "cron",
-        "cronjob",
-        "speicher",
-        "speichern",
-        "erinner",
-        "container",
-        "blueprint",
-        "run_skill",
-        "list_skills",
-        "get_system_info",
-        "logs",
-        "storage",
-        "disk",
-        "disks",
-        "festplatte",
-        "festplatten",
-        "laufwerk",
-        "mount",
-    )
-    _TOOL_INTENT_WORD_KEYWORDS = frozenset({
-        "tool",
-        "tools",
-        "skill",
-        "skills",
-        "cron",
-        "cronjob",
-        "container",
-        "blueprint",
-        "logs",
-        "run_skill",
-        "list_skills",
-        "get_system_info",
-        "storage",
-        "disk",
-        "disks",
-        "mount",
-    })
-    _TOOL_DOMAIN_TAG_RE = re.compile(
-        r"\{(?:tool|domain)\s*[:=]\s*(cronjob|skill|container|mcp_call)\s*\}",
-        re.IGNORECASE,
-    )
-    _TOOL_DOMAIN_TAG_SHORT_RE = re.compile(
-        r"\{(cronjob|skill|container|mcp_call)\}",
-        re.IGNORECASE,
-    )
-    _CRON_META_GUARD_MARKERS = (
-        "wie fühlst du",
-        "wie fuehlst du",
-        "wie geht es dir",
-        "wie geht's",
-        "wie gehts",
-        "jetzt wo du",
-        "nun da du",
-        "was denkst du",
-        "was hältst du",
-        "was haeltst du",
-    )
-    _FOLLOWUP_FACT_PREFIXES = (
-        "und",
-        "und was",
-        "und welche",
-        "und welcher",
-        "und welches",
-        "welche",
-        "welcher",
-        "welches",
-        "was sagt",
-        "was bedeutet das",
-        "was sagt das",
-        "davon",
-        "darüber",
-        "darauf",
-    )
-    _FOLLOWUP_FACT_MARKERS = (
-        "das",
-        "diese",
-        "dieser",
-        "dieses",
-        "davon",
-        "darüber",
-        "darauf",
-        "oben",
-        "vorhin",
-    )
-    _FOLLOWUP_CONFIRM_PREFIXES = (
-        "ja",
-        "ja bitte",
-        "bitte",
-        "ok",
-        "okay",
-        "mach",
-        "mach mal",
-        "gern",
-        "gerne",
-    )
-    _FOLLOWUP_CONFIRM_MARKERS = (
-        "ja",
-        "bitte testen",
-        "teste es",
-        "mach weiter",
-        "weiter",
-        "go",
-    )
-    _FOLLOWUP_CONFIRM_STATE_ONLY_MARKERS = (
-        "mach das",
-        "mach bitte",
-        "bitte mach",
-        "mach weiter",
-        "weiter",
-        "bitte testen",
-        "teste es",
-        "testen",
-        "leg los",
-        "go",
-        "ausführen",
-        "ausfuehren",
-        "starte",
-        "mach",
-    )
-    _FOLLOWUP_ASSISTANT_ACTION_MARKERS = (
-        "testen",
-        "teste",
-        "prüfen",
-        "pruefen",
-        "ausführen",
-        "ausfuehren",
-        "ausführen soll",
-        "tool",
-        "container",
-        "ip",
-        "gateway",
-        "host",
-        "exec_in_container",
-        "methode",
-    )
-    _TEMPORAL_CONTEXT_MARKERS = (
-        "heute",
-        "gestern",
-        "vorgestern",
-        "protokoll",
-        "tagebuch",
-        "was haben wir",
-        "was hatten wir",
-        "was war",
-        "besprochen",
-        "gesagt",
-        "chatverlauf",
-    )
-    _HOME_CONTAINER_QUERY_MARKERS = (
-        "trion home",
-        "trion-home",
-        "home container",
-        "home-container",
-        "trion_home",
-        "trion home container",
-    )
-    _HOME_CONTAINER_PURPOSE_MARKERS = (
-        "wofür",
-        "wofuer",
-        "zweck",
-        "wozu",
-        "was macht",
-        "was ist",
-        "was weißt du",
-        "was weist du",
-    )
-    _HOME_CONTAINER_START_MARKERS = (
-        "starte",
-        "start",
-        "workspace starten",
-        "container starten",
-        "hochfahren",
-        "oeffne",
-        "öffne",
-    )
-    _ACTIVE_CONTAINER_DEICTIC_MARKERS = (
-        "diesem container",
-        "dieser container",
-        "dieses container",
-        "in diesem container",
-        "im container",
-        "hier im container",
-        "aktuellen container",
-        "active container",
-        "current container",
-        "this container",
-    )
-    _ACTIVE_CONTAINER_CAPABILITY_MARKERS = (
-        "was kannst du",
-        "was kann",
-        "wofür",
-        "wofuer",
-        "wozu",
-        "zweck",
-        "was ist hier installiert",
-        "welche tools",
-        "welche tool",
-        "welche werkzeuge",
-        "was ist installiert",
-        "workspace",
-        "ordnerstruktur",
-        "verzeichnisstruktur",
-        "was gibt es hier",
-        "was ist hier drin",
-        "was kannst du hier",
-    )
-    _ACTIVE_CONTAINER_CAPABILITY_EXCLUDE_MARKERS = (
-        "starte",
-        "stoppe",
-        "deploy",
-        "lösche",
-        "loesche",
-        "erstelle",
-        "status",
-        "auslastung",
-        "logs",
-        "log",
-        "ip adresse",
-        "ip-adresse",
-        "host-ip",
-    )
-    _CONTAINER_INVENTORY_QUERY_MARKERS = (
-        "welche container hast du",
-        "welche container gibt es gerade",
-        "welche container laufen",
-        "welche container sind installiert",
-        "welche container sind gestoppt",
-        "running containers",
-        "stopped containers",
-        "installed containers",
-        "container list",
-        "container liste",
-        "list_running_containers",
-        "list_stopped_containers",
-        "list_attached_containers",
-        "list_active_session_containers",
-        "list_recently_used_containers",
-    )
-    _CONTAINER_BLUEPRINT_QUERY_MARKERS = (
-        "blueprint",
-        "blueprints",
-        "container blueprint",
-        "container blueprints",
-        "container-typ",
-        "container typen",
-        "containertypen",
-        "welche container kann ich starten",
-        "welche container koennte ich starten",
-        "welche sandboxes stehen zur auswahl",
-        "welche sandboxes gibt es",
-        "welche sandboxes",
-        "welche container sind startbar",
-        "installable blueprints",
-        "installierbare blueprints",
-        "list_container_blueprints",
-    )
-    _CONTAINER_STATE_QUERY_MARKERS = (
-        "welcher container ist aktiv",
-        "welcher container ist gerade aktiv",
-        "welcher container laeuft gerade fuer mich",
-        "current container",
-        "active container",
-        "aktiver container",
-        "aktueller container",
-        "session container",
-        "container binding",
-        "auf welchen container",
-        "get_active_container",
-        "get_current_container_binding",
-        "get_session_container_state",
-        "get_container_runtime_status",
-    )
-    _CONTAINER_REQUEST_QUERY_MARKERS = (
-        "starte container",
-        "start container",
-        "container starten",
-        "starte einen container",
-        "starte einen python-container",
-        "starte einen node-container",
-        "deploy",
-        "deploye",
-        "brauche sandbox",
-        "brauche container",
-        "python sandbox",
-        "node sandbox",
-        "python-container",
-        "node-container",
-    )
-    _SKILL_CATALOG_QUERY_MARKERS = (
-        "welche skills hast",
-        "welche skills sind installiert",
-        "welche arten von skills",
-        "was ist der unterschied zwischen tools und skills",
-        "was ist der unterschied zwischen skill und tool",
-        "was fehlt dir an skills",
-        "welche draft skills",
-        "was sind draft skills",
-        "welche session skills",
-        "welche codex skills",
-        "warum zeigt list_skills nicht",
-        "list_skills",
-    )
-    _SKILL_CATALOG_EXCLUDE_MARKERS = (
-        "skill erstellen",
-        "erstelle skill",
-        "create skill",
-        "skill ausführen",
-        "skill ausfuehren",
-        "führe skill",
-        "fuehre skill",
-        "run skill",
-        "installiere skill",
-        "skill installieren",
-        "validiere skill",
-        "validate skill",
-        "autonomous_skill_task",
-        "run_skill",
-        "create_skill",
-    )
-    # RECALL-Tools (lesen) dürfen NIE supprimiert werden — nur ACTION-Tools (schreiben/ausführen).
-    _LOW_SIGNAL_ACTION_TOOLS = frozenset({
-        "memory_save",
-        "memory_fact_save",
-        "analyze",
-        "think",
-        "think_simple",
-    })
-    _QUERY_BUDGET_HEAVY_TOOLS = frozenset({
-        "analyze",
-        "query_skill_knowledge",
-        "run_skill",
-        "create_skill",
-        "autonomous_skill_task",
-        "think",
-        "think_simple",
-    })
-    _SKILL_INTENT_KEYWORDS = frozenset({
-        "skill",
-        "skills",
-        "run_skill",
-        "create_skill",
-        "autonomous_skill_task",
-    })
-    _SKILL_INTENT_WORD_KEYWORDS = frozenset({
-        "skill",
-        "skills",
-        "run_skill",
-        "create_skill",
-        "autonomous_skill_task",
-    })
-    _DOMAIN_CRON_TOOLS = frozenset({
-        "autonomy_cron_status",
-        "autonomy_cron_list_jobs",
-        "autonomy_cron_validate",
-        "autonomy_cron_create_job",
-        "autonomy_cron_update_job",
-        "autonomy_cron_pause_job",
-        "autonomy_cron_resume_job",
-        "autonomy_cron_run_now",
-        "autonomy_cron_delete_job",
-        "autonomy_cron_queue",
-        "cron_reference_links_list",
-    })
-    _READ_ONLY_SKILL_TOOLS = frozenset({
-        "list_skills",
-        "list_draft_skills",
-        "get_skill_info",
-    })
-    _SKILL_ACTION_TOOLS = frozenset({
-        "autonomous_skill_task",
-        "run_skill",
-        "create_skill",
-        "validate_skill_code",
-        "query_skill_knowledge",
-    })
-    _DOMAIN_SKILL_TOOLS = frozenset(_READ_ONLY_SKILL_TOOLS.union(_SKILL_ACTION_TOOLS))
-    _DOMAIN_CONTAINER_TOOLS = frozenset({
-        "home_start",
-        "request_container",
-        "stop_container",
-        "exec_in_container",
-        "container_logs",
-        "container_stats",
-        "container_list",
-        "container_inspect",
-        "blueprint_list",
-        "blueprint_get",
-        "blueprint_create",
-        "storage_scope_list",
-        "storage_scope_upsert",
-        "storage_scope_delete",
-        "storage_list_disks",
-        "storage_get_disk",
-        "storage_list_mounts",
-        "storage_get_summary",
-        "storage_get_policy",
-        "storage_set_disk_zone",
-        "storage_set_disk_policy",
-        "storage_validate_path",
-        "storage_list_blocked_paths",
-        "storage_add_blacklist_path",
-        "storage_remove_blacklist_path",
-        "storage_create_service_dir",
-        "storage_list_managed_paths",
-        "storage_mount_device",
-        "storage_format_device",
-        "storage_audit_log",
-        "list_used_ports",
-        "find_free_port",
-        "check_port",
-        "list_blueprint_ports",
-    })
-    _CONTAINER_ID_REQUIRED_TOOLS = frozenset({
-        "exec_in_container",
-        "container_stats",
-        "container_logs",
-        "container_inspect",
-        "stop_container",
-    })
-    _DOMAIN_CRON_OP_TO_TOOL = {
-        "create": "autonomy_cron_create_job",
-        "update": "autonomy_cron_update_job",
-        "delete": "autonomy_cron_delete_job",
-        "run_now": "autonomy_cron_run_now",
-        "pause": "autonomy_cron_pause_job",
-        "resume": "autonomy_cron_resume_job",
-        "queue": "autonomy_cron_queue",
-        "status": "autonomy_cron_status",
-        "list": "autonomy_cron_list_jobs",
-        "validate": "autonomy_cron_validate",
-    }
-    _DOMAIN_CONTAINER_OP_TO_TOOL = {
-        "deploy": "request_container",
-        "create_blueprint": "blueprint_create",
-        "stop": "stop_container",
-        "status": "container_stats",
-        "logs": "container_logs",
-        "list": "container_list",
-        "catalog": "blueprint_list",
-        "binding": "container_inspect",
-        "exec": "exec_in_container",
-        "inspect": "container_inspect",
-        "ports": "list_used_ports",
-    }
-    # Backward-compat alias — Referenzen auf _LOW_SIGNAL_TOOLS bleiben stabil.
-    _LOW_SIGNAL_TOOLS = _LOW_SIGNAL_ACTION_TOOLS
 
     @classmethod
     def _extract_suggested_tool_names(cls, thinking_plan: Dict[str, Any]) -> List[str]:
@@ -858,7 +547,11 @@ class PipelineOrchestrator:
         conversation_id: str,
         history_len: int = 0,
     ) -> Optional[Dict[str, Any]]:
-        return self._container_state_store.get_recent(conversation_id, history_len)
+        return util_get_recent_container_state(
+            container_state_store=self._container_state_store,
+            conversation_id=conversation_id,
+            history_len=history_len,
+        )
 
     @staticmethod
     def _normalize_container_entries(rows: Any) -> List[Dict[str, str]]:
@@ -873,8 +566,9 @@ class PipelineOrchestrator:
         known_containers: Optional[List[Dict[str, str]]] = None,
         history_len: int = 0,
     ) -> None:
-        self._container_state_store.remember(
-            conversation_id,
+        util_remember_container_state(
+            container_state_store=self._container_state_store,
+            conversation_id=conversation_id,
             last_active_container_id=last_active_container_id,
             home_container_id=home_container_id,
             known_containers=known_containers,
@@ -890,17 +584,21 @@ class PipelineOrchestrator:
         *,
         history_len: int = 0,
     ) -> None:
-        self._container_state_store.update_from_tool_result(
-            conversation_id,
-            tool_name,
-            tool_args,
-            result,
+        util_update_container_state_from_tool_result(
+            container_state_store=self._container_state_store,
+            conversation_id=conversation_id,
+            tool_name=tool_name,
+            tool_args=tool_args,
+            result=result,
             history_len=history_len,
         )
 
     @classmethod
     def _tool_requires_container_id(cls, tool_name: str) -> bool:
-        return util_tool_requires_container_id(tool_name, cls._CONTAINER_ID_REQUIRED_TOOLS)
+        return util_tool_requires_container_id(
+            tool_name,
+            container_id_required_tools=cls._CONTAINER_ID_REQUIRED_TOOLS,
+        )
 
     @classmethod
     def _select_preferred_container_id(
@@ -923,28 +621,15 @@ class PipelineOrchestrator:
         preferred_ids: Optional[List[str]] = None,
         history_len: int = 0,
     ) -> Tuple[str, str]:
-        try:
-            list_result = tool_hub.call_tool("container_list", {})
-        except Exception as e:
-            return "", f"container_list_failed:{self._safe_str(e, max_len=160)}"
-
-        self._update_container_state_from_tool_result(
-            conversation_id,
-            "container_list",
-            {},
-            list_result,
-            history_len=history_len,
-        )
-        selected, parse_err = util_parse_container_list_result_for_selection(
-            list_result,
-            expected_home_blueprint_id=self._expected_home_blueprint_id(),
+        return util_resolve_pending_container_id_sync(
+            tool_hub=tool_hub,
+            conversation_id=conversation_id,
             preferred_ids=preferred_ids,
+            history_len=history_len,
+            safe_str_fn=lambda value, max_len: self._safe_str(value, max_len=max_len),
+            update_container_state_from_tool_result_fn=self._update_container_state_from_tool_result,
+            expected_home_blueprint_id=self._expected_home_blueprint_id(),
         )
-        if parse_err:
-            return "", f"container_list_error:{self._safe_str(parse_err, max_len=160)}"
-        if selected:
-            return selected, ""
-        return "", "no_active_container_found"
 
     async def _resolve_pending_container_id_async(
         self,
@@ -954,35 +639,19 @@ class PipelineOrchestrator:
         preferred_ids: Optional[List[str]] = None,
         history_len: int = 0,
     ) -> Tuple[str, str]:
-        try:
-            if hasattr(tool_hub, "call_tool_async"):
-                list_result = await tool_hub.call_tool_async("container_list", {})
-            else:
-                list_result = await asyncio.to_thread(tool_hub.call_tool, "container_list", {})
-        except Exception as e:
-            return "", f"container_list_failed:{self._safe_str(e, max_len=160)}"
-
-        self._update_container_state_from_tool_result(
-            conversation_id,
-            "container_list",
-            {},
-            list_result,
-            history_len=history_len,
-        )
-        selected, parse_err = util_parse_container_list_result_for_selection(
-            list_result,
-            expected_home_blueprint_id=self._expected_home_blueprint_id(),
+        return await util_resolve_pending_container_id_async(
+            tool_hub=tool_hub,
+            conversation_id=conversation_id,
             preferred_ids=preferred_ids,
+            history_len=history_len,
+            safe_str_fn=lambda value, max_len: self._safe_str(value, max_len=max_len),
+            update_container_state_from_tool_result_fn=self._update_container_state_from_tool_result,
+            expected_home_blueprint_id=self._expected_home_blueprint_id(),
         )
-        if parse_err:
-            return "", f"container_list_error:{self._safe_str(parse_err, max_len=160)}"
-        if selected:
-            return selected, ""
-        return "", "no_active_container_found"
 
     @staticmethod
     def _grounding_evidence_has_content(item: Dict[str, Any]) -> bool:
-        return util_grounding_evidence_has_content(item)
+        return util_grounding_evidence_has_content_runtime(item)
 
     def _get_recent_grounding_state(
         self,
@@ -994,23 +663,14 @@ class PipelineOrchestrator:
             get_followup_tool_reuse_ttl_turns,
         )
 
-        conv_id = str(conversation_id or "").strip()
-        if not conv_id:
-            return None
-        ttl_s = int(get_followup_tool_reuse_ttl_s())
-        ttl_turns = int(get_followup_tool_reuse_ttl_turns())
-        with self._conversation_grounding_lock:
-            state = self._conversation_grounding_state.get(conv_id)
-            snapshot, should_drop = util_extract_recent_grounding_state(
-                state,
-                now_ts=time.time(),
-                ttl_s=ttl_s,
-                ttl_turns=ttl_turns,
-                history_len=history_len,
-            )
-            if should_drop:
-                self._conversation_grounding_state.pop(conv_id, None)
-            return snapshot
+        return util_get_recent_grounding_state(
+            conversation_grounding_state=self._conversation_grounding_state,
+            conversation_grounding_lock=self._conversation_grounding_lock,
+            conversation_id=conversation_id,
+            history_len=history_len,
+            ttl_s=int(get_followup_tool_reuse_ttl_s()),
+            ttl_turns=int(get_followup_tool_reuse_ttl_turns()),
+        )
 
     def _remember_conversation_grounding_state(
         self,
@@ -1019,27 +679,15 @@ class PipelineOrchestrator:
         *,
         history_len: int = 0,
     ) -> None:
-        conv_id = str(conversation_id or "").strip()
-        if not conv_id or not isinstance(verified_plan, dict):
-            return
-        payload = util_build_grounding_state_payload(
-            verified_plan,
-            sanitize_tool_args=self._sanitize_tool_args_for_state,
-            evidence_has_content=self._grounding_evidence_has_content,
-            max_evidence=8,
-            max_tool_runs=6,
-            max_fallback_tool_runs=4,
+        util_remember_conversation_grounding_state(
+            conversation_grounding_state=self._conversation_grounding_state,
+            conversation_grounding_lock=self._conversation_grounding_lock,
+            conversation_id=conversation_id,
+            verified_plan=verified_plan,
+            history_len=history_len,
+            sanitize_tool_args_fn=self._sanitize_tool_args_for_state,
+            evidence_has_content_fn=self._grounding_evidence_has_content,
         )
-        if not payload:
-            return
-
-        with self._conversation_grounding_lock:
-            self._conversation_grounding_state[conv_id] = {
-                "updated_at": time.time(),
-                "history_len": int(history_len or 0),
-                "tool_runs": payload.get("tool_runs", []),
-                "evidence": payload.get("evidence", []),
-            }
 
     def _inject_carryover_grounding_evidence(
         self,
@@ -1048,59 +696,40 @@ class PipelineOrchestrator:
         *,
         history_len: int = 0,
     ) -> None:
-        if not isinstance(verified_plan, dict):
-            return
-        state = self._get_recent_grounding_state(conversation_id, history_len=history_len)
-        injected = util_inject_carryover_grounding_evidence(
-            verified_plan,
-            state,
-            evidence_has_content=self._grounding_evidence_has_content,
-            max_carry_evidence=8,
-            max_selected_tools=4,
+        util_inject_carryover_grounding_evidence_runtime(
+            conversation_id=conversation_id,
+            verified_plan=verified_plan,
+            history_len=history_len,
+            get_recent_grounding_state_fn=lambda conv_id, hist_len: self._get_recent_grounding_state(
+                conv_id,
+                history_len=hist_len,
+            ),
+            evidence_has_content_fn=self._grounding_evidence_has_content,
+            log_info_fn=log_info,
         )
-        if injected:
-            log_info("[Orchestrator] Carry-over grounding evidence injected from recent turn")
 
     def _get_recent_consistency_entries(self, conversation_id: str) -> List[Dict[str, Any]]:
-        conv_id = str(conversation_id or "").strip()
-        if not conv_id:
-            return []
-        policy = load_conversation_consistency_policy()
-        ttl_s = int(policy.get("history_ttl_s", 3600) or 3600)
-        max_entries = int(policy.get("max_entries_per_conversation", 24) or 24)
-        with self._conversation_consistency_lock:
-            existing = self._conversation_consistency_state.get(conv_id, [])
-            pruned = util_prune_stance_entries(
-                existing,
-                now_ts=time.time(),
-                ttl_s=ttl_s,
-                max_entries=max_entries,
-            )
-            if pruned:
-                self._conversation_consistency_state[conv_id] = pruned
-            else:
-                self._conversation_consistency_state.pop(conv_id, None)
-            return [dict(x) for x in pruned]
+        return util_get_recent_consistency_entries(
+            consistency_state=self._conversation_consistency_state,
+            consistency_lock=self._conversation_consistency_lock,
+            conversation_id=conversation_id,
+            load_policy_fn=load_conversation_consistency_policy,
+            prune_entries_fn=util_prune_stance_entries,
+        )
 
     def _remember_consistency_entries(
         self,
         conversation_id: str,
         entries: List[Dict[str, Any]],
     ) -> None:
-        conv_id = str(conversation_id or "").strip()
-        if not conv_id or not entries:
-            return
-        policy = load_conversation_consistency_policy()
-        ttl_s = int(policy.get("history_ttl_s", 3600) or 3600)
-        max_entries = int(policy.get("max_entries_per_conversation", 24) or 24)
-        with self._conversation_consistency_lock:
-            merged = list(self._conversation_consistency_state.get(conv_id, [])) + list(entries)
-            self._conversation_consistency_state[conv_id] = util_prune_stance_entries(
-                merged,
-                now_ts=time.time(),
-                ttl_s=ttl_s,
-                max_entries=max_entries,
-            )
+        util_remember_consistency_entries(
+            consistency_state=self._conversation_consistency_state,
+            consistency_lock=self._conversation_consistency_lock,
+            conversation_id=conversation_id,
+            entries=entries,
+            load_policy_fn=load_conversation_consistency_policy,
+            prune_entries_fn=util_prune_stance_entries,
+        )
 
     async def _apply_conversation_consistency_guard(
         self,
@@ -1109,94 +738,30 @@ class PipelineOrchestrator:
         verified_plan: Dict[str, Any],
         answer: str,
     ) -> str:
-        policy = load_conversation_consistency_policy()
-        if not bool(policy.get("enabled", True)):
-            return answer
-        answer_text = str(answer or "")
-        if not answer_text.strip():
-            return answer_text
-
-        current_signals = util_extract_stance_signals(answer_text)
-        if not current_signals:
-            return answer_text
-
-        prior_entries = self._get_recent_consistency_entries(conversation_id)
-        current_embedding: Optional[List[float]] = None
-        if bool(policy.get("embedding_enable", True)):
-            try:
-                current_embedding = await embed_text_runtime(answer_text, timeout_s=2.4)
-            except Exception:
-                current_embedding = None
-
-        conflicts = util_detect_consistency_conflicts(
-            prior_entries=prior_entries,
-            current_signals=current_signals,
-            current_embedding=current_embedding,
-            similarity_threshold=float(policy.get("embedding_similarity_threshold", 0.78) or 0.78),
+        return await util_apply_conversation_consistency_guard(
+            conversation_id=conversation_id,
+            verified_plan=verified_plan,
+            answer=answer,
+            load_policy_fn=load_conversation_consistency_policy,
+            extract_stance_signals_fn=util_extract_stance_signals,
+            get_recent_consistency_entries_fn=self._get_recent_consistency_entries,
+            embed_text_fn=embed_text_runtime,
+            detect_conflicts_fn=util_detect_consistency_conflicts,
+            make_stance_entries_fn=util_make_stance_entries,
+            remember_consistency_entries_fn=self._remember_consistency_entries,
+            get_runtime_grounding_value_fn=get_runtime_grounding_value,
+            get_runtime_grounding_evidence_fn=get_runtime_grounding_evidence,
+            build_grounding_fallback_fn=lambda evidence, mode: self.output._build_grounding_fallback(
+                evidence,
+                mode=mode,
+            ),
+            log_warn_fn=log_warn,
         )
-        if not conflicts:
-            entries = util_make_stance_entries(
-                signals=current_signals,
-                embedding=current_embedding,
-                now_ts=time.time(),
-            )
-            self._remember_consistency_entries(conversation_id, entries)
-            return answer_text
-
-        evidence_count = int(
-            get_runtime_grounding_value(
-                verified_plan,
-                key="successful_evidence",
-                default=0,
-            )
-            or 0
-        )
-        min_evidence = int(policy.get("min_successful_evidence_on_stance_change", 1) or 1)
-        requires_evidence = bool(policy.get("require_evidence_on_stance_change", True))
-        if requires_evidence and evidence_count < min_evidence:
-            evidence = get_runtime_grounding_evidence(verified_plan)
-            fallback_mode = str(policy.get("fallback_mode", "explicit_uncertainty") or "explicit_uncertainty")
-            fallback = self.output._build_grounding_fallback(
-                evidence if isinstance(evidence, list) else [],
-                mode=fallback_mode,
-            )
-            repaired = str(fallback or "").strip()
-            if repaired:
-                verified_plan["_consistency_conflict_detected"] = True
-                verified_plan["_consistency_conflicts"] = conflicts[:4]
-                verified_plan["_grounding_violation_detected"] = True
-                verified_plan["_grounded_fallback_used"] = True
-                log_warn(
-                    "[Orchestrator] Consistency guard fallback: "
-                    f"conflicts={len(conflicts)} evidence={evidence_count}<{min_evidence}"
-                )
-                repaired_signals = util_extract_stance_signals(repaired)
-                repaired_embedding: Optional[List[float]] = None
-                if bool(policy.get("embedding_enable", True)):
-                    try:
-                        repaired_embedding = await embed_text_runtime(repaired, timeout_s=2.4)
-                    except Exception:
-                        repaired_embedding = None
-                entries = util_make_stance_entries(
-                    signals=repaired_signals,
-                    embedding=repaired_embedding,
-                    now_ts=time.time(),
-                )
-                self._remember_consistency_entries(conversation_id, entries)
-                return repaired
-
-        entries = util_make_stance_entries(
-            signals=current_signals,
-            embedding=current_embedding,
-            now_ts=time.time(),
-        )
-        self._remember_consistency_entries(conversation_id, entries)
-        return answer_text
 
     def _has_usable_grounding_evidence(self, verified_plan: Dict[str, Any]) -> bool:
-        return util_has_usable_grounding_evidence(
+        return util_has_usable_grounding_evidence_runtime(
             verified_plan,
-            evidence_has_content=self._grounding_evidence_has_content,
+            evidence_has_content_fn=self._grounding_evidence_has_content,
         )
 
     async def _maybe_auto_recover_grounding_once(
@@ -1214,70 +779,28 @@ class PipelineOrchestrator:
             get_grounding_auto_recovery_timeout_s,
             get_grounding_auto_recovery_whitelist,
         )
-
-        if not get_grounding_auto_recovery_enable():
-            return ""
-        if not isinstance(verified_plan, dict):
-            return ""
-        if verified_plan.get("_grounding_auto_recovery_attempted"):
-            return ""
-        if not bool(verified_plan.get("is_fact_query", False)):
-            return ""
-        if self._has_usable_grounding_evidence(verified_plan):
-            return ""
-
-        state = self._get_recent_grounding_state(conversation_id, history_len=history_len)
-        if not state:
-            return ""
-        whitelist = {str(x).strip() for x in get_grounding_auto_recovery_whitelist() if str(x).strip()}
-        if not whitelist:
-            return ""
-
-        candidate = util_select_first_whitelisted_tool_run(state, whitelist)
-        if not candidate:
-            return ""
-
-        tool_name = str(candidate.get("tool_name", "")).strip()
-        tool_args = self._sanitize_tool_args_for_state(candidate.get("args") or {})
-        if not tool_name:
-            return ""
-
-        spec = {"tool": tool_name, "args": tool_args}
-        verified_plan["_grounding_auto_recovery_attempted"] = True
-        verified_plan["needs_chat_history"] = True
-        log_info(f"[Orchestrator] Auto-recovery grounding re-run: tool={tool_name}")
-        timeout_s = float(get_grounding_auto_recovery_timeout_s())
-        try:
-            recovery_ctx = await asyncio.wait_for(
-                asyncio.to_thread(
-                    self._execute_tools_sync,
-                    [spec],
-                    user_text,
-                    {},
-                    control_decision=control_decision_from_plan(
-                        verified_plan,
-                        default_approved=False,
-                    ),
-                    time_reference=thinking_plan.get("time_reference"),
-                    thinking_suggested_tools=thinking_plan.get("suggested_tools", []),
-                    blueprint_gate_blocked=False,
-                    blueprint_router_id=None,
-                    blueprint_suggest_msg="",
-                    session_id=session_id or "",
-                    verified_plan=verified_plan,
-                ),
-                timeout=timeout_s,
-            )
-            if recovery_ctx:
-                verified_plan["_grounding_auto_recovery_used"] = True
-                return str(recovery_ctx)
-        except asyncio.TimeoutError:
-            log_warn(
-                f"[Orchestrator] Auto-recovery skipped (timeout after {timeout_s:.1f}s) tool={tool_name}"
-            )
-        except Exception as e:
-            log_warn(f"[Orchestrator] Auto-recovery failed tool={tool_name}: {e}")
-        return ""
+        return await util_maybe_auto_recover_grounding_once(
+            conversation_id=conversation_id,
+            user_text=user_text,
+            verified_plan=verified_plan,
+            thinking_plan=thinking_plan,
+            history_len=history_len,
+            session_id=session_id or "",
+            get_grounding_auto_recovery_enable_fn=get_grounding_auto_recovery_enable,
+            get_grounding_auto_recovery_timeout_s_fn=get_grounding_auto_recovery_timeout_s,
+            get_grounding_auto_recovery_whitelist_fn=get_grounding_auto_recovery_whitelist,
+            has_usable_grounding_evidence_fn=self._has_usable_grounding_evidence,
+            get_recent_grounding_state_fn=lambda conv_id, hist_len: self._get_recent_grounding_state(
+                conv_id,
+                history_len=hist_len,
+            ),
+            select_first_whitelisted_tool_run_fn=util_select_first_whitelisted_tool_run,
+            sanitize_tool_args_fn=self._sanitize_tool_args_for_state,
+            execute_tools_sync_fn=self._execute_tools_sync,
+            control_decision_from_plan_fn=control_decision_from_plan,
+            log_info_fn=log_info,
+            log_warn_fn=log_warn,
+        )
 
     def _resolve_followup_tool_reuse(
         self,
@@ -1289,52 +812,25 @@ class PipelineOrchestrator:
     ) -> List[Any]:
         from config import get_followup_tool_reuse_enable
 
-        explicit_tool_intent = self._contains_explicit_tool_intent(user_text)
-        short_fact_followup = self._looks_like_short_fact_followup(user_text, chat_history)
-        short_confirmation_followup = self._looks_like_short_confirmation_followup(
-            user_text, chat_history
-        )
-        should_attempt = util_should_attempt_followup_tool_reuse(
-            followup_enabled=get_followup_tool_reuse_enable(),
+        return util_resolve_followup_tool_reuse_runtime(
+            user_text=user_text,
             verified_plan=verified_plan,
-            explicit_tool_intent=explicit_tool_intent,
-            short_fact_followup=short_fact_followup,
-            short_confirmation_followup=short_confirmation_followup,
+            conversation_id=conversation_id,
+            chat_history=chat_history,
+            followup_enabled=bool(get_followup_tool_reuse_enable()),
+            contains_explicit_tool_intent_fn=self._contains_explicit_tool_intent,
+            looks_like_short_fact_followup_fn=self._looks_like_short_fact_followup,
+            looks_like_short_confirmation_followup_fn=self._looks_like_short_confirmation_followup,
+            looks_like_short_confirmation_followup_state_only_fn=(
+                self._looks_like_short_confirmation_followup_state_only
+            ),
+            get_recent_grounding_state_fn=lambda conv_id, hist_len: self._get_recent_grounding_state(
+                conv_id,
+                history_len=hist_len,
+            ),
+            sanitize_tool_args_fn=self._sanitize_tool_args_for_state,
+            log_info_fn=log_info,
         )
-        history_len = len(chat_history) if isinstance(chat_history, list) else 0
-        state = None
-        if not should_attempt and not explicit_tool_intent:
-            if self._looks_like_short_confirmation_followup_state_only(user_text):
-                state = self._get_recent_grounding_state(conversation_id, history_len=history_len)
-                if isinstance(state, dict) and list(state.get("tool_runs") or []):
-                    should_attempt = True
-                    verified_plan["_followup_tool_reuse_state_fallback"] = True
-                    log_info(
-                        "[Orchestrator] Follow-up tool reuse fallback active "
-                        "(state-only confirmation)"
-                    )
-        if not should_attempt:
-            return []
-
-        if state is None:
-            state = self._get_recent_grounding_state(conversation_id, history_len=history_len)
-        if not state:
-            return []
-
-        out = util_build_followup_tool_reuse_specs(
-            state,
-            sanitize_tool_args=self._sanitize_tool_args_for_state,
-            max_tools=2,
-        )
-
-        if out:
-            verified_plan["needs_chat_history"] = True
-            verified_plan["_followup_tool_reuse_active"] = True
-            log_info(
-                f"[Orchestrator] Follow-up tool reuse active: "
-                f"{util_stringify_reuse_tool_names(out)}"
-            )
-        return out
 
     @classmethod
     def _looks_like_temporal_context_query(
@@ -1385,12 +881,13 @@ class PipelineOrchestrator:
         user_text: str,
         messages: Optional[List[Any]] = None,
     ) -> Dict[str, Any]:
-        try:
-            signal = await self.tone_hybrid.classify(user_text, messages=messages)
-            return self._sanitize_tone_signal(signal)
-        except Exception as e:
-            log_warn(f"[Orchestrator] ToneHybrid fallback: {e}")
-            return self._sanitize_tone_signal(None)
+        return await util_classify_tone_signal(
+            tone_hybrid=self.tone_hybrid,
+            user_text=user_text,
+            messages=messages,
+            sanitize_tone_signal_fn=self._sanitize_tone_signal,
+            log_warn_fn=log_warn,
+        )
 
     async def _classify_query_budget_signal(
         self,
@@ -1401,29 +898,15 @@ class PipelineOrchestrator:
     ) -> Dict[str, Any]:
         from config import get_query_budget_enable
 
-        if not get_query_budget_enable():
-            return {}
-        try:
-            signal = await self.query_budget.classify(
-                user_text,
-                selected_tools=selected_tools,
-                tone_signal=tone_signal,
-            )
-            if isinstance(signal, dict) and signal:
-                log_info(
-                    "[Orchestrator] query_budget "
-                    f"type={signal.get('query_type')} "
-                    f"intent={signal.get('intent_hint')} "
-                    f"complexity={signal.get('complexity_signal')} "
-                    f"budget={signal.get('response_budget')} "
-                    f"tool_hint={signal.get('tool_hint') or '-'} "
-                    f"skip_candidate={bool(signal.get('skip_thinking_candidate'))} "
-                    f"conf={signal.get('confidence')} src={signal.get('source')}"
-                )
-            return signal if isinstance(signal, dict) else {}
-        except Exception as e:
-            log_warn(f"[Orchestrator] QueryBudget fallback: {e}")
-            return {}
+        return await util_classify_query_budget_signal(
+            query_budget=self.query_budget,
+            user_text=user_text,
+            selected_tools=selected_tools,
+            tone_signal=tone_signal,
+            query_budget_enabled=bool(get_query_budget_enable()),
+            log_info_fn=log_info,
+            log_warn_fn=log_warn,
+        )
 
     async def _classify_domain_signal(
         self,
@@ -1433,28 +916,15 @@ class PipelineOrchestrator:
     ) -> Dict[str, Any]:
         from config import get_domain_router_enable
 
-        if not get_domain_router_enable():
-            return {}
-        try:
-            signal = await self.domain_router.classify(
-                user_text,
-                selected_tools=selected_tools,
-            )
-            if isinstance(signal, dict) and signal:
-                signal = self._maybe_downgrade_cron_create_signal(user_text, signal)
-                log_info(
-                    "[Orchestrator] domain_router "
-                    f"tag={signal.get('domain_tag')} "
-                    f"locked={bool(signal.get('domain_locked'))} "
-                    f"operation={signal.get('operation')} "
-                    f"conf={signal.get('confidence')} src={signal.get('source')}"
-                )
-                if bool(signal.get("cron_create_downgraded")):
-                    log_info("[Orchestrator] domain_router cron create downgraded to status (meta/no-schedule guard)")
-            return signal if isinstance(signal, dict) else {}
-        except Exception as e:
-            log_warn(f"[Orchestrator] DomainRouter fallback: {e}")
-            return {}
+        return await util_classify_domain_signal(
+            domain_router=self.domain_router,
+            user_text=user_text,
+            selected_tools=selected_tools,
+            domain_router_enabled=bool(get_domain_router_enable()),
+            maybe_downgrade_cron_create_signal_fn=self._maybe_downgrade_cron_create_signal,
+            log_info_fn=log_info,
+            log_warn_fn=log_warn,
+        )
 
     def _seed_tool_for_domain_route(
         self,
@@ -1464,68 +934,33 @@ class PipelineOrchestrator:
         suggested_tools: Optional[List[Any]] = None,
         verified_plan: Optional[Dict[str, Any]] = None,
     ) -> str:
-        if not isinstance(route, dict):
-            return ""
-        tag = str(route.get("domain_tag") or "").strip().upper()
-        if tag == "CRONJOB":
-            op = str(route.get("operation") or "").strip().lower()
-            return self._DOMAIN_CRON_OP_TO_TOOL.get(op, "autonomy_cron_status")
-        if tag == "SKILL":
-            if self._should_prioritize_skill_catalog_route(
-                verified_plan,
-                user_text=user_text,
-            ):
-                return self._select_read_only_skill_tool_for_query(
-                    user_text,
-                    verified_plan=verified_plan,
+        return util_seed_tool_for_domain_route(
+            route,
+            user_text=user_text,
+            suggested_tools=suggested_tools,
+            verified_plan=verified_plan,
+            domain_cron_op_to_tool=self._DOMAIN_CRON_OP_TO_TOOL,
+            domain_container_op_to_tool=self._DOMAIN_CONTAINER_OP_TO_TOOL,
+            domain_container_tools=self._DOMAIN_CONTAINER_TOOLS,
+            should_prioritize_skill_catalog_route_fn=(
+                lambda plan, text: self._should_prioritize_skill_catalog_route(
+                    plan,
+                    user_text=text,
                 )
-            return "autonomous_skill_task"
-        if tag == "CONTAINER":
-            op = str(route.get("operation") or "").strip().lower()
-            if op == "unknown" and self._looks_like_host_runtime_lookup(user_text):
-                return "exec_in_container"
-            if op == "unknown":
-                for tool in suggested_tools or []:
-                    name = self._extract_tool_name(tool).strip().lower()
-                    if name in self._DOMAIN_CONTAINER_TOOLS:
-                        return name
-            return self._DOMAIN_CONTAINER_OP_TO_TOOL.get(op, "container_list")
-        return ""
+            ),
+            select_read_only_skill_tool_for_query_fn=(
+                lambda text, plan: self._select_read_only_skill_tool_for_query(
+                    text,
+                    verified_plan=plan,
+                )
+            ),
+            looks_like_host_runtime_lookup_fn=self._looks_like_host_runtime_lookup,
+            extract_tool_name_fn=self._extract_tool_name,
+        )
 
     @staticmethod
     def _looks_like_host_runtime_lookup(user_text: str) -> bool:
-        lower = str(user_text or "").strip().lower()
-        if not lower:
-            return False
-        has_target = any(
-            token in lower
-            for token in (
-                "host server",
-                "host-server",
-                "server",
-                "host",
-                "ip adresse",
-                "ip-adresse",
-                "ip address",
-            )
-        )
-        if not has_target:
-            return False
-        return any(
-            token in lower
-            for token in (
-                "find",
-                "finden",
-                "ermittel",
-                "heraus",
-                "auslesen",
-                "check",
-                "prüf",
-                "pruef",
-                "zeige",
-                "gib",
-            )
-        )
+        return util_looks_like_host_runtime_lookup(user_text)
 
     def _apply_domain_route_to_plan(
         self,
@@ -1534,58 +969,23 @@ class PipelineOrchestrator:
         *,
         user_text: str = "",
     ) -> Dict[str, Any]:
-        plan = thinking_plan if isinstance(thinking_plan, dict) else {}
-        if not isinstance(signal, dict) or not signal:
-            return plan
-
-        route = dict(signal)
-        plan["_domain_route"] = route
-
-        domain_locked = bool(route.get("domain_locked"))
-        domain_tag = str(route.get("domain_tag") or "").strip().upper()
-        if not domain_locked or domain_tag not in {"CRONJOB", "SKILL", "CONTAINER"}:
-            return plan
-
-        skill_catalog_route_priority = (
-            domain_tag == "SKILL"
-            and self._should_prioritize_skill_catalog_route(plan, user_text=user_text)
+        return util_apply_domain_route_to_plan(
+            thinking_plan,
+            signal,
+            user_text=user_text,
+            domain_cron_tools=self._DOMAIN_CRON_TOOLS,
+            read_only_skill_tools=self._READ_ONLY_SKILL_TOOLS,
+            domain_skill_tools=self._DOMAIN_SKILL_TOOLS,
+            domain_container_tools=self._DOMAIN_CONTAINER_TOOLS,
+            should_prioritize_skill_catalog_route_fn=(
+                lambda plan, text: self._should_prioritize_skill_catalog_route(
+                    plan,
+                    user_text=text,
+                )
+            ),
+            extract_tool_name_fn=self._extract_tool_name,
+            seed_tool_for_domain_route_fn=self._seed_tool_for_domain_route,
         )
-        if domain_tag == "CRONJOB":
-            allowed = self._DOMAIN_CRON_TOOLS
-        elif skill_catalog_route_priority:
-            allowed = self._READ_ONLY_SKILL_TOOLS
-        elif domain_tag == "SKILL":
-            allowed = self._DOMAIN_SKILL_TOOLS
-        else:
-            allowed = self._DOMAIN_CONTAINER_TOOLS
-
-        existing = plan.get("suggested_tools", [])
-        existing_list = existing if isinstance(existing, list) else []
-        existing_allowed = [
-            tool
-            for tool in existing_list
-            if self._extract_tool_name(tool).strip().lower() in allowed
-        ]
-        if existing_allowed:
-            plan["suggested_tools"] = existing_allowed
-            plan["_domain_tool_seeded"] = False
-        else:
-            seed_tool = self._seed_tool_for_domain_route(
-                route,
-                user_text=user_text,
-                suggested_tools=existing_list,
-                verified_plan=plan,
-            )
-            if seed_tool:
-                plan["suggested_tools"] = [seed_tool]
-                plan["_domain_tool_seeded"] = True
-
-        if domain_tag == "CRONJOB":
-            # Hard guard for ControlLayer skill-confirmation fallback.
-            plan["_domain_skill_confirmation_disabled"] = True
-        elif skill_catalog_route_priority:
-            plan["_skill_catalog_domain_priority"] = True
-        return plan
 
     def _apply_domain_tool_policy(
         self,
@@ -1595,91 +995,26 @@ class PipelineOrchestrator:
         user_text: str = "",
         prefix: str = "[Orchestrator]",
     ) -> List[Any]:
-        if not isinstance(verified_plan, dict):
-            return suggested_tools
-
-        route = verified_plan.get("_domain_route")
-        if not isinstance(route, dict):
-            return suggested_tools
-        if not bool(route.get("domain_locked")):
-            return suggested_tools
-
-        domain_tag = str(route.get("domain_tag") or "").strip().upper()
-        skill_catalog_route_priority = (
-            domain_tag == "SKILL"
-            and self._should_prioritize_skill_catalog_route(verified_plan, user_text=user_text)
+        return util_apply_domain_tool_policy(
+            verified_plan,
+            suggested_tools,
+            user_text=user_text,
+            prefix=prefix,
+            domain_cron_tools=self._DOMAIN_CRON_TOOLS,
+            read_only_skill_tools=self._READ_ONLY_SKILL_TOOLS,
+            domain_skill_tools=self._DOMAIN_SKILL_TOOLS,
+            domain_container_tools=self._DOMAIN_CONTAINER_TOOLS,
+            should_prioritize_skill_catalog_route_fn=(
+                lambda plan, text: self._should_prioritize_skill_catalog_route(
+                    plan,
+                    user_text=text,
+                )
+            ),
+            seed_tool_for_domain_route_fn=self._seed_tool_for_domain_route,
+            looks_like_host_runtime_lookup_fn=self._looks_like_host_runtime_lookup,
+            extract_tool_name_fn=self._extract_tool_name,
+            log_info_fn=log_info,
         )
-        if domain_tag == "CRONJOB":
-            allowed = self._DOMAIN_CRON_TOOLS
-        elif skill_catalog_route_priority:
-            allowed = self._READ_ONLY_SKILL_TOOLS
-        elif domain_tag == "SKILL":
-            allowed = self._DOMAIN_SKILL_TOOLS
-        elif domain_tag == "CONTAINER":
-            allowed = self._DOMAIN_CONTAINER_TOOLS
-        else:
-            return suggested_tools
-
-        before = len(suggested_tools or [])
-        filtered = [
-            tool
-            for tool in (suggested_tools or [])
-            if self._extract_tool_name(tool).strip().lower() in allowed
-        ]
-        dropped = max(0, before - len(filtered))
-
-        if not filtered:
-            if domain_tag == "SKILL" and bool(verified_plan.get("_skill_gate_blocked")):
-                log_info(
-                    f"{prefix} Domain gate skipped SKILL reseed: "
-                    f"reason={verified_plan.get('_skill_gate_reason') or 'skill_gate_blocked'}"
-                )
-            else:
-                seed_tool = self._seed_tool_for_domain_route(
-                    route,
-                    user_text=user_text,
-                    suggested_tools=suggested_tools,
-                    verified_plan=verified_plan,
-                )
-                if seed_tool and seed_tool in allowed:
-                    filtered = [seed_tool]
-
-        if dropped or before == 0:
-            verified_plan["_domain_gate"] = {
-                "domain_tag": domain_tag,
-                "dropped": dropped,
-                "kept": [self._extract_tool_name(t) for t in filtered],
-            }
-            log_info(
-                f"{prefix} Domain gate applied: tag={domain_tag} dropped={dropped} "
-                f"kept={verified_plan['_domain_gate']['kept']}"
-            )
-
-        if domain_tag == "CONTAINER" and self._looks_like_host_runtime_lookup(user_text):
-            has_exec = any(
-                self._extract_tool_name(tool).strip().lower() == "exec_in_container"
-                for tool in filtered
-            )
-            has_request = any(
-                self._extract_tool_name(tool).strip().lower() == "request_container"
-                for tool in filtered
-            )
-            if has_exec and has_request:
-                filtered = [
-                    tool
-                    for tool in filtered
-                    if self._extract_tool_name(tool).strip().lower() != "request_container"
-                ]
-                log_info(f"{prefix} Container runtime fast-path: dropped request_container (exec already present)")
-            elif has_request and not has_exec:
-                filtered = [
-                    tool
-                    for tool in filtered
-                    if self._extract_tool_name(tool).strip().lower() != "request_container"
-                ]
-                filtered.insert(0, "exec_in_container")
-                log_info(f"{prefix} Container runtime fast-path: replaced request_container with exec_in_container")
-        return filtered
 
     def _should_skip_thinking_from_query_budget(
         self,
@@ -1692,14 +1027,14 @@ class PipelineOrchestrator:
             get_query_budget_skip_thinking_enable,
             get_query_budget_skip_thinking_min_confidence,
         )
-        return util_should_skip_thinking_from_query_budget(
+        return util_should_skip_thinking_from_query_budget_runtime(
             signal,
             user_text=user_text,
             forced_mode=forced_mode,
             skip_enabled=bool(get_query_budget_skip_thinking_enable()),
             min_confidence=float(get_query_budget_skip_thinking_min_confidence()),
-            is_explicit_deep_request=self._is_explicit_deep_request,
-            contains_explicit_tool_intent=self._contains_explicit_tool_intent,
+            is_explicit_deep_request_fn=self._is_explicit_deep_request,
+            contains_explicit_tool_intent_fn=self._contains_explicit_tool_intent,
         )
 
     def _apply_query_budget_to_plan(
@@ -1710,12 +1045,12 @@ class PipelineOrchestrator:
         user_text: str = "",
     ) -> Dict[str, Any]:
         from config import get_query_budget_enable
-        return util_apply_query_budget_to_plan(
+        return util_apply_query_budget_to_plan_runtime(
             thinking_plan,
             signal,
             user_text=user_text,
             query_budget_enabled=bool(get_query_budget_enable()),
-            should_force_factual_memory=lambda text, plan, sig: self._should_force_query_budget_factual_memory(
+            should_force_query_budget_factual_memory_fn=lambda text, plan, sig: self._should_force_query_budget_factual_memory(
                 user_text=text,
                 thinking_plan=plan,
                 signal=sig,
@@ -1729,11 +1064,11 @@ class PipelineOrchestrator:
         thinking_plan: Dict[str, Any],
         signal: Dict[str, Any],
     ) -> bool:
-        return util_should_force_query_budget_factual_memory(
+        return util_should_force_query_budget_factual_memory_runtime(
             user_text=user_text,
             thinking_plan=thinking_plan,
             signal=signal,
-            tool_domain_tag=self._extract_tool_domain_tag(user_text),
+            extract_tool_domain_tag_fn=self._extract_tool_domain_tag,
             has_non_memory_tool_runtime_signal_fn=self._has_non_memory_tool_runtime_signal,
             has_memory_recall_signal_fn=self._has_memory_recall_signal,
         )
@@ -1768,7 +1103,7 @@ class PipelineOrchestrator:
             get_policy_conflict_resolver_rollout_pct(),
             conversation_id or user_text,
         )
-        out, meta = util_resolve_precontrol_policy_conflicts(
+        return util_resolve_precontrol_policy_conflicts_runtime(
             user_text,
             thinking_plan,
             resolver_enabled=bool(get_policy_conflict_resolver_enable()),
@@ -1778,13 +1113,8 @@ class PipelineOrchestrator:
             looks_like_host_runtime_lookup_fn=self._looks_like_host_runtime_lookup,
             has_non_memory_tool_runtime_signal_fn=self._has_non_memory_tool_runtime_signal,
             extract_tool_name_fn=self._extract_tool_name,
+            log_info_fn=log_info,
         )
-        if bool(meta.get("resolved")):
-            log_info(
-                "[Orchestrator] Policy conflict resolved: "
-                f"domain={meta.get('domain_tag') or '-'} reason={meta.get('reason') or '-'}"
-            )
-        return out
 
     def _apply_query_budget_tool_policy(
         self,
@@ -1798,7 +1128,7 @@ class PipelineOrchestrator:
             get_query_budget_enable,
             get_query_budget_max_tools_factual_low,
         )
-        filtered, policy = util_apply_query_budget_tool_policy(
+        return util_apply_query_budget_tool_policy_runtime(
             user_text,
             verified_plan,
             suggested_tools,
@@ -1809,20 +1139,9 @@ class PipelineOrchestrator:
             is_explicit_deep_request_fn=self._is_explicit_deep_request,
             is_explicit_think_request_fn=self._is_explicit_think_request,
             extract_tool_name_fn=self._extract_tool_name,
+            prefix=prefix,
+            log_info_fn=log_info,
         )
-        if isinstance(policy, dict):
-            verified_plan["_query_budget_policy"] = dict(policy)
-            query_type = str(policy.get("query_type") or "")
-            complexity = str(policy.get("complexity_signal") or "")
-            confidence = float(policy.get("confidence", 0.0) or 0.0)
-            dropped = int(policy.get("dropped", 0) or 0)
-            reasons = list(policy.get("reasons") or [])
-            log_info(
-                f"{prefix} QueryBudget policy applied: "
-                f"type={query_type} complexity={complexity} conf={confidence:.2f} "
-                f"dropped={dropped} reasons={reasons}"
-            )
-        return filtered
 
     def _ensure_dialogue_controls(
         self,
@@ -1837,7 +1156,7 @@ class PipelineOrchestrator:
             override_threshold = float(get_tone_signal_override_confidence())
         except Exception:
             override_threshold = 0.82
-        return util_ensure_dialogue_controls(
+        return util_ensure_dialogue_controls_runtime(
             thinking_plan,
             tone_signal,
             override_threshold=override_threshold,
@@ -1870,48 +1189,37 @@ class PipelineOrchestrator:
         *,
         whole_word: bool = False,
     ) -> bool:
-        if not text or not keyword:
-            return False
-        if not whole_word:
-            return keyword in text
-        pattern = rf"(?<![A-Za-z0-9_]){re.escape(keyword)}(?![A-Za-z0-9_])"
-        return re.search(pattern, text) is not None
+        return util_contains_keyword_intent(
+            text,
+            keyword,
+            whole_word=whole_word,
+        )
 
     def _contains_explicit_tool_intent(self, user_text: str) -> bool:
-        lower = (user_text or "").lower()
-        if self._extract_tool_domain_tag(lower):
-            return True
-        for tok in self._TOOL_INTENT_KEYWORDS:
-            if self._contains_keyword_intent(
-                lower,
-                tok,
-                whole_word=tok in self._TOOL_INTENT_WORD_KEYWORDS,
-            ):
-                return True
-        return False
+        return util_contains_explicit_tool_intent(
+            user_text,
+            extract_tool_domain_tag_fn=self._extract_tool_domain_tag,
+            contains_keyword_intent_fn=self._contains_keyword_intent,
+            tool_intent_keywords=self._TOOL_INTENT_KEYWORDS,
+            tool_intent_word_keywords=self._TOOL_INTENT_WORD_KEYWORDS,
+        )
 
     def _contains_explicit_skill_intent(self, user_text: str) -> bool:
-        lower = (user_text or "").lower()
-        if self._extract_tool_domain_tag(lower) == "SKILL":
-            return True
-        for tok in self._SKILL_INTENT_KEYWORDS:
-            if self._contains_keyword_intent(
-                lower,
-                tok,
-                whole_word=tok in self._SKILL_INTENT_WORD_KEYWORDS,
-            ):
-                return True
-        return False
+        return util_contains_explicit_skill_intent(
+            user_text,
+            extract_tool_domain_tag_fn=self._extract_tool_domain_tag,
+            contains_keyword_intent_fn=self._contains_keyword_intent,
+            skill_intent_keywords=self._SKILL_INTENT_KEYWORDS,
+            skill_intent_word_keywords=self._SKILL_INTENT_WORD_KEYWORDS,
+        )
 
     @classmethod
     def _extract_tool_domain_tag(cls, text: str) -> str:
-        raw = str(text or "")
-        m = cls._TOOL_DOMAIN_TAG_RE.search(raw)
-        if not m:
-            m = cls._TOOL_DOMAIN_TAG_SHORT_RE.search(raw)
-        if not m:
-            return ""
-        return str(m.group(1) or "").strip().upper()
+        return util_extract_tool_domain_tag(
+            text,
+            tool_domain_tag_re=cls._TOOL_DOMAIN_TAG_RE,
+            tool_domain_tag_short_re=cls._TOOL_DOMAIN_TAG_SHORT_RE,
+        )
 
     @classmethod
     def _has_cron_schedule_signal(
@@ -1919,20 +1227,10 @@ class PipelineOrchestrator:
         user_text: str,
         route: Optional[Dict[str, Any]] = None,
     ) -> bool:
-        text = str(user_text or "").lower()
-        route = route if isinstance(route, dict) else {}
-        if str(route.get("cron_expression_hint") or "").strip():
-            return True
-        if str(route.get("one_shot_at_hint") or "").strip():
-            return True
-        if str(route.get("schedule_mode_hint") or "").strip().lower() in {"one_shot", "recurring"}:
-            return True
-        if re.search(
-            r"(?:in|nach|um|at)\s+\d{1,4}\s*(?:sek|sekunden|s|min|minuten|minute|h|std|stunden|stunde)\b",
-            text,
-        ):
-            return True
-        return False
+        return util_has_cron_schedule_signal(
+            user_text,
+            route=route,
+        )
 
     @classmethod
     def _is_explicit_cron_create_intent(
@@ -1940,46 +1238,23 @@ class PipelineOrchestrator:
         user_text: str,
         route: Optional[Dict[str, Any]] = None,
     ) -> bool:
-        text = str(user_text or "").lower()
-        if not text:
-            return False
-        if any(marker in text for marker in cls._CRON_META_GUARD_MARKERS):
-            return False
-        create_markers = (
-            "erstelle",
-            "erstell",
-            "anlege",
-            "anleg",
-            "create",
-            "setze auf",
-            "schedule",
-            "richte ein",
-            "einrichten",
+        return util_is_explicit_cron_create_intent(
+            user_text,
+            route=route,
+            cron_meta_guard_markers=cls._CRON_META_GUARD_MARKERS,
+            has_cron_schedule_signal_fn=cls._has_cron_schedule_signal,
         )
-        if not any(marker in text for marker in create_markers):
-            return False
-        return cls._has_cron_schedule_signal(text, route)
 
     def _maybe_downgrade_cron_create_signal(
         self,
         user_text: str,
         signal: Dict[str, Any],
     ) -> Dict[str, Any]:
-        if not isinstance(signal, dict):
-            return signal
-        tag = str(signal.get("domain_tag") or "").strip().upper()
-        op = str(signal.get("operation") or "").strip().lower()
-        if tag != "CRONJOB" or op != "create":
-            return signal
-        if self._is_explicit_cron_create_intent(user_text, signal):
-            return signal
-        patched = dict(signal)
-        patched["operation"] = "status"
-        patched["cron_create_downgraded"] = True
-        patched["reason"] = (
-            f"{str(signal.get('reason') or '').strip()}, cron:create->status_guard"
-        ).strip(", ")
-        return patched
+        return util_maybe_downgrade_cron_create_signal(
+            user_text,
+            signal,
+            is_explicit_cron_create_intent_fn=self._is_explicit_cron_create_intent,
+        )
 
     def _should_suppress_conversational_tools(
         self,
@@ -2093,36 +1368,12 @@ class PipelineOrchestrator:
             {"blocked": True, "reason": "...", "error": "..."} bei Router-Fehler (fail-closed)
             oder None
         """
-        # C10 (Rest) rollout/rollback gate:
-        # discovery paths can be disabled globally without code changes.
-        try:
-            from config import get_skill_discovery_enable
-            if not bool(get_skill_discovery_enable()):
-                log_info("[Orchestrator] Skill discovery disabled (SKILL_DISCOVERY_ENABLE=false)")
-                return None
-        except Exception:
-            if os.getenv("SKILL_DISCOVERY_ENABLE", "true").lower() != "true":
-                log_info("[Orchestrator] Skill discovery disabled via env fallback")
-                return None
-
-        try:
-            from core.skill_router import get_skill_router
-            router = get_skill_router()
-            decision = router.route(
-                user_text=user_text,
-                intent=thinking_plan.get("intent", ""),
-            )
-            if decision.decision == "use_existing" and decision.skill_name:
-                return {"skill_name": decision.skill_name, "score": decision.score}
-        except Exception as e:
-            # Fail-closed: Router-Fehler dürfen nicht still auf "kein Match" degradieren.
-            log_error(f"[Orchestrator] SkillRouter error (fail-closed): {e}")
-            return {
-                "blocked": True,
-                "reason": "skill_router_unavailable",
-                "error": str(e),
-            }
-        return None
+        return util_route_skill_request(
+            user_text,
+            thinking_plan,
+            log_info_fn=log_info,
+            log_error_fn=log_error,
+        )
 
     # ===============================================================
     # BLUEPRINT ROUTING
@@ -2138,31 +1389,11 @@ class PipelineOrchestrator:
             {"blocked": True, "reason": "...", "error": "..."}                     → Router-Fehler (fail-closed)
             None                                                                    → no_blueprint (kein Freestyle!)
         """
-        try:
-            from core.blueprint_router import get_blueprint_router
-            router = get_blueprint_router()
-            decision = router.route(
-                user_text=user_text,
-                intent=thinking_plan.get("intent", "") if isinstance(thinking_plan, dict) else "",
-            )
-            if decision.decision == "use_blueprint" and decision.blueprint_id:
-                return {"blueprint_id": decision.blueprint_id, "score": decision.score}
-            if decision.decision == "suggest_blueprint" and decision.blueprint_id:
-                return {
-                    "blueprint_id": decision.blueprint_id,
-                    "score": decision.score,
-                    "suggest": True,
-                    "candidates": decision.candidates,
-                }
-        except Exception as e:
-            # Fail-closed: Bei Router-Fehler Container-Start strikt blockieren.
-            log_error(f"[Orchestrator] BlueprintRouter error (fail-closed): {e}")
-            return {
-                "blocked": True,
-                "reason": "blueprint_router_unavailable",
-                "error": str(e),
-            }
-        return None
+        return util_route_blueprint_request(
+            user_text,
+            thinking_plan,
+            log_error_fn=log_error,
+        )
 
     def _prepare_container_candidate_evidence(
         self,
@@ -2171,80 +1402,13 @@ class PipelineOrchestrator:
         *,
         chat_history: Optional[list] = None,
     ) -> None:
-        """
-        Populate advisory container-candidate evidence before Control.
-
-        This prepares blueprint matches for Control review, but does not decide
-        whether a container should actually be started.
-        """
-        if not isinstance(thinking_plan, dict):
-            return
-        suggested = list(thinking_plan.get("suggested_tools") or [])
-        if "request_container" not in suggested:
-            return
-
-        thinking_plan["needs_chat_history"] = True
-
-        history = list(chat_history or [])
-        blueprint_hint = ""
-        try:
-            for msg in reversed(history[-6:]):
-                content = self._message_content(msg)
-                if not content:
-                    continue
-                for candidate in re.findall(r"\b([a-z][a-z0-9]*(?:-[a-z0-9]+)+)\b", content.lower()):
-                    if candidate in {"follow-up", "step-by-step", "well-known", "real-time", "up-to-date", "built-in"}:
-                        continue
-                    if candidate not in str(user_text or "").lower():
-                        blueprint_hint = candidate
-                        raise StopIteration
-        except StopIteration:
-            pass
-        except Exception:
-            blueprint_hint = ""
-
-        if blueprint_hint and blueprint_hint.lower() not in str(thinking_plan.get("intent") or "").lower():
-            current_intent = str(thinking_plan.get("intent") or "").strip()
-            thinking_plan["intent"] = f"{current_intent} {blueprint_hint}".strip()
-            log_info(f"[Orchestrator] Container candidate hint injected: '{blueprint_hint}'")
-
-        decision = self._route_blueprint_request(user_text, thinking_plan)
-        resolution: Dict[str, Any] = {
-            "decision": "no_blueprint",
-            "blueprint_id": "",
-            "score": 0.0,
-            "reason": "",
-            "candidates": [],
-        }
-
-        if isinstance(decision, dict):
-            if decision.get("blocked"):
-                resolution["decision"] = "resolver_error"
-                resolution["reason"] = str(decision.get("reason") or "blueprint_router_unavailable")
-            else:
-                resolution["decision"] = "suggest_blueprint" if decision.get("suggest") else "use_blueprint"
-                resolution["blueprint_id"] = str(decision.get("blueprint_id") or "").strip()
-                try:
-                    resolution["score"] = float(decision.get("score") or 0.0)
-                except Exception:
-                    resolution["score"] = 0.0
-                resolution["reason"] = str(decision.get("reason") or "").strip()
-                resolution["candidates"] = list(decision.get("candidates") or [])
-
-        if not resolution["candidates"] and resolution["blueprint_id"]:
-            resolution["candidates"] = [
-                {
-                    "id": resolution["blueprint_id"],
-                    "score": float(resolution.get("score") or 0.0),
-                }
-            ]
-
-        thinking_plan["_container_resolution"] = resolution
-        thinking_plan["_container_candidates"] = list(resolution.get("candidates") or [])
-        log_info(
-            "[Orchestrator] Container candidate evidence prepared: "
-            f"decision={resolution['decision']} "
-            f"candidates={[c.get('id') for c in resolution.get('candidates', []) if isinstance(c, dict)]}"
+        return util_prepare_container_candidate_evidence(
+            user_text,
+            thinking_plan,
+            chat_history=chat_history,
+            message_content_fn=self._message_content_value,
+            route_blueprint_request_fn=self._route_blueprint_request,
+            log_info_fn=log_info,
         )
 
     # ===============================================================
@@ -2260,77 +1424,40 @@ class PipelineOrchestrator:
         This avoids unbounded fire-and-forget thread spawning and survives
         process restarts for pending jobs.
         """
-        try:
-            q = _get_archive_embedding_queue()
-            q.ensure_worker_running(
-                lambda: get_archive_manager().process_pending_embeddings(batch_size=5)
-            )
-            job_id = q.enqueue()
-            log_debug(f"[PostTask] queued archive-embedding job_id={job_id} pending={q.pending_count()}")
-        except Exception as e:
-            log_error(f"[PostTask] queue enqueue failed, fallback inline processing: {e}")
-            try:
-                processed = self.archive_manager.process_pending_embeddings(batch_size=5)
-                if processed > 0:
-                    log_info(f"[PostTask] Processed {processed} archive embeddings (inline fallback)")
-            except Exception as inner:
-                log_error(f"[PostTask] Inline fallback embedding processing failed: {inner}")
+        util_post_task_processing(
+            get_archive_embedding_queue_fn=_get_archive_embedding_queue,
+            archive_manager=self.archive_manager,
+            log_debug_fn=log_debug,
+            log_info_fn=log_info,
+            log_error_fn=log_error,
+        )
 
     def _is_explicit_deep_request(self, user_text: str) -> bool:
-        text = (user_text or "").lower()
-        deep_markers = (
-            "/deep",
-            "deep analysis",
-            "tiefenanalyse",
-            "ausfuehrlich",
-            "ausführlich",
-            "sehr detailliert",
-            "vollständige analyse",
-            "vollstaendige analyse",
-        )
-        return any(m in text for m in deep_markers)
+        return util_is_explicit_deep_request(user_text)
 
     def _is_explicit_think_request(self, user_text: str) -> bool:
-        text = (user_text or "").lower()
-        think_markers = (
-            "schritt für schritt",
-            "schritt fuer schritt",
-            "step by step",
-            "denk schrittweise",
-            "denke schrittweise",
-            "reason step by step",
-            "chain of thought",
-            "zeige dein thinking",
-        )
-        return any(m in text for m in think_markers)
+        return util_is_explicit_think_request(user_text)
 
     @staticmethod
     def _extract_tool_name(tool_spec: Any) -> str:
-        if isinstance(tool_spec, dict):
-            return str(tool_spec.get("tool") or tool_spec.get("name") or "").strip()
-        return str(tool_spec or "").strip()
+        return util_extract_tool_name(tool_spec)
 
     @classmethod
     def _is_home_container_info_query(cls, user_text: str) -> bool:
-        text = str(user_text or "").strip().lower()
-        if not text:
-            return False
-        if cls._is_home_container_start_query(text):
-            return False
-        has_home_marker = any(marker in text for marker in cls._HOME_CONTAINER_QUERY_MARKERS)
-        if not has_home_marker:
-            return False
-        return any(marker in text for marker in cls._HOME_CONTAINER_PURPOSE_MARKERS) or "container" in text
+        return util_is_home_container_info_query(
+            user_text,
+            home_container_query_markers=cls._HOME_CONTAINER_QUERY_MARKERS,
+            home_container_purpose_markers=cls._HOME_CONTAINER_PURPOSE_MARKERS,
+            is_home_container_start_query_fn=cls._is_home_container_start_query,
+        )
 
     @classmethod
     def _is_home_container_start_query(cls, user_text: str) -> bool:
-        text = str(user_text or "").strip().lower()
-        if not text:
-            return False
-        has_home_marker = any(marker in text for marker in cls._HOME_CONTAINER_QUERY_MARKERS)
-        if not has_home_marker:
-            return False
-        return any(marker in text for marker in cls._HOME_CONTAINER_START_MARKERS)
+        return util_is_home_container_start_query(
+            user_text,
+            home_container_query_markers=cls._HOME_CONTAINER_QUERY_MARKERS,
+            home_container_start_markers=cls._HOME_CONTAINER_START_MARKERS,
+        )
 
     def _rewrite_home_start_request_tools(
         self,
@@ -2340,37 +1467,15 @@ class PipelineOrchestrator:
         *,
         prefix: str = "[Orchestrator]",
     ) -> List[Any]:
-        if not self._is_home_container_start_query(user_text):
-            return suggested_tools
-
-        rewritten: List[Any] = []
-        seen = set()
-        replaced = False
-        for tool in suggested_tools or []:
-            name = self._extract_tool_name(tool).strip().lower()
-            if name == "request_container":
-                if "home_start" not in seen:
-                    rewritten.append("home_start")
-                    seen.add("home_start")
-                replaced = True
-                continue
-            if not name or name in seen:
-                continue
-            rewritten.append(tool)
-            seen.add(name)
-
-        if not replaced and "home_start" not in seen:
-            rewritten.insert(0, "home_start")
-            replaced = True
-
-        if "home_start" in seen and isinstance(verified_plan, dict):
-            verified_plan["_trion_home_start_fast_path"] = True
-            verified_plan["needs_chat_history"] = True
-            log_info(
-                f"{prefix} TRION Home start fast-path: "
-                f"{[self._extract_tool_name(t) for t in rewritten]}"
-            )
-        return rewritten
+        return util_rewrite_home_start_request_tools(
+            user_text,
+            verified_plan,
+            suggested_tools,
+            prefix=prefix,
+            is_home_container_start_query_fn=self._is_home_container_start_query,
+            extract_tool_name_fn=self._extract_tool_name,
+            log_info_fn=log_info,
+        )
 
     def _prioritize_home_container_tools(
         self,
@@ -2384,51 +1489,15 @@ class PipelineOrchestrator:
         Harden tool strategy for questions about TRION home containers.
         If the plan only suggests home_read/home_list-like tools, prepend container discovery.
         """
-        if not isinstance(verified_plan, dict):
-            return suggested_tools
-        if not bool(verified_plan.get("is_fact_query", False)):
-            return suggested_tools
-        if not self._is_home_container_info_query(user_text):
-            return suggested_tools
-
-        tool_names = [self._extract_tool_name(t).lower() for t in (suggested_tools or [])]
-        has_container_discovery = any(name in {"container_list", "container_inspect"} for name in tool_names)
-        if has_container_discovery:
-            return suggested_tools
-
-        adjusted: List[Any] = ["container_list"]
-        seen = {"container_list"}
-        has_home_reader = False
-        for tool in suggested_tools or []:
-            name = self._extract_tool_name(tool).strip().lower()
-            if not name or name in seen:
-                continue
-            if name == "query_skill_knowledge":
-                # Skill-template retrieval is low-value noise for container-purpose questions.
-                continue
-            if name == "home_read":
-                has_home_reader = True
-                if isinstance(tool, dict):
-                    args = dict(tool.get("args", {}) or {})
-                    if not str(args.get("path", "")).strip():
-                        args["path"] = "."
-                    adjusted.append({"tool": "home_read", "args": args})
-                else:
-                    adjusted.append({"tool": "home_read", "args": {"path": "."}})
-                seen.add(name)
-                continue
-            adjusted.append(tool)
-            seen.add(name)
-
-        if not has_home_reader:
-            adjusted.append({"tool": "home_read", "args": {"path": "."}})
-
-        log_info(
-            f"{prefix} Home-container routing override: "
-            f"{[self._extract_tool_name(t) for t in adjusted]}"
+        return util_prioritize_home_container_tools(
+            user_text,
+            verified_plan,
+            suggested_tools,
+            prefix=prefix,
+            is_home_container_info_query_fn=self._is_home_container_info_query,
+            extract_tool_name_fn=self._extract_tool_name,
+            log_info_fn=log_info,
         )
-        verified_plan["needs_chat_history"] = True
-        return adjusted
 
     @staticmethod
     def _recover_home_read_directory_with_fast_lane(
@@ -2436,93 +1505,23 @@ class PipelineOrchestrator:
         *,
         max_files: int = 5,
     ) -> Tuple[bool, str]:
-        """
-        home_read fallback when a directory path was provided.
-        Returns (success, recovered_payload_text).
-        """
-        path = str(dir_path or ".").strip() or "."
-        try:
-            from core.tools.fast_lane.executor import FastLaneExecutor
-            fl = FastLaneExecutor()
-            sub_result = fl.execute("home_list", {"path": path})
-            sub_items = sub_result.content if hasattr(sub_result, "content") else sub_result
-            if not isinstance(sub_items, list):
-                return False, ""
+        from core.tools.fast_lane.executor import FastLaneExecutor
 
-            files_read = 0
-            parts: List[str] = [
-                f"home_read recovery for directory '{path}'",
-                "listing: " + json.dumps(sub_items, ensure_ascii=False),
-            ]
-            for sub_item in sub_items:
-                if files_read >= max_files:
-                    break
-                item = str(sub_item or "").strip()
-                if not item or item.endswith("/"):
-                    continue
-                fp = item if path in (".", "") else f"{path}/{item}"
-                try:
-                    fc = fl.execute("home_read", {"path": fp})
-                    fc_content = fc.content if hasattr(fc, "content") else fc
-                    text = str(fc_content or "").strip()
-                    if not text:
-                        continue
-                    parts.append(f"file[{fp}]: {text}")
-                    files_read += 1
-                except Exception:
-                    continue
-
-            if files_read <= 0:
-                return True, "\n".join(parts)
-            parts.append(f"files_read: {files_read}")
-            return True, "\n".join(parts)
-        except Exception:
-            return False, ""
+        return util_recover_home_read_directory_with_fast_lane(
+            dir_path,
+            max_files=max_files,
+            fast_lane_executor_cls=FastLaneExecutor,
+        )
 
     @staticmethod
     def _sanitize_skill_name_candidate(raw_name: Any) -> str:
-        candidate = str(raw_name or "").strip().strip("`\"'.,:;!?()[]{}")
-        if not candidate:
-            return ""
-        candidate = candidate.replace("-", "_")
-        candidate = re.sub(r"[^A-Za-z0-9_]", "_", candidate)
-        candidate = re.sub(r"_+", "_", candidate).strip("_")
-        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{1,63}", candidate):
-            return ""
-        return candidate.lower()
+        return util_sanitize_skill_name_candidate(raw_name)
 
     def _extract_requested_skill_name(self, user_text: str) -> str:
-        text = str(user_text or "").strip()
-        if not text:
-            return ""
-
-        patterns = [
-            r"(?i)\brun_skill\s+([A-Za-z][A-Za-z0-9_-]{2,63})\b",
-            r"(?i)\b(?:führe|fuehre|run|execute|starte|start)\s+(?:den\s+|die\s+|das\s+)?skill\s+([A-Za-z][A-Za-z0-9_-]{2,63})\b",
-            r"(?i)\bskill\s+([A-Za-z][A-Za-z0-9_-]{2,63})\s+(?:aus|ausführen|ausfuehren|run|starten|execute)\b",
-            r"(?i)\b(?:skill|funktion)\s+(?:namens|name|named|called)\s+[`\"']?([A-Za-z][A-Za-z0-9_-]{2,63})[`\"']?",
-        ]
-        stopwords = {
-            "skill",
-            "run_skill",
-            "ausfuehren",
-            "ausführen",
-            "execute",
-            "run",
-            "start",
-            "starte",
-            "fuehre",
-            "führe",
-            "bitte",
-        }
-        for pattern in patterns:
-            match = re.search(pattern, text, flags=re.IGNORECASE | re.UNICODE)
-            if not match:
-                continue
-            candidate = self._sanitize_skill_name_candidate(match.group(1))
-            if candidate and candidate not in stopwords:
-                return candidate
-        return ""
+        return util_extract_requested_skill_name(
+            user_text,
+            sanitize_skill_name_candidate_fn=self._sanitize_skill_name_candidate,
+        )
 
     def _filter_think_tools(
         self,
@@ -2531,43 +1530,15 @@ class PipelineOrchestrator:
         thinking_plan: Optional[Dict[str, Any]],
         source: str,
     ) -> list:
-        if not tools:
-            return tools
-
-        plan = thinking_plan or {}
-        allow_think = False
-        reason = "not_needed"
-
-        if self._is_explicit_think_request(user_text):
-            allow_think = True
-            reason = "explicit_user_request"
-        elif str(plan.get("_response_mode", "interactive")) == "deep":
-            allow_think = True
-            reason = "deep_mode"
-        elif plan.get("_sequential_deferred"):
-            allow_think = False
-            reason = "sequential_deferred"
-        elif plan.get("needs_sequential_thinking") or plan.get("sequential_thinking_required"):
-            allow_think = True
-            reason = "sequential_required"
-
-        if allow_think:
-            return tools
-
-        filtered = []
-        dropped = 0
-        for t in tools:
-            if self._extract_tool_name(t) in {"think", "think_simple"}:
-                dropped += 1
-                continue
-            filtered.append(t)
-
-        if dropped:
-            log_info(
-                f"[Orchestrator] Filtered think tool(s) source={source} "
-                f"dropped={dropped} reason={reason}"
-            )
-        return filtered
+        return util_filter_think_tools(
+            tools,
+            user_text=user_text,
+            thinking_plan=thinking_plan,
+            source=source,
+            is_explicit_think_request_fn=self._is_explicit_think_request,
+            extract_tool_name_fn=self._extract_tool_name,
+            log_info_fn=log_info,
+        )
 
     def _filter_tool_selector_candidates(
         self,
@@ -2575,24 +1546,16 @@ class PipelineOrchestrator:
         user_text: str,
         forced_mode: str = "",
     ) -> Optional[list]:
-        if not selected_tools:
-            return selected_tools
-        plan_hint = {
-            "_response_mode": "deep"
-            if (forced_mode == "deep" or self._is_explicit_deep_request(user_text))
-            else "interactive"
-        }
-        return self._filter_think_tools(
-            list(selected_tools),
+        return util_filter_tool_selector_candidates(
+            selected_tools,
             user_text=user_text,
-            thinking_plan=plan_hint,
-            source="tool_selector",
+            forced_mode=forced_mode,
+            is_explicit_deep_request_fn=self._is_explicit_deep_request,
+            filter_think_tools_fn=self._filter_think_tools,
         )
 
     def _requested_response_mode(self, request: CoreChatRequest) -> str:
-        raw = request.raw_request if isinstance(getattr(request, "raw_request", None), dict) else {}
-        mode = str(raw.get("response_mode", "")).strip().lower()
-        return mode if mode in {"interactive", "deep"} else ""
+        return util_requested_response_mode(request)
 
     def _resolve_runtime_output_model(self, requested_model: str) -> Tuple[str, Dict[str, Any]]:
         """
@@ -2602,69 +1565,16 @@ class PipelineOrchestrator:
         """
         from config import get_output_model, get_output_provider
 
-        requested = str(requested_model or "").strip()
-        fallback = str(get_output_model() or "").strip()
-        provider = str(get_output_provider() or "ollama").strip().lower()
-
-        # Only local Ollama provider should be normalized against /api/tags.
-        # Cloud providers must keep the selected provider-model pair unchanged.
-        if provider != "ollama":
-            resolved = requested or fallback
-            resolution = {
-                "requested_model": requested,
-                "resolved_model": resolved,
-                "fallback_model": fallback,
-                "endpoint": "cloud",
-                "tags_ok": False,
-                "available_count": 0,
-                "used_fallback": bool(resolved and resolved != requested),
-                "reason": "provider_passthrough_non_ollama",
-                "provider": provider,
-            }
-            if resolved != requested:
-                log_warn(
-                    f"[ModelResolver] output model fallback requested='{requested or '<empty>'}' "
-                    f"resolved='{resolved or '<empty>'}' reason={resolution['reason']} provider={provider}"
-                )
-            else:
-                log_info(
-                    f"[ModelResolver] output model accepted requested='{requested or '<empty>'}' "
-                    f"reason={resolution['reason']} provider={provider}"
-                )
-            return resolved, resolution
-
-        try:
-            route = resolve_role_endpoint("output", default_endpoint=self.ollama_base)
-            endpoint = str(route.get("endpoint") or self.ollama_base or "").strip()
-        except Exception as e:
-            log_warn(f"[ModelResolver] role endpoint resolution failed: {e}")
-            endpoint = str(self.ollama_base or "").strip()
-
-        resolution = resolve_runtime_chat_model(
-            requested_model=requested,
-            endpoint=endpoint,
-            fallback_model=fallback,
+        return util_resolve_runtime_output_model(
+            requested_model,
+            ollama_base=self.ollama_base,
+            get_output_model_fn=get_output_model,
+            get_output_provider_fn=get_output_provider,
+            resolve_role_endpoint_fn=resolve_role_endpoint,
+            resolve_runtime_chat_model_fn=resolve_runtime_chat_model,
+            log_info_fn=log_info,
+            log_warn_fn=log_warn,
         )
-        resolved = str(resolution.get("resolved_model") or "").strip()
-        if not resolved:
-            resolved = fallback or requested
-            resolution["resolved_model"] = resolved
-            resolution["reason"] = "resolver_empty_fallback_applied"
-
-        if resolved != requested:
-            log_warn(
-                f"[ModelResolver] output model adjusted requested='{requested or '<empty>'}' "
-                f"resolved='{resolved or '<empty>'}' reason={resolution.get('reason')} "
-                f"endpoint={resolution.get('endpoint') or 'unknown'} "
-                f"available_count={resolution.get('available_count', 0)}"
-            )
-        else:
-            log_info(
-                f"[ModelResolver] output model accepted requested='{requested or '<empty>'}' "
-                f"endpoint={resolution.get('endpoint') or 'unknown'} "
-                f"available_count={resolution.get('available_count', 0)}"
-            )
-        return resolved, resolution
 
     def _apply_response_mode_policy(
         self,
@@ -2675,46 +1585,18 @@ class PipelineOrchestrator:
         """
         Resolve response mode and enforce interactive safeguards deterministically.
         """
-        from config import (
-            get_default_response_mode,
-            get_response_mode_sequential_threshold,
+        from config import get_default_response_mode, get_response_mode_sequential_threshold
+
+        return util_apply_response_mode_policy(
+            user_text,
+            thinking_plan,
+            forced_mode=forced_mode,
+            get_default_response_mode_fn=get_default_response_mode,
+            get_response_mode_sequential_threshold_fn=get_response_mode_sequential_threshold,
+            is_explicit_deep_request_fn=self._is_explicit_deep_request,
+            filter_think_tools_fn=self._filter_think_tools,
+            log_info_fn=log_info,
         )
-
-        if forced_mode in {"interactive", "deep"}:
-            mode = forced_mode
-        else:
-            mode = "deep" if self._is_explicit_deep_request(user_text) else get_default_response_mode()
-        mode = "deep" if mode == "deep" else "interactive"
-        thinking_plan["_response_mode"] = mode
-
-        if mode == "interactive":
-            threshold = get_response_mode_sequential_threshold()
-            complexity = int(thinking_plan.get("sequential_complexity", 0) or 0)
-            needs_seq = bool(
-                thinking_plan.get("needs_sequential_thinking")
-                or thinking_plan.get("sequential_thinking_required")
-            )
-            if needs_seq and complexity >= threshold:
-                thinking_plan["needs_sequential_thinking"] = False
-                thinking_plan["sequential_thinking_required"] = False
-                thinking_plan["_sequential_deferred"] = True
-                thinking_plan["_sequential_deferred_reason"] = (
-                    f"interactive_mode_complexity_{complexity}_threshold_{threshold}"
-                )
-                log_info(
-                    f"[Orchestrator] Sequential deferred (interactive mode): "
-                    f"complexity={complexity} threshold={threshold}"
-                )
-
-        # Keep tool behavior aligned with response-mode/sequential policy.
-        if thinking_plan.get("suggested_tools"):
-            thinking_plan["suggested_tools"] = self._filter_think_tools(
-                list(thinking_plan.get("suggested_tools", [])),
-                user_text=user_text,
-                thinking_plan=thinking_plan,
-                source=f"response_mode:{mode}",
-            )
-        return mode
 
     # ===============================================================
     # SHARED HELPERS
@@ -2732,38 +1614,22 @@ class PipelineOrchestrator:
         Collect authoritative tool args from ControlLayer with gate-override parity
         for sync and stream paths.
         """
-        prefix = "[Orchestrator-Stream]" if stream else "[Orchestrator]"
-        decisions: Dict[str, Dict] = {}
-
-        gate_override = verified_plan.get("_gate_tools_override")
-        if gate_override:
-            log_info(f"{prefix} Gate override active — skipping decide_tools(): {gate_override}")
-            for tool_name in gate_override:
-                if not tool_allowed_by_control_decision(control_decision, tool_name):
-                    log_warn(f"{prefix} Gate override tool blocked by control_decision: {tool_name}")
-                    continue
-                decisions[tool_name] = self._build_tool_args(tool_name, user_text, verified_plan=verified_plan)
-            return decisions
-
-        try:
-            raw_decisions = await self.control.decide_tools(user_text, verified_plan)
-            for item in raw_decisions or []:
-                if not isinstance(item, dict):
-                    continue
-                name = str(item.get("name") or "").strip()
-                if not name:
-                    continue
-                if not tool_allowed_by_control_decision(control_decision, name):
-                    log_warn(f"{prefix} decide_tools emitted non-allowed tool; dropped: {name}")
-                    continue
-                args = item.get("arguments", {})
-                decisions[name] = args if isinstance(args, dict) else {}
-            if decisions:
-                log_info(f"{prefix} ControlLayer tool args: {list(decisions.keys())}")
-        except Exception as e:
-            log_error(f"{prefix} decide_tools error: {e}")
-
-        return decisions
+        return await util_collect_control_tool_decisions(
+            control=self.control,
+            user_text=user_text,
+            verified_plan=verified_plan,
+            build_tool_args_fn=lambda tool_name, text, plan: self._build_tool_args(
+                tool_name,
+                text,
+                verified_plan=plan,
+            ),
+            tool_allowed_by_control_decision_fn=tool_allowed_by_control_decision,
+            control_decision=control_decision,
+            stream=stream,
+            log_info_fn=log_info,
+            log_warn_fn=log_warn,
+            log_error_fn=log_error,
+        )
 
     def _resolve_execution_suggested_tools(
         self,
@@ -2781,512 +1647,149 @@ class PipelineOrchestrator:
         Build final suggested_tools list with parity across sync and stream:
         ControlLayer authority -> Thinking fallback -> keyword fallback (+ optional trigger router).
         """
-        prefix = "[Orchestrator-Stream]" if stream else "[Orchestrator]"
-        decisions = control_tool_decisions or {}
-        has_control_decisions = bool(decisions)
-        authoritative_suggested_tools = list(
-            verified_plan.get("_authoritative_suggested_tools") or []
-        )
-        control_allowed_tools = list(
-            control_decision.tools_allowed
-            if isinstance(control_decision, ControlDecision) and control_decision.tools_allowed
-            else []
-        )
-        has_control_authority = bool(
-            has_control_decisions or authoritative_suggested_tools or control_allowed_tools
-        )
-        if isinstance(control_decision, ControlDecision) and not control_decision.approved:
-            log_info(f"{prefix} Tool execution suppressed (control_decision.approved=false)")
-            return self._finalize_execution_suggested_tools(verified_plan, [])
-        suppress_low_signal_tools = self._should_suppress_conversational_tools(
-            user_text, verified_plan
-        )
-
-        if decisions:
-            suggested_tools = list(decisions.keys())
-            log_info(f"{prefix} ControlLayer tools (authoritative): {suggested_tools}")
-        elif authoritative_suggested_tools:
-            suggested_tools = list(authoritative_suggested_tools)
-            log_info(f"{prefix} Authoritative control suggested_tools: {suggested_tools}")
-        elif control_allowed_tools:
-            suggested_tools = list(control_allowed_tools)
-            log_info(f"{prefix} ControlLayer tools_allowed fallback: {suggested_tools}")
-        else:
-            suggested_tools = verified_plan.get("suggested_tools", [])
-            if suggested_tools:
-                log_info(f"{prefix} Fallback: ThinkingLayer suggested_tools: {suggested_tools}")
-
-            # Confirmation follow-up override: prefer recent successful tool reuse
-            # over fresh weak routing for short confirmations like "ja bitte testen".
-            if self._looks_like_short_confirmation_followup(user_text, chat_history):
-                followup_tools = self._resolve_followup_tool_reuse(
-                    user_text,
-                    verified_plan,
-                    conversation_id=conversation_id,
-                    chat_history=chat_history,
-                )
-                if followup_tools:
-                    suggested_tools = self._normalize_tools(followup_tools)
-                    if isinstance(control_decision, ControlDecision):
-                        suggested_tools = [
-                            t for t in suggested_tools
-                            if tool_allowed_by_control_decision(control_decision, self._extract_tool_name(t))
-                        ]
-                    log_info(f"{prefix} Confirmation follow-up reuse: {suggested_tools}")
-                    verified_plan["needs_chat_history"] = True
-                    return self._finalize_execution_suggested_tools(verified_plan, suggested_tools)
-
-        # Validate + Normalize: filters invalid tools, maps skill names -> run_skill.
-        suggested_tools = self._normalize_tools(suggested_tools)
-        if isinstance(control_decision, ControlDecision):
-            suggested_tools = [
-                t for t in suggested_tools
-                if tool_allowed_by_control_decision(control_decision, self._extract_tool_name(t))
-            ]
-        resolution_strategy = self._get_effective_resolution_strategy(verified_plan)
-        if resolution_strategy:
-            log_info(f"{prefix} Effective resolution_strategy={resolution_strategy}")
-        suggested_tools = self._prioritize_home_container_tools(
-            user_text,
-            verified_plan,
-            suggested_tools,
-            prefix=prefix,
-        )
-        suggested_tools = self._rewrite_home_start_request_tools(
-            user_text,
-            verified_plan,
-            suggested_tools,
-            prefix=prefix,
-        )
-        suggested_tools = self._prioritize_active_container_capability_tools(
-            user_text,
-            verified_plan,
-            suggested_tools,
+        return util_resolve_execution_suggested_tools(
+            user_text=user_text,
+            verified_plan=verified_plan,
+            control_tool_decisions=control_tool_decisions,
+            tool_execution_policy=self.tool_execution_policy,
+            low_signal_action_tools=list(self._LOW_SIGNAL_ACTION_TOOLS),
+            control_decision=control_decision,
+            stream=stream,
+            enable_skill_trigger_router=enable_skill_trigger_router,
             conversation_id=conversation_id,
-            force=resolution_strategy == "active_container_capability",
-            prefix=prefix,
+            chat_history=chat_history,
+            finalize_execution_suggested_tools_fn=self._finalize_execution_suggested_tools,
+            should_suppress_conversational_tools_fn=self._should_suppress_conversational_tools,
+            looks_like_short_confirmation_followup_fn=self._looks_like_short_confirmation_followup,
+            resolve_followup_tool_reuse_fn=self._resolve_followup_tool_reuse,
+            normalize_tools_fn=self._normalize_tools,
+            extract_tool_name_fn=self._extract_tool_name,
+            get_effective_resolution_strategy_fn=self._get_effective_resolution_strategy,
+            prioritize_home_container_tools_fn=self._prioritize_home_container_tools,
+            rewrite_home_start_request_tools_fn=self._rewrite_home_start_request_tools,
+            prioritize_active_container_capability_tools_fn=self._prioritize_active_container_capability_tools,
+            apply_container_query_policy_fn=self._apply_container_query_policy,
+            apply_query_budget_tool_policy_fn=self._apply_query_budget_tool_policy,
+            apply_domain_tool_policy_fn=self._apply_domain_tool_policy,
+            detect_tools_by_keyword_fn=self._detect_tools_by_keyword,
+            contains_explicit_skill_intent_fn=self._contains_explicit_skill_intent,
+            detect_skill_by_trigger_fn=self._detect_skill_by_trigger,
+            looks_like_host_runtime_lookup_fn=self._looks_like_host_runtime_lookup,
+            tool_allowed_by_control_decision_fn=tool_allowed_by_control_decision,
+            log_info_fn=log_info,
         )
-        suggested_tools = self._apply_container_query_policy(
-            user_text,
-            verified_plan,
-            suggested_tools,
-            conversation_id=conversation_id,
-            prefix=prefix,
-        )
-        if has_control_authority:
-            log_info(f"{prefix} Post-control tool policies bypassed (Control authority)")
-        else:
-            suggested_tools = self._apply_query_budget_tool_policy(
-                user_text,
-                verified_plan,
-                suggested_tools,
-                prefix=prefix,
-            )
-            suggested_tools = self._apply_domain_tool_policy(
-                verified_plan,
-                suggested_tools,
-                user_text=user_text,
-                prefix=prefix,
-            )
-
-        if suppress_low_signal_tools and suggested_tools and not has_control_authority:
-            policy = self.tool_execution_policy or {}
-            conv_cfg = policy.get("conversational_guard", {}) if isinstance(policy, dict) else {}
-            suppressed_exec_tools = {
-                str(name).strip().lower()
-                for name in conv_cfg.get("suppress_tools", [])
-                if str(name).strip()
-            }
-            suppressed_tools = {str(t).strip().lower() for t in self._LOW_SIGNAL_ACTION_TOOLS}.union(suppressed_exec_tools)
-            before = len(suggested_tools)
-            suggested_tools = [
-                tool
-                for tool in suggested_tools
-                if self._extract_tool_name(tool).lower() not in suppressed_tools
-            ]
-            dropped = before - len(suggested_tools)
-            if dropped:
-                log_info(
-                    f"{prefix} Suppressed conversational tools for turn: dropped={dropped}"
-                )
-        elif suppress_low_signal_tools and suggested_tools and has_control_authority:
-            log_info(f"{prefix} Conversational suppress bypassed (Control authority)")
-
-        if not suggested_tools:
-            followup_tools = self._resolve_followup_tool_reuse(
-                user_text,
-                verified_plan,
-                conversation_id=conversation_id,
-                chat_history=chat_history,
-            )
-            if followup_tools:
-                suggested_tools = self._normalize_tools(followup_tools)
-                if isinstance(control_decision, ControlDecision):
-                    suggested_tools = [
-                        t for t in suggested_tools
-                        if tool_allowed_by_control_decision(control_decision, self._extract_tool_name(t))
-                    ]
-                log_info(f"{prefix} Follow-up tool reuse: {suggested_tools}")
-                verified_plan["needs_chat_history"] = True
-                return self._finalize_execution_suggested_tools(verified_plan, suggested_tools)
-            if suppress_low_signal_tools:
-                log_info(f"{prefix} Tool fallback suppressed for conversational turn")
-                return self._finalize_execution_suggested_tools(verified_plan, [])
-            suggested_tools = self._detect_tools_by_keyword(user_text)
-            if suggested_tools:
-                suggested_tools = self._normalize_tools(suggested_tools)
-                if isinstance(control_decision, ControlDecision):
-                    suggested_tools = [
-                        t for t in suggested_tools
-                        if tool_allowed_by_control_decision(control_decision, self._extract_tool_name(t))
-                    ]
-                log_info(f"{prefix} Last-resort keyword fallback: {suggested_tools}")
-
-        if enable_skill_trigger_router and not suggested_tools:
-            if self._contains_explicit_skill_intent(user_text):
-                trigger_matches = self._detect_skill_by_trigger(user_text)
-                if trigger_matches:
-                    suggested_tools = self._normalize_tools(trigger_matches)
-                    if isinstance(control_decision, ControlDecision):
-                        suggested_tools = [
-                            t for t in suggested_tools
-                            if tool_allowed_by_control_decision(control_decision, self._extract_tool_name(t))
-                        ]
-                    log_info(f"[Orchestrator] Skill Trigger Router: {trigger_matches}")
-            else:
-                log_info("[Orchestrator] Skill Trigger Router skipped (no explicit skill intent)")
-
-        if not has_control_authority:
-            suggested_tools = self._apply_domain_tool_policy(
-                verified_plan,
-                suggested_tools,
-                user_text=user_text,
-                prefix=prefix,
-            )
-
-        _host_runtime_requested = self._looks_like_host_runtime_lookup(user_text)
-        if not has_control_authority:
-            _host_tools = enforce_host_runtime_exec_first(
-                user_text=user_text,
-                suggested_tools=suggested_tools,
-                looks_like_host_runtime_lookup_fn=self._looks_like_host_runtime_lookup,
-                extract_tool_name_fn=self._extract_tool_name,
-            )
-            if _host_runtime_requested:
-                verified_plan["_host_runtime_chain_applied"] = True
-            if _host_tools != list(suggested_tools or []):
-                log_info(
-                    f"{prefix} Host-runtime deterministic chain applied: "
-                    f"{[self._extract_tool_name(t) for t in _host_tools]}"
-                )
-                suggested_tools = _host_tools
-
-        return self._finalize_execution_suggested_tools(verified_plan, suggested_tools)
 
     def _tool_name_list(self, suggested_tools: Optional[List[Any]]) -> List[str]:
-        out: List[str] = []
-        for tool in suggested_tools or []:
-            name = self._extract_tool_name(tool).strip()
-            if name:
-                out.append(name)
-        return out
+        return util_tool_name_list(
+            suggested_tools,
+            extract_tool_name_fn=self._extract_tool_name,
+        )
 
     def _materialize_skill_catalog_policy(
         self,
         verified_plan: Optional[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        if not isinstance(verified_plan, dict):
-            return {}
-        if self._get_effective_resolution_strategy(verified_plan) != "skill_catalog_context":
-            return {}
-
-        raw_hints = verified_plan.get("strategy_hints")
-        strategy_hints = [
-            str(hint or "").strip().lower()
-            for hint in (raw_hints if isinstance(raw_hints, list) else [])
-            if str(hint or "").strip()
-        ]
-        hint_set = set(strategy_hints)
-
-        suggested_tools = self._tool_name_list(
-            verified_plan.get("_authoritative_suggested_tools")
-            or verified_plan.get("suggested_tools")
-            or []
+        return util_materialize_skill_catalog_policy(
+            verified_plan,
+            effective_resolution_strategy=self._get_effective_resolution_strategy(verified_plan),
+            read_only_skill_tools=self._READ_ONLY_SKILL_TOOLS,
+            skill_action_tools=self._SKILL_ACTION_TOOLS,
+            tool_name_list_fn=self._tool_name_list,
         )
-        read_only_tools = [
-            name for name in suggested_tools if name in self._READ_ONLY_SKILL_TOOLS
-        ]
-        has_non_read_only_skill_tools = any(
-            name in self._SKILL_ACTION_TOOLS for name in suggested_tools
-        )
-        followup_split_required = bool("fact_then_followup" in hint_set)
-
-        required_tools: List[str] = []
-
-        def _add_required(tool_name: str) -> None:
-            if tool_name and tool_name not in required_tools:
-                required_tools.append(tool_name)
-
-        draft_focus = "list_draft_skills" in read_only_tools or (
-            "draft_skills" in hint_set and not followup_split_required
-        )
-        runtime_focus = bool(
-            {
-                "runtime_skills",
-                "tools_vs_skills",
-                "overview",
-                "fact_then_followup",
-            }.intersection(hint_set)
-        ) or "list_skills" in read_only_tools
-
-        if draft_focus:
-            _add_required("list_draft_skills")
-        if runtime_focus or not required_tools:
-            _add_required("list_skills")
-        if "get_skill_info" in read_only_tools:
-            _add_required("get_skill_info")
-
-        force_sections = ["Runtime-Skills", "Einordnung"]
-        if followup_split_required:
-            force_sections.append("Wunsch-Skills")
-
-        policy = {
-            "mode": "mixed" if has_non_read_only_skill_tools else "inventory_read_only",
-            "required_tools": required_tools,
-            "force_sections": force_sections,
-            "draft_explanation_required": bool(
-                draft_focus or "tools_vs_skills" in hint_set
-            ),
-            "followup_split_required": followup_split_required,
-            "allow_sequential": False,
-            "semantic_guardrails_only": True,
-            "selected_hints": strategy_hints,
-        }
-        verified_plan["_skill_catalog_policy"] = policy
-        return policy
 
     def _record_execution_tool_trace(
         self,
         verified_plan: Optional[Dict[str, Any]],
         suggested_tools: Optional[List[Any]],
     ) -> None:
-        if not isinstance(verified_plan, dict):
-            return
-        thinking_tools = self._tool_name_list(
-            verified_plan.get("_thinking_suggested_tools")
-            or verified_plan.get("suggested_tools")
-            or []
+        util_record_execution_tool_trace(
+            verified_plan,
+            suggested_tools,
+            tool_name_list_fn=self._tool_name_list,
+            get_effective_resolution_strategy_fn=self._get_effective_resolution_strategy,
         )
-        final_tools = self._tool_name_list(suggested_tools)
-        verified_plan["_thinking_suggested_tools"] = thinking_tools
-        verified_plan["_final_execution_tools"] = final_tools
-
-        if self._get_effective_resolution_strategy(verified_plan) != "skill_catalog_context":
-            return
-
-        domain_gate = verified_plan.get("_domain_gate")
-        domain_gate = domain_gate if isinstance(domain_gate, dict) else {}
-        dropped = int(domain_gate.get("dropped", 0) or 0)
-        domain_seeded = bool(verified_plan.get("_domain_tool_seeded"))
-        changed = final_tools != thinking_tools
-        if not final_tools and thinking_tools:
-            status = "suppressed"
-        elif changed or domain_seeded:
-            status = "rerouted"
-        else:
-            status = "unchanged"
-        reasons: List[str] = []
-        if bool(verified_plan.get("_skill_catalog_domain_priority")) or (
-            status in {"rerouted", "suppressed"}
-            and self._get_effective_resolution_strategy(verified_plan) == "skill_catalog_context"
-        ):
-            reasons.append("skill_catalog_priority")
-        if domain_seeded:
-            reasons.append("domain_seeded")
-        if dropped > 0:
-            reasons.append(f"domain_filtered:{dropped}")
-        if changed and not reasons:
-            reasons.append("tool_selection_changed")
-        verified_plan["_skill_catalog_tool_route"] = {
-            "status": status,
-            "reason": ", ".join(reasons) if reasons else "none",
-            "thinking_suggested_tools": thinking_tools,
-            "final_execution_tools": final_tools,
-        }
 
     def _finalize_execution_suggested_tools(
         self,
         verified_plan: Optional[Dict[str, Any]],
         suggested_tools: Optional[List[Any]],
     ) -> List[Any]:
-        selected = list(suggested_tools or [])
-        if isinstance(verified_plan, dict):
-            verified_plan["_selected_tools_for_prompt"] = self._tool_name_list(selected)
-        self._record_execution_tool_trace(verified_plan, selected)
-        return selected
+        return util_finalize_execution_suggested_tools(
+            verified_plan,
+            suggested_tools,
+            tool_name_list_fn=self._tool_name_list,
+            record_execution_tool_trace_fn=self._record_execution_tool_trace,
+        )
 
     @staticmethod
     def _get_effective_resolution_strategy(verified_plan: Optional[Dict[str, Any]]) -> str:
-        if not isinstance(verified_plan, dict):
-            return ""
-        for key in ("_authoritative_resolution_strategy", "resolution_strategy"):
-            strategy = str(verified_plan.get(key) or "").strip().lower()
-            if strategy in {
-                "container_inventory",
-                "container_blueprint_catalog",
-                "container_state_binding",
-                "container_request",
-                "active_container_capability",
-                "home_container_info",
-                "skill_catalog_context",
-            }:
-                return strategy
-        return ""
+        return util_get_effective_resolution_strategy(verified_plan)
 
     def _detect_tools_by_keyword(self, user_text: str) -> list:
         """Keyword-based tool detection fallback when Thinking suggests none."""
-        user_lower = user_text.lower()
-        if any(kw in user_lower for kw in [
-            "festplatte", "festplatten", "laufwerk", "laufwerke",
-            "storage", "disk", "disks", "mount", "mounts", "speicherplatz",
-        ]):
-            if any(kw in user_lower for kw in ["summary", "übersicht", "uebersicht", "kapazität", "kapazitaet", "frei", "belegt"]):
-                return ["storage_get_summary"]
-            if any(kw in user_lower for kw in ["mount", "mounts", "eingehängt", "eingehaengt"]):
-                return ["storage_list_mounts"]
-            if any(kw in user_lower for kw in ["policy", "richtlinie", "zone"]):
-                return ["storage_get_policy"]
-            if any(kw in user_lower for kw in ["blacklist", "blocked paths", "gesperrt", "blockiert"]):
-                return ["storage_list_blocked_paths"]
-            if any(kw in user_lower for kw in ["managed paths", "verwaltete pfade", "managed"]):
-                return ["storage_list_managed_paths"]
-            if any(kw in user_lower for kw in ["audit", "änderungen", "aenderungen", "verlauf", "log"]):
-                return ["storage_audit_log"]
-            return ["storage_list_disks"]
-        if any(kw in user_lower for kw in [
-            "grafikkarte", "gpu", "vram", "hardware", "systemhardware", "welche karte"
-        ]):
-            return [{"tool": "run_skill", "args": {"name": "system_hardware_info", "action": "run", "args": {}}}]
-        if any(kw in user_lower for kw in ["skill", "skills", "fähigkeit"]):
-            if any(kw in user_lower for kw in ["zeig", "list", "welche", "hast du", "installiert", "verfügbar"]):
-                if any(kw in user_lower for kw in ["draft", "entwurf", "noch nicht aktiv", "nicht aktiv"]):
-                    return ["list_draft_skills"]
-                return ["list_skills"]
-            elif any(kw in user_lower for kw in ["erstell", "create", "bau", "mach"]):
-                return ["autonomous_skill_task"]
-        elif self._is_home_container_info_query(user_lower):
-            return ["container_list", {"tool": "home_read", "args": {"path": "."}}]
-        elif self._is_home_container_start_query(user_lower):
-            return ["home_start"]
-        elif self._is_active_container_capability_query(user_lower):
-            return ["container_inspect"]
-        elif self._is_container_state_binding_query(user_lower):
-            return ["container_list"]
-        elif any(kw in user_lower for kw in ["erinnerst du", "weißt du noch", "was weißt du über"]):
-            return ["memory_graph_search"]
-        elif any(kw in user_lower for kw in ["merk dir", "speicher", "remember"]):
-            return ["memory_fact_save"]
-        # Container Commander — Blueprint listing
-        elif self._is_container_blueprint_catalog_query(user_lower):
-            return ["blueprint_list"]
-        elif self._is_container_inventory_query(user_lower):
-            return ["container_list"]
-        # Container Commander — Start/Deploy
-        elif self._is_container_request_query(user_lower) or any(kw in user_lower for kw in [
-            "deploy container", "starte einen", "deploy blueprint", "python container", "node container",
-            "starte python", "starte node", "starte sandbox"
-        ]):
-            return ["request_container"]
-        # Container Commander — Stop
-        elif any(kw in user_lower for kw in ["stoppe container", "stop container", "container stoppen", "beende container", "container beenden"]):
-            return ["stop_container"]
-        # Container Commander — Stats
-        elif any(kw in user_lower for kw in ["container stats", "container status", "container auslastung", "container efficiency"]):
-            return ["container_stats"]
-        # Container Commander — Logs
-        elif any(kw in user_lower for kw in ["container log", "container logs", "container ausgabe"]):
-            return ["container_logs"]
-        # Container Commander — Snapshots
-        elif any(kw in user_lower for kw in ["snapshot", "snapshots", "snapshot list", "volume backup"]):
-            return ["snapshot_list"]
-        # Container Commander — Code execution (triggers deploy + exec chain)
-        elif any(kw in user_lower for kw in [
-            "berechne", "berechnung", "rechne", "ausführen", "execute",
-            "führe aus", "run code", "code ausführen", "programmier",
-            "fibonacci", "fakultät", "führe code", "code schreiben und ausführen"
-        ]):
-            return ["request_container", "exec_in_container"]
-        return []
+        return util_detect_tools_by_keyword(
+            user_text,
+            is_home_container_info_query_fn=self._is_home_container_info_query,
+            is_home_container_start_query_fn=self._is_home_container_start_query,
+            is_active_container_capability_query_fn=self._is_active_container_capability_query,
+            is_container_state_binding_query_fn=self._is_container_state_binding_query,
+            is_container_blueprint_catalog_query_fn=self._is_container_blueprint_catalog_query,
+            is_container_inventory_query_fn=self._is_container_inventory_query,
+            is_container_request_query_fn=self._is_container_request_query,
+        )
 
     @staticmethod
     def _container_state_has_active_target(state: Optional[Dict[str, Any]]) -> bool:
-        if not isinstance(state, dict):
-            return False
-        if str(state.get("last_active_container_id", "")).strip():
-            return True
-        if str(state.get("home_container_id", "")).strip():
-            return True
-        for row in state.get("known_containers") or []:
-            if not isinstance(row, dict):
-                continue
-            if str(row.get("status", "")).strip().lower() == "running":
-                return True
-        return False
+        return util_container_state_has_active_target(state)
 
     @classmethod
     def _is_active_container_capability_query(cls, user_text: str) -> bool:
-        text = str(user_text or "").strip().lower()
-        if not text:
-            return False
-        if any(marker in text for marker in cls._ACTIVE_CONTAINER_CAPABILITY_EXCLUDE_MARKERS):
-            return False
-        has_deictic_marker = any(marker in text for marker in cls._ACTIVE_CONTAINER_DEICTIC_MARKERS)
-        if not has_deictic_marker:
-            return False
-        return any(marker in text for marker in cls._ACTIVE_CONTAINER_CAPABILITY_MARKERS)
+        return util_is_active_container_capability_query(
+            user_text,
+            active_container_capability_exclude_markers=cls._ACTIVE_CONTAINER_CAPABILITY_EXCLUDE_MARKERS,
+            active_container_deictic_markers=cls._ACTIVE_CONTAINER_DEICTIC_MARKERS,
+            active_container_capability_markers=cls._ACTIVE_CONTAINER_CAPABILITY_MARKERS,
+        )
 
     @classmethod
     def _is_container_inventory_query(cls, user_text: str) -> bool:
-        text = str(user_text or "").strip().lower()
-        if not text:
-            return False
-        if cls._is_container_blueprint_catalog_query(text) or cls._is_container_request_query(text):
-            return False
-        return any(marker in text for marker in cls._CONTAINER_INVENTORY_QUERY_MARKERS)
+        return util_is_container_inventory_query(
+            user_text,
+            container_inventory_query_markers=cls._CONTAINER_INVENTORY_QUERY_MARKERS,
+            is_container_blueprint_catalog_query_fn=cls._is_container_blueprint_catalog_query,
+            is_container_request_query_fn=cls._is_container_request_query,
+        )
 
     @classmethod
     def _is_container_blueprint_catalog_query(cls, user_text: str) -> bool:
-        text = str(user_text or "").strip().lower()
-        if not text:
-            return False
-        if cls._is_container_request_query(text):
-            return False
-        return any(marker in text for marker in cls._CONTAINER_BLUEPRINT_QUERY_MARKERS)
+        return util_is_container_blueprint_catalog_query(
+            user_text,
+            container_blueprint_query_markers=cls._CONTAINER_BLUEPRINT_QUERY_MARKERS,
+            is_container_request_query_fn=cls._is_container_request_query,
+        )
 
     @classmethod
     def _is_container_state_binding_query(cls, user_text: str) -> bool:
-        text = str(user_text or "").strip().lower()
-        if not text:
-            return False
-        if cls._is_active_container_capability_query(text):
-            return False
-        return any(marker in text for marker in cls._CONTAINER_STATE_QUERY_MARKERS)
+        return util_is_container_state_binding_query(
+            user_text,
+            container_state_query_markers=cls._CONTAINER_STATE_QUERY_MARKERS,
+            is_active_container_capability_query_fn=cls._is_active_container_capability_query,
+        )
 
     @classmethod
     def _is_container_request_query(cls, user_text: str) -> bool:
-        text = str(user_text or "").strip().lower()
-        if not text:
-            return False
-        return any(marker in text for marker in cls._CONTAINER_REQUEST_QUERY_MARKERS)
+        return util_is_container_request_query(
+            user_text,
+            container_request_query_markers=cls._CONTAINER_REQUEST_QUERY_MARKERS,
+        )
 
     @classmethod
     def _is_skill_catalog_context_query(cls, user_text: str) -> bool:
-        text = str(user_text or "").strip().lower().replace("-", " ")
-        if not text:
-            return False
-        if any(marker in text for marker in cls._SKILL_CATALOG_EXCLUDE_MARKERS):
-            return False
-        return any(marker in text for marker in cls._SKILL_CATALOG_QUERY_MARKERS)
+        return util_is_skill_catalog_context_query(
+            user_text,
+            skill_catalog_exclude_markers=cls._SKILL_CATALOG_EXCLUDE_MARKERS,
+            skill_catalog_query_markers=cls._SKILL_CATALOG_QUERY_MARKERS,
+        )
 
     def _should_prioritize_skill_catalog_route(
         self,
@@ -3294,9 +1797,12 @@ class PipelineOrchestrator:
         *,
         user_text: str = "",
     ) -> bool:
-        if self._get_effective_resolution_strategy(verified_plan) == "skill_catalog_context":
-            return True
-        return self._is_skill_catalog_context_query(user_text)
+        return util_should_prioritize_skill_catalog_route(
+            verified_plan,
+            user_text=user_text,
+            get_effective_resolution_strategy_fn=self._get_effective_resolution_strategy,
+            is_skill_catalog_context_query_fn=self._is_skill_catalog_context_query,
+        )
 
     def _select_read_only_skill_tool_for_query(
         self,
@@ -3304,16 +1810,10 @@ class PipelineOrchestrator:
         *,
         verified_plan: Optional[Dict[str, Any]] = None,
     ) -> str:
-        hints = verified_plan.get("strategy_hints") if isinstance(verified_plan, dict) else []
-        normalized_hints = {
-            str(hint or "").strip().lower()
-            for hint in (hints if isinstance(hints, list) else [])
-            if str(hint or "").strip()
-        }
-        normalized_text = str(user_text or "").strip().lower().replace("-", " ")
-        if "draft_skills" in normalized_hints or "draft skill" in normalized_text:
-            return "list_draft_skills"
-        return "list_skills"
+        return util_select_read_only_skill_tool_for_query(
+            user_text,
+            verified_plan=verified_plan,
+        )
 
     def _prioritize_active_container_capability_tools(
         self,
@@ -3325,83 +1825,28 @@ class PipelineOrchestrator:
         force: bool = False,
         prefix: str = "[Orchestrator]",
     ) -> List[Any]:
-        if not isinstance(verified_plan, dict):
-            return suggested_tools
-        if not bool(verified_plan.get("is_fact_query", False)):
-            return suggested_tools
-        if not force and not self._is_active_container_capability_query(user_text):
-            return suggested_tools
-
-        container_state = self._get_recent_container_state(conversation_id) if conversation_id else None
-        if not self._container_state_has_active_target(container_state):
-            return suggested_tools
-
-        adjusted: List[Any] = ["container_inspect"]
-        seen = {"container_inspect"}
-        for tool in suggested_tools or []:
-            name = self._extract_tool_name(tool).strip().lower()
-            if not name or name in seen:
-                continue
-            if name in {"exec_in_container", "container_stats", "container_list", "query_skill_knowledge"}:
-                continue
-            adjusted.append(tool)
-            seen.add(name)
-
-        log_info(
-            f"{prefix} Active-container capability override: "
-            f"{[self._extract_tool_name(t) for t in adjusted]}"
+        return util_prioritize_active_container_capability_tools(
+            user_text,
+            verified_plan,
+            suggested_tools,
+            conversation_id=conversation_id,
+            force=force,
+            prefix=prefix,
+            is_active_container_capability_query_fn=self._is_active_container_capability_query,
+            get_recent_container_state_fn=self._get_recent_container_state,
+            container_state_has_active_target_fn=self._container_state_has_active_target,
+            extract_tool_name_fn=self._extract_tool_name,
+            log_info_fn=log_info,
         )
-        verified_plan["needs_chat_history"] = True
-        return adjusted
 
     def _materialize_container_query_policy(
         self,
         verified_plan: Optional[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        if not isinstance(verified_plan, dict):
-            return {}
-        strategy = self._get_effective_resolution_strategy(verified_plan)
-        if strategy not in {
-            "container_inventory",
-            "container_blueprint_catalog",
-            "container_state_binding",
-            "container_request",
-            "active_container_capability",
-        }:
-            return {}
-
-        if strategy == "container_inventory":
-            policy = {
-                "query_class": strategy,
-                "required_tools": ["container_list"],
-                "truth_mode": "runtime_inventory",
-            }
-        elif strategy == "container_blueprint_catalog":
-            policy = {
-                "query_class": strategy,
-                "required_tools": ["blueprint_list"],
-                "truth_mode": "blueprint_catalog",
-            }
-        elif strategy == "container_state_binding":
-            policy = {
-                "query_class": strategy,
-                "required_tools": ["container_inspect", "container_list"],
-                "truth_mode": "session_binding",
-            }
-        elif strategy == "container_request":
-            policy = {
-                "query_class": strategy,
-                "required_tools": ["request_container", "home_start"],
-                "truth_mode": "request_flow",
-            }
-        else:
-            policy = {
-                "query_class": strategy,
-                "required_tools": ["container_inspect"],
-                "truth_mode": "active_container_capability",
-            }
-        verified_plan["_container_query_policy"] = policy
-        return policy
+        return util_materialize_container_query_policy(
+            verified_plan,
+            strategy=self._get_effective_resolution_strategy(verified_plan),
+        )
 
     def _apply_container_query_policy(
         self,
@@ -3412,256 +1857,62 @@ class PipelineOrchestrator:
         conversation_id: str = "",
         prefix: str = "[Orchestrator]",
     ) -> List[Any]:
-        if not isinstance(verified_plan, dict):
-            return suggested_tools
-
-        strategy = self._get_effective_resolution_strategy(verified_plan)
-        if not strategy:
-            if self._is_active_container_capability_query(user_text):
-                strategy = "active_container_capability"
-            elif self._is_container_state_binding_query(user_text):
-                strategy = "container_state_binding"
-            elif self._is_container_blueprint_catalog_query(user_text):
-                strategy = "container_blueprint_catalog"
-            elif self._is_container_request_query(user_text):
-                strategy = "container_request"
-            elif self._is_container_inventory_query(user_text):
-                strategy = "container_inventory"
-        if strategy not in {
-            "container_inventory",
-            "container_blueprint_catalog",
-            "container_state_binding",
-            "container_request",
-            "active_container_capability",
-        }:
-            return suggested_tools
-
-        policy = self._materialize_container_query_policy(verified_plan)
-        container_state = self._get_recent_container_state(conversation_id) if conversation_id else None
-        has_active_target = self._container_state_has_active_target(container_state)
-
-        if strategy == "container_inventory":
-            adjusted = ["container_list"]
-        elif strategy == "container_blueprint_catalog":
-            adjusted = ["blueprint_list"]
-        elif strategy == "container_request":
-            if self._is_home_container_start_query(user_text):
-                adjusted = ["home_start"]
-                verified_plan["_trion_home_start_fast_path"] = True
-                verified_plan["needs_chat_history"] = True
-                if policy:
-                    policy["truth_mode"] = "home_start_reuse"
-            else:
-                adjusted = ["request_container"]
-        elif strategy == "container_state_binding":
-            adjusted = ["container_inspect"] if has_active_target else ["container_list"]
-            verified_plan["needs_chat_history"] = True
-        else:
-            adjusted = suggested_tools
-
-        if strategy != "active_container_capability":
-            adjusted_names = [self._extract_tool_name(t) for t in adjusted]
-            if self._tool_name_list(suggested_tools) != adjusted_names:
-                log_info(
-                    f"{prefix} Container query policy override: strategy={strategy} "
-                    f"tools={adjusted_names}"
+        return util_apply_container_query_policy(
+            user_text,
+            verified_plan,
+            suggested_tools,
+            conversation_id=conversation_id,
+            prefix=prefix,
+            get_effective_resolution_strategy_fn=self._get_effective_resolution_strategy,
+            is_active_container_capability_query_fn=self._is_active_container_capability_query,
+            is_container_state_binding_query_fn=self._is_container_state_binding_query,
+            is_container_blueprint_catalog_query_fn=self._is_container_blueprint_catalog_query,
+            is_container_request_query_fn=self._is_container_request_query,
+            is_container_inventory_query_fn=self._is_container_inventory_query,
+            materialize_container_query_policy_fn=(
+                lambda plan, strategy: util_materialize_container_query_policy(
+                    plan,
+                    strategy=strategy,
                 )
-            if policy:
-                policy["selected_tools"] = adjusted_names
-            return adjusted
-
-        if policy:
-            policy["selected_tools"] = self._tool_name_list(suggested_tools)
-        return suggested_tools
+            ),
+            get_recent_container_state_fn=self._get_recent_container_state,
+            container_state_has_active_target_fn=self._container_state_has_active_target,
+            is_home_container_start_query_fn=self._is_home_container_start_query,
+            extract_tool_name_fn=self._extract_tool_name,
+            tool_name_list_fn=self._tool_name_list,
+            log_info_fn=log_info,
+        )
 
     @staticmethod
     def _merge_grounding_evidence_items(
         existing: Any,
         extra: Any,
     ) -> List[Dict[str, Any]]:
-        merged: List[Dict[str, Any]] = []
-        seen = set()
-        for source in (existing or [], extra or []):
-            if not isinstance(source, list):
-                continue
-            for item in source:
-                if not isinstance(item, dict):
-                    continue
-                sig = (
-                    str(item.get("tool_name", "")).strip(),
-                    str(item.get("ref_id", "")).strip(),
-                    str(item.get("status", "")).strip().lower(),
-                    tuple(str(x).strip() for x in (item.get("key_facts") or [])[:3])
-                    if isinstance(item.get("key_facts"), list)
-                    else (),
-                )
-                if sig in seen:
-                    continue
-                seen.add(sig)
-                merged.append(item)
-        return merged
+        return util_merge_grounding_evidence_items(existing, extra)
 
     @staticmethod
     def _derive_container_addon_tags_from_inspect(container_info: Dict[str, Any]) -> List[str]:
-        if not isinstance(container_info, dict):
-            return []
-        tags = {
-            "container-shell",
-            str(container_info.get("blueprint_id", "")).strip().lower(),
-            str(container_info.get("name", "")).strip().lower(),
-        }
-        image_ref = str(container_info.get("image", "")).strip().lower()
-        if image_ref:
-            tags.update(part for part in re.split(r"[^a-z0-9]+", image_ref) if len(part) >= 3)
-        if bool(container_info.get("running")):
-            tags.add("running")
-        return sorted(tag for tag in tags if tag and tag != "(none)")
+        return util_derive_container_addon_tags_from_inspect(container_info)
 
     @staticmethod
     def _parse_list_skills_runtime_snapshot(raw_result: Any) -> Dict[str, Any]:
-        payload = raw_result
-        if isinstance(payload, dict) and isinstance(payload.get("structuredContent"), dict):
-            payload = payload.get("structuredContent", {})
-        if not isinstance(payload, dict):
-            return {}
-
-        installed_rows = payload.get("installed") if isinstance(payload.get("installed"), list) else []
-        available_rows = payload.get("available") if isinstance(payload.get("available"), list) else []
-        installed_names: List[str] = []
-        for row in installed_rows:
-            if isinstance(row, dict):
-                name = str(row.get("name") or "").strip()
-            else:
-                name = str(row or "").strip()
-            if name:
-                installed_names.append(name)
-
-        try:
-            installed_count = int(payload.get("installed_count"))
-        except Exception:
-            installed_count = len(installed_rows)
-        try:
-            available_count = int(payload.get("available_count"))
-        except Exception:
-            available_count = len(available_rows)
-
-        return {
-            "installed": installed_rows,
-            "installed_names": installed_names,
-            "installed_count": installed_count,
-            "available": available_rows,
-            "available_count": available_count,
-            "raw_payload": payload,
-        }
+        return util_parse_list_skills_runtime_snapshot(raw_result)
 
     @staticmethod
     def _parse_list_draft_skills_snapshot(raw_result: Any) -> Dict[str, Any]:
-        payload = raw_result
-        if isinstance(payload, dict) and isinstance(payload.get("structuredContent"), dict):
-            payload = payload.get("structuredContent", {})
-        if not isinstance(payload, dict):
-            return {}
-
-        draft_rows = payload.get("drafts") if isinstance(payload.get("drafts"), list) else []
-        draft_names: List[str] = []
-        for row in draft_rows:
-            if isinstance(row, dict):
-                name = str(row.get("name") or "").strip()
-            else:
-                name = str(row or "").strip()
-            if name:
-                draft_names.append(name)
-
-        return {
-            "drafts": draft_rows,
-            "draft_names": draft_names,
-            "draft_count": len(draft_rows),
-            "raw_payload": payload,
-        }
+        return util_parse_list_draft_skills_snapshot(raw_result)
 
     @staticmethod
     def _summarize_skill_runtime_snapshot(snapshot: Dict[str, Any]) -> str:
-        if not isinstance(snapshot, dict):
-            return ""
-        installed_count = snapshot.get("installed_count")
-        draft_count = snapshot.get("draft_count")
-        available_count = snapshot.get("available_count")
-        installed_names = list(snapshot.get("installed_names") or [])
-        draft_names = list(snapshot.get("draft_names") or [])
-
-        lines = ["Live runtime skill snapshot:"]
-        if installed_count is not None:
-            lines.append(f"- installed_runtime_skills: {installed_count}")
-        if draft_count is not None:
-            lines.append(f"- draft_skills: {draft_count}")
-        if available_count is not None:
-            lines.append(f"- available_skills: {available_count}")
-        if installed_names:
-            lines.append(f"- installed_examples: {', '.join(installed_names[:6])}")
-        if draft_names:
-            lines.append(f"- draft_examples: {', '.join(draft_names[:6])}")
-        return "\n".join(lines).strip() if len(lines) > 1 else ""
+        return util_summarize_skill_runtime_snapshot(snapshot)
 
     @staticmethod
     def _summarize_skill_registry_snapshot(snapshot: Dict[str, Any]) -> str:
-        if not isinstance(snapshot, dict):
-            return ""
-        active_names = list(snapshot.get("active_names") or [])
-        draft_names = list(snapshot.get("draft_names") or [])
-        lines = [
-            f"active_count: {int(snapshot.get('active_count', len(active_names)) or 0)}",
-            f"draft_count: {int(snapshot.get('draft_count', len(draft_names)) or 0)}",
-        ]
-        if active_names:
-            lines.append("active_names: " + ", ".join(active_names[:8]))
-        if draft_names:
-            lines.append("draft_names: " + ", ".join(draft_names[:8]))
-        return "\n".join(lines).strip()
+        return util_summarize_skill_registry_snapshot(snapshot)
 
     @staticmethod
     def _summarize_container_inspect_for_capability_context(container_info: Dict[str, Any]) -> str:
-        if not isinstance(container_info, dict):
-            return ""
-
-        resource_limits = container_info.get("resource_limits") or {}
-        cpu_count = resource_limits.get("cpu_count")
-        memory_mb = resource_limits.get("memory_mb")
-        mounts = container_info.get("mounts") if isinstance(container_info.get("mounts"), list) else []
-        ports = container_info.get("ports") if isinstance(container_info.get("ports"), list) else []
-        port_values: List[str] = []
-        for item in ports[:6]:
-            if isinstance(item, dict):
-                host_port = str(item.get("host_port") or item.get("published") or "").strip()
-                container_port = str(item.get("container_port") or item.get("target") or "").strip()
-                protocol = str(item.get("protocol") or "").strip()
-                if host_port and container_port:
-                    port_values.append(f"{host_port}->{container_port}/{protocol or 'tcp'}")
-                elif host_port or container_port:
-                    port_values.append(host_port or container_port)
-            elif str(item).strip():
-                port_values.append(str(item).strip())
-
-        lines = [
-            "Active container identity:",
-            f"- container_id: {str(container_info.get('container_id') or '').strip() or '(unknown)'}",
-            f"- name: {str(container_info.get('name') or '').strip() or '(unknown)'}",
-            f"- blueprint_id: {str(container_info.get('blueprint_id') or '').strip() or '(unknown)'}",
-            f"- image: {str(container_info.get('image') or '').strip() or '(unknown)'}",
-            f"- status: {str(container_info.get('status') or '').strip() or '(unknown)'}",
-            f"- network: {str(container_info.get('network') or '').strip() or '(unknown)'}",
-        ]
-        if cpu_count or memory_mb:
-            lines.append(f"- resource_limits: cpu={cpu_count or '?'} memory_mb={memory_mb or '?'}")
-        if mounts:
-            lines.append(f"- mounts: {', '.join(str(item).strip() for item in mounts[:4] if str(item).strip())}")
-        if port_values:
-            lines.append(f"- ports: {', '.join(port_values[:4])}")
-        deploy_warnings = container_info.get("deploy_warnings")
-        if isinstance(deploy_warnings, list) and deploy_warnings:
-            lines.append(
-                f"- deploy_warnings: {', '.join(str(item).strip() for item in deploy_warnings[:3] if str(item).strip())}"
-            )
-        return "\n".join(lines).strip()
+        return util_summarize_container_inspect_for_capability_context(container_info)
 
     async def _maybe_build_active_container_capability_context(
         self,
@@ -3671,165 +1922,23 @@ class PipelineOrchestrator:
         verified_plan: Dict[str, Any],
         history_len: int = 0,
     ) -> Dict[str, str]:
-        if not isinstance(verified_plan, dict):
-            return {}
-        if not self._is_active_container_capability_query(user_text):
-            return {}
-
-        container_state = self._get_recent_container_state(conversation_id, history_len=history_len)
-        if not self._container_state_has_active_target(container_state):
-            return {}
-
-        tool_hub = get_hub()
-        tool_hub.initialize()
-        preferred_ids = []
-        if isinstance(container_state, dict):
-            preferred_ids.extend(
-                [
-                    str(container_state.get("last_active_container_id", "")).strip(),
-                    str(container_state.get("home_container_id", "")).strip(),
-                ]
-            )
-
-        container_id = ""
-        for candidate in preferred_ids:
-            if candidate:
-                container_id = candidate
-                break
-        if not container_id:
-            container_id, _reason = await self._resolve_pending_container_id_async(
-                tool_hub,
-                conversation_id,
-                preferred_ids=preferred_ids,
-                history_len=history_len,
-            )
-        if not container_id:
-            return {}
-
-        try:
-            if hasattr(tool_hub, "call_tool_async"):
-                inspect_result = await tool_hub.call_tool_async(
-                    "container_inspect",
-                    {"container_id": container_id},
-                )
-            else:
-                inspect_result = await asyncio.to_thread(
-                    tool_hub.call_tool,
-                    "container_inspect",
-                    {"container_id": container_id},
-                )
-        except Exception as exc:
-            log_warn(
-                f"[Orchestrator] Active-container capability inspect skipped: {self._safe_str(exc, max_len=160)}"
-            )
-            return {}
-
-        if not isinstance(inspect_result, dict) or str(inspect_result.get("error", "")).strip():
-            return {}
-
-        self._update_container_state_from_tool_result(
-            conversation_id,
-            "container_inspect",
-            {"container_id": container_id},
-            inspect_result,
+        return await util_maybe_build_active_container_capability_context(
+            user_text=user_text,
+            conversation_id=conversation_id,
+            verified_plan=verified_plan,
             history_len=history_len,
+            is_active_container_capability_query_fn=self._is_active_container_capability_query,
+            get_recent_container_state_fn=self._get_recent_container_state,
+            container_state_has_active_target_fn=self._container_state_has_active_target,
+            get_hub_fn=get_hub,
+            resolve_pending_container_id_async_fn=self._resolve_pending_container_id_async,
+            safe_str_fn=lambda value, max_len: self._safe_str(value, max_len=max_len),
+            update_container_state_from_tool_result_fn=self._update_container_state_from_tool_result,
+            build_tool_result_card_fn=self._build_tool_result_card,
+            build_grounding_evidence_entry_fn=self._build_grounding_evidence_entry,
+            merge_grounding_evidence_items_fn=self._merge_grounding_evidence_items,
+            log_warn_fn=log_warn,
         )
-
-        inspect_summary = self._summarize_container_inspect_for_capability_context(inspect_result)
-        if not inspect_summary:
-            return {}
-
-        inspect_card, inspect_ref = self._build_tool_result_card(
-            "container_inspect",
-            inspect_summary,
-            "ok",
-            conversation_id,
-        )
-        evidence_items = [
-            self._build_grounding_evidence_entry(
-                "container_inspect",
-                inspect_summary,
-                "ok",
-                inspect_ref,
-            )
-        ]
-
-        addon_context_text = ""
-        addon_docs_text = ""
-        addon_tool_results = ""
-        try:
-            from intelligence_modules.container_addons.loader import load_container_addon_context
-
-            addon_context = await load_container_addon_context(
-                blueprint_id=str(inspect_result.get("blueprint_id") or "").strip(),
-                image_ref=str(inspect_result.get("image") or "").strip(),
-                instruction=user_text,
-                query_class="active_container_capability",
-                shell_tail="",
-                container_tags=self._derive_container_addon_tags_from_inspect(inspect_result),
-            )
-            selected_docs = list(addon_context.get("selected_docs") or [])
-            addon_context_text = str(addon_context.get("context_text") or "").strip()
-            if selected_docs:
-                addon_docs_text = ", ".join(
-                    str(item.get("id") or item.get("title") or "").strip()
-                    for item in selected_docs[:4]
-                    if isinstance(item, dict) and str(item.get("id") or item.get("title") or "").strip()
-                )
-            if addon_context_text:
-                addon_summary_parts = []
-                if addon_docs_text:
-                    addon_summary_parts.append(f"selected_docs: {addon_docs_text}")
-                addon_summary_parts.append(addon_context_text)
-                addon_summary = "\n".join(addon_summary_parts).strip()
-                addon_card, addon_ref = self._build_tool_result_card(
-                    "container_addons",
-                    addon_summary,
-                    "ok",
-                    conversation_id,
-                )
-                addon_tool_results = addon_card
-                evidence_items.append(
-                    self._build_grounding_evidence_entry(
-                        "container_addons",
-                        addon_summary,
-                        "ok",
-                        addon_ref,
-                    )
-                )
-        except Exception as exc:
-            log_warn(
-                "[Orchestrator] Active-container addon context skipped: "
-                f"{self._safe_str(exc, max_len=160)}"
-            )
-
-        merged_evidence = self._merge_grounding_evidence_items(
-            get_runtime_grounding_evidence(verified_plan),
-            evidence_items,
-        )
-        set_runtime_grounding_evidence(verified_plan, merged_evidence)
-
-        context_lines = [
-            "### ACTIVE CONTAINER CAPABILITY CONTEXT:",
-            inspect_summary,
-            "Treat the active container identity and addon excerpts below as higher priority than generic Linux assumptions.",
-        ]
-        if addon_docs_text:
-            context_lines.append(f"Relevant addon docs: {addon_docs_text}")
-        if addon_context_text:
-            context_lines.append("Relevant container addon context:")
-            context_lines.append(addon_context_text)
-
-        verified_plan["_active_container_capability_context"] = {
-            "container_id": container_id,
-            "blueprint_id": str(inspect_result.get("blueprint_id") or "").strip(),
-            "image": str(inspect_result.get("image") or "").strip(),
-            "addon_docs": addon_docs_text,
-        }
-        return {
-            "context_text": "\n".join(line for line in context_lines if str(line).strip()).strip(),
-            "tool_results_text": f"{inspect_card}{addon_tool_results}",
-        }
 
     async def _maybe_build_skill_semantic_context(
         self,
@@ -3838,256 +1947,20 @@ class PipelineOrchestrator:
         conversation_id: str,
         verified_plan: Dict[str, Any],
     ) -> Dict[str, str]:
-        if not isinstance(verified_plan, dict):
-            return {}
-        effective_strategy = self._get_effective_resolution_strategy(verified_plan)
-        if effective_strategy != "skill_catalog_context" and not self._is_skill_catalog_context_query(user_text):
-            return {}
-        if not bool(verified_plan.get("is_fact_query", False)):
-            return {}
-        skill_policy = verified_plan.get("_skill_catalog_policy")
-        if not isinstance(skill_policy, dict):
-            skill_policy = self._materialize_skill_catalog_policy(verified_plan)
-        skill_policy = skill_policy if isinstance(skill_policy, dict) else {}
-        required_tools = [
-            str(tool or "").strip()
-            for tool in list(skill_policy.get("required_tools") or [])
-            if str(tool or "").strip()
-        ]
-        if not required_tools:
-            required_tools = ["list_skills"]
-        selected_hints = [
-            str(hint or "").strip().lower()
-            for hint in list(
-                skill_policy.get("selected_hints")
-                or verified_plan.get("strategy_hints")
-                or []
-            )
-            if str(hint or "").strip()
-        ]
-
-        tool_hub = get_hub()
-        tool_hub.initialize()
-
-        evidence_items: List[Dict[str, Any]] = []
-        runtime_snapshot: Dict[str, Any] = {}
-        tool_result_cards: List[str] = []
-
-        if "list_skills" in required_tools:
-            try:
-                if hasattr(tool_hub, "call_tool_async"):
-                    list_skills_result = await tool_hub.call_tool_async(
-                        "list_skills",
-                        {"include_available": False},
-                    )
-                else:
-                    list_skills_result = await asyncio.to_thread(
-                        tool_hub.call_tool,
-                        "list_skills",
-                        {"include_available": False},
-                    )
-                parsed_snapshot = self._parse_list_skills_runtime_snapshot(list_skills_result)
-                if parsed_snapshot:
-                    runtime_snapshot.update(parsed_snapshot)
-                    raw_payload = parsed_snapshot.get("raw_payload") or {}
-                    raw_json = json.dumps(raw_payload, ensure_ascii=False, default=str)
-                    skills_card, skills_ref = self._build_tool_result_card(
-                        "list_skills",
-                        raw_json,
-                        "ok",
-                        conversation_id,
-                    )
-                    tool_result_cards.append(skills_card)
-                    evidence_items.append(
-                        self._build_grounding_evidence_entry(
-                            "list_skills",
-                            raw_json,
-                            "ok",
-                            skills_ref,
-                        )
-                    )
-            except Exception as exc:
-                log_warn(
-                    "[Orchestrator] Skill runtime snapshot via list_skills skipped: "
-                    f"{self._safe_str(exc, max_len=160)}"
-                )
-
-        if "list_draft_skills" in required_tools:
-            try:
-                if hasattr(tool_hub, "call_tool_async"):
-                    list_drafts_result = await tool_hub.call_tool_async(
-                        "list_draft_skills",
-                        {},
-                    )
-                else:
-                    list_drafts_result = await asyncio.to_thread(
-                        tool_hub.call_tool,
-                        "list_draft_skills",
-                        {},
-                    )
-                parsed_drafts = self._parse_list_draft_skills_snapshot(list_drafts_result)
-                if parsed_drafts:
-                    runtime_snapshot["drafts"] = parsed_drafts.get("drafts") or []
-                    runtime_snapshot["draft_names"] = list(parsed_drafts.get("draft_names") or [])
-                    runtime_snapshot["draft_count"] = parsed_drafts.get("draft_count")
-                    raw_payload = parsed_drafts.get("raw_payload") or {}
-                    raw_json = json.dumps(raw_payload, ensure_ascii=False, default=str)
-                    drafts_card, drafts_ref = self._build_tool_result_card(
-                        "list_draft_skills",
-                        raw_json,
-                        "ok",
-                        conversation_id,
-                    )
-                    tool_result_cards.append(drafts_card)
-                    evidence_items.append(
-                        self._build_grounding_evidence_entry(
-                            "list_draft_skills",
-                            raw_json,
-                            "ok",
-                            drafts_ref,
-                        )
-                    )
-            except Exception as exc:
-                log_warn(
-                    "[Orchestrator] Skill draft snapshot via list_draft_skills skipped: "
-                    f"{self._safe_str(exc, max_len=160)}"
-                )
-
-        try:
-            import urllib.request as _ur
-
-            skill_server = os.getenv("SKILL_SERVER_URL", "http://trion-skill-server:8088")
-            with _ur.urlopen(f"{skill_server}/v1/skills", timeout=2) as response:
-                registry_payload = json.loads(response.read())
-            active_names = [
-                str(item).strip()
-                for item in list(registry_payload.get("active") or [])
-                if str(item).strip()
-            ]
-            draft_names = [
-                str(item).strip()
-                for item in list(registry_payload.get("drafts") or [])
-                if str(item).strip()
-            ]
-            registry_snapshot = {
-                "active_names": active_names,
-                "active_count": len(active_names),
-                "draft_names": draft_names,
-                "draft_count": len(draft_names),
-            }
-            if registry_snapshot["active_count"] or registry_snapshot["draft_count"]:
-                runtime_snapshot.setdefault("installed_names", active_names[:])
-                runtime_snapshot.setdefault("installed_count", len(active_names))
-                runtime_snapshot["draft_names"] = draft_names
-                runtime_snapshot["draft_count"] = len(draft_names)
-
-                registry_summary = self._summarize_skill_registry_snapshot(registry_snapshot)
-                registry_card, registry_ref = self._build_tool_result_card(
-                    "skill_registry_snapshot",
-                    registry_summary,
-                    "ok",
-                    conversation_id,
-                )
-                tool_result_cards.append(registry_card)
-                evidence_items.append(
-                    self._build_grounding_evidence_entry(
-                        "skill_registry_snapshot",
-                        registry_summary,
-                        "ok",
-                        registry_ref,
-                    )
-                )
-        except Exception as exc:
-            log_warn(
-                "[Orchestrator] Skill registry snapshot skipped: "
-                f"{self._safe_str(exc, max_len=160)}"
-            )
-
-        addon_context_text = ""
-        addon_docs_text = ""
-        addon_doc_ids: List[str] = []
-        try:
-            from intelligence_modules.skill_addons.loader import load_skill_addon_context
-
-            addon_context = await load_skill_addon_context(
-                query=user_text,
-                tags=selected_hints,
-                runtime_snapshot=runtime_snapshot,
-            )
-            selected_docs = list(addon_context.get("selected_docs") or [])
-            addon_context_text = str(addon_context.get("context_text") or "").strip()
-            if selected_docs:
-                addon_doc_ids = [
-                    str(item.get("id") or item.get("title") or "").strip()
-                    for item in selected_docs[:8]
-                    if isinstance(item, dict) and str(item.get("id") or item.get("title") or "").strip()
-                ]
-                addon_docs_text = ", ".join(
-                    addon_doc_ids[:4]
-                )
-            if addon_context_text:
-                addon_summary_parts = []
-                if addon_docs_text:
-                    addon_summary_parts.append(f"selected_docs: {addon_docs_text}")
-                addon_summary_parts.append(addon_context_text)
-                addon_summary = "\n".join(addon_summary_parts).strip()
-                addon_card, addon_ref = self._build_tool_result_card(
-                    "skill_addons",
-                    addon_summary,
-                    "ok",
-                    conversation_id,
-                )
-                tool_result_cards.append(addon_card)
-                evidence_items.append(
-                    self._build_grounding_evidence_entry(
-                        "skill_addons",
-                        addon_summary,
-                        "ok",
-                        addon_ref,
-                    )
-                )
-        except Exception as exc:
-            log_warn(
-                "[Orchestrator] Skill addon context skipped: "
-                f"{self._safe_str(exc, max_len=160)}"
-            )
-
-        runtime_summary = self._summarize_skill_runtime_snapshot(runtime_snapshot)
-        if not runtime_summary and not addon_context_text:
-            return {}
-
-        merged_evidence = self._merge_grounding_evidence_items(
-            get_runtime_grounding_evidence(verified_plan),
-            evidence_items,
+        return await util_maybe_build_skill_semantic_context(
+            user_text=user_text,
+            conversation_id=conversation_id,
+            verified_plan=verified_plan,
+            get_effective_resolution_strategy_fn=self._get_effective_resolution_strategy,
+            is_skill_catalog_context_query_fn=self._is_skill_catalog_context_query,
+            materialize_skill_catalog_policy_fn=self._materialize_skill_catalog_policy,
+            get_hub_fn=get_hub,
+            build_tool_result_card_fn=self._build_tool_result_card,
+            build_grounding_evidence_entry_fn=self._build_grounding_evidence_entry,
+            merge_grounding_evidence_items_fn=self._merge_grounding_evidence_items,
+            safe_str_fn=lambda value, max_len: self._safe_str(value, max_len=max_len),
+            log_warn_fn=log_warn,
         )
-        set_runtime_grounding_evidence(verified_plan, merged_evidence)
-
-        context_lines = [
-            "### SKILL CATALOG CONTEXT:",
-            "Treat live runtime snapshot facts as the inventory authority. Treat addon excerpts only as taxonomy and answering rules.",
-        ]
-        if runtime_summary:
-            context_lines.append(runtime_summary)
-        if addon_docs_text:
-            context_lines.append(f"Relevant skill addon docs: {addon_docs_text}")
-        if addon_context_text:
-            context_lines.append("Relevant skill addon context:")
-            context_lines.append(addon_context_text)
-
-        verified_plan["_skill_catalog_context"] = {
-            "installed_count": runtime_snapshot.get("installed_count"),
-            "draft_count": runtime_snapshot.get("draft_count"),
-            "available_count": runtime_snapshot.get("available_count"),
-            "selected_docs": addon_docs_text,
-            "selected_doc_ids": addon_doc_ids,
-            "policy_mode": str(skill_policy.get("mode") or "").strip(),
-            "required_tools": required_tools,
-            "selected_hints": selected_hints,
-        }
-        return {
-            "context_text": "\n".join(line for line in context_lines if str(line).strip()).strip(),
-            "tool_results_text": "".join(tool_result_cards),
-        }
 
     def _detect_skill_by_trigger(self, user_text: str) -> list:
         """
@@ -4095,344 +1968,84 @@ class PipelineOrchestrator:
         Wird aufgerufen wenn ThinkingLayer + Keyword-Fallback keine Tools gefunden haben.
         Gibt [skill_name] zurück wenn ein Trigger-Keyword im User-Text gefunden wird.
         """
-        import urllib.request as _ur
-        import json as _json
-        skill_server = os.getenv("SKILL_SERVER_URL", "http://trion-skill-server:8088")
-        user_lower = user_text.lower()
-
-        try:
-            with _ur.urlopen(f"{skill_server}/v1/skills", timeout=2) as r:
-                data = _json.loads(r.read())
-            active_names = data.get("active", [])
-
-            best_match = None
-            best_score = 0
-
-            for name in active_names:
-                try:
-                    with _ur.urlopen(f"{skill_server}/v1/skills/{name}", timeout=2) as mr:
-                        meta = _json.loads(mr.read())
-                    triggers = meta.get("triggers", [])
-                    for trigger in triggers:
-                        t_lower = trigger.lower().strip()
-                        if not t_lower:
-                            continue
-                        # Score: längere Trigger-Matches sind spezifischer → bevorzugt
-                        if t_lower in user_lower and len(t_lower) > best_score:
-                            best_match = name
-                            best_score = len(t_lower)
-                except Exception:
-                    continue
-
-            if best_match:
-                log_info(f"[Orchestrator] Trigger-Match: '{best_match}' (score={best_score})")
-                return [best_match]
-        except Exception as e:
-            log_info(f"[Orchestrator] Trigger-Check fehlgeschlagen: {e}")
-        return []
+        return util_detect_skill_by_trigger(
+            user_text,
+            log_info_fn=log_info,
+        )
 
     def _normalize_tools(self, suggested_tools: list) -> list:
-        """
-        Normalisiert suggested_tools:
-        - Filtert nicht-existente Tool-Namen
-        - Konvertiert Skill-Namen → {"tool": "run_skill", "args": {"name": X, ...}}
-
-        ThinkingLayer (deepseek-r1:8b) schlägt manchmal den Skill-Namen direkt vor
-        statt "run_skill". Diese Methode repariert das.
-        """
-        if not suggested_tools:
-            return []
-
-        tool_hub_v = get_hub()
-        tool_hub_v.initialize()
-
-        _NATIVE_TOOLS = {
-            "request_container", "home_start", "stop_container", "exec_in_container",
-            "blueprint_list", "container_stats", "container_logs",
-            "container_list", "container_inspect",
-            "home_read", "home_write", "home_list",
-            # Skill-Tools: immer durchlassen (MCP via skill-server)
-            "autonomous_skill_task", "run_skill", "create_skill",
-            "list_skills", "get_skill_info", "validate_skill_code",
-            # Cron-Tools: deterministic domain routing
-            "autonomy_cron_status", "autonomy_cron_list_jobs", "autonomy_cron_validate",
-            "autonomy_cron_create_job", "autonomy_cron_update_job",
-            "autonomy_cron_pause_job", "autonomy_cron_resume_job",
-            "autonomy_cron_run_now", "autonomy_cron_delete_job",
-            "autonomy_cron_queue", "cron_reference_links_list",
-            # SysInfo-Tools
-            "get_system_info", "get_system_overview",
-        }
-
-        # Lade installierte Skills für Skill-Name-Erkennung
-        _installed_skills = set()
-        try:
-            _s_result = tool_hub_v.call_tool("list_skills", {"include_available": False})
-            # Response kann direkt oder unter structuredContent sein
-            _s_data = (_s_result or {})
-            if "structuredContent" in _s_data:
-                _s_data = _s_data["structuredContent"]
-            for sk in _s_data.get("installed", []):
-                _installed_skills.add(sk.get("name", ""))
-        except Exception:
-            pass
-
-        normalized = []
-        for t in suggested_tools:
-            if isinstance(t, dict):
-                # Bereits normalisiert (z.B. durch vorherige Verarbeitung)
-                normalized.append(t)
-            elif (tool_hub_v.get_mcp_for_tool(t)
-                    or t in _NATIVE_TOOLS
-                    or tool_hub_v._tool_definitions.get(t, {}).get("execution") == "direct"):
-                normalized.append(t)
-            elif t in _installed_skills:
-                # ThinkingLayer hat Skill-Namen statt "run_skill" vorgeschlagen
-                log_info(f"[Orchestrator] Skill-Normalization: '{t}' → run_skill(name='{t}')")
-                normalized.append({"tool": "run_skill", "args": {"name": t, "action": "run", "args": {}}})
-            else:
-                log_info(f"[Orchestrator] Filtered invalid tool: '{t}'")
-
-        # ── home_write-Filter: nie automatisch schreiben wenn Execution-Tools dabei ──
-        # deepseek-r1:8b fügt home_write reflexartig hinzu bei komplexen Fragen.
-        # Wenn ein Skill oder Execution-Tool läuft, ist home_write ein Nebeneffekt-Bug.
-        _execution_tools = {"run_skill", "exec_in_container", "request_container", "home_start",
-                            "create_skill", "container_stats", "container_logs"}
-        has_execution = any(
-            (isinstance(t, dict) and t.get("tool") in _execution_tools)
-            or (isinstance(t, str) and t in _execution_tools)
-            for t in normalized
+        return util_normalize_tools(
+            suggested_tools,
+            get_hub_fn=get_hub,
+            log_info_fn=log_info,
         )
-        if has_execution:
-            before = len(normalized)
-            normalized = [t for t in normalized if not (isinstance(t, str) and t == "home_write")]
-            if len(normalized) < before:
-                log_info("[Orchestrator] home_write gefiltert (Execution-Tool vorhanden)")
-
-        return normalized
 
     @staticmethod
     def _extract_cron_job_id_from_text(user_text: str, verified_plan: Optional[Dict[str, Any]]) -> str:
-        route = (verified_plan or {}).get("_domain_route", {}) if isinstance(verified_plan, dict) else {}
-        hinted = str((route or {}).get("cron_job_id_hint") or "").strip().lower()
-        if re.fullmatch(r"[a-f0-9]{12}", hinted):
-            return hinted
-        m = re.search(r"\b([a-f0-9]{12})\b", str(user_text or "").lower())
-        return str(m.group(1)).lower() if m else ""
+        return util_extract_cron_job_id_from_text(user_text, verified_plan)
 
     @staticmethod
     def _extract_cron_expression_from_text(user_text: str, verified_plan: Optional[Dict[str, Any]]) -> str:
-        route = (verified_plan or {}).get("_domain_route", {}) if isinstance(verified_plan, dict) else {}
-        hinted = str((route or {}).get("cron_expression_hint") or "").strip()
-        if hinted:
-            return hinted
-
-        lower = str(user_text or "").lower()
-        m = re.search(r"(?<!\S)([\d*/,\-]+\s+[\d*/,\-]+\s+[\d*/,\-]+\s+[\d*/,\-]+\s+[\d*/,\-]+)(?!\S)", lower)
-        if m:
-            return str(m.group(1) or "").strip()
-        m = re.search(r"(?:jede|alle)\s+(\d{1,3})\s*(?:min|minuten|minute)\b", lower)
-        if m:
-            n = max(1, min(59, int(m.group(1))))
-            return f"*/{n} * * * *"
-        m = re.search(r"(?:in|nach)\s+(\d{1,3})\s*(?:min|minuten|minute)\b", lower)
-        if m:
-            n = max(1, min(59, int(m.group(1))))
-            return f"*/{n} * * * *"
-        m = re.search(r"(?:einmal|once)\s+in\s+(\d{1,3})\s*(?:min|minuten|minute)\b", lower)
-        if m:
-            n = max(1, min(59, int(m.group(1))))
-            return f"*/{n} * * * *"
-        if "jede minute" in lower or "every minute" in lower:
-            return "*/1 * * * *"
-        if "jede stunde" in lower or "every hour" in lower:
-            return "0 * * * *"
-        return "*/15 * * * *"
+        return util_extract_cron_expression_from_text(user_text, verified_plan)
 
     @staticmethod
     def _extract_one_shot_run_at_from_text(user_text: str, verified_plan: Optional[Dict[str, Any]]) -> str:
-        route = (verified_plan or {}).get("_domain_route", {}) if isinstance(verified_plan, dict) else {}
-        hinted = str((route or {}).get("one_shot_at_hint") or "").strip()
-        if hinted:
-            return hinted
-
-        lower = str(user_text or "").lower()
-        now = datetime.utcnow()
-        m = re.search(
-            r"(?:in|nach)\s+(\d{1,4}|einer|einem|ein|one)\s*"
-            r"(sek|sekunde|sekunden|seconds?|s|min|minute|minuten|minutes?|h|std|stunde|stunden|hours?|tage?|days?)\b",
-            lower,
+        return util_extract_one_shot_run_at_from_text(
+            user_text,
+            verified_plan,
+            datetime_cls=datetime,
+            timedelta_cls=timedelta,
+            timezone_utc=timezone.utc,
         )
-        if m:
-            raw_n = str(m.group(1) or "").strip()
-            if raw_n in {"einer", "einem", "ein", "one"}:
-                amount = 1
-            else:
-                amount = max(1, int(raw_n))
-            unit = str(m.group(2) or "").strip().lower()
-            if unit.startswith(("sek", "s")):
-                run_at = now + timedelta(seconds=amount)
-            elif unit.startswith(("h", "std", "stun")):
-                run_at = now + timedelta(hours=amount)
-            elif unit.startswith(("tag", "day")):
-                run_at = now + timedelta(days=amount)
-            else:
-                run_at = now + timedelta(minutes=amount)
-            # Minute-granular scheduler: always round up to next minute boundary.
-            # Avoids near-past one-shot timestamps when request latency is high.
-            run_at = (run_at + timedelta(minutes=1)).replace(second=0, microsecond=0)
-            return run_at.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
-
-        m = re.search(r"(?:heute|today)\s*(?:um|at)?\s*(\d{1,2})[:.](\d{2})\b", lower)
-        if m:
-            hour = max(0, min(23, int(m.group(1))))
-            minute = max(0, min(59, int(m.group(2))))
-            run_at = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-            if run_at <= now:
-                run_at = run_at + timedelta(days=1)
-            return run_at.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
-
-        return ""
 
     def _extract_cron_schedule_from_text(
         self,
         user_text: str,
         verified_plan: Optional[Dict[str, Any]],
     ) -> Dict[str, str]:
-        route = (verified_plan or {}).get("_domain_route", {}) if isinstance(verified_plan, dict) else {}
-        mode_hint = str((route or {}).get("schedule_mode_hint") or "").strip().lower()
-        lower = str(user_text or "").lower()
-
-        schedule_mode = "unknown"
-        if mode_hint in {"one_shot", "recurring"}:
-            schedule_mode = mode_hint
-        else:
-            one_shot_markers = ("einmalig", "nur einmal", "einmal", "one-time", "once")
-            recurring_markers = ("jede ", "alle ", "täglich", "taeglich", "wöchentlich", "woechentlich", "every ")
-            has_one_shot = any(marker in lower for marker in one_shot_markers)
-            has_recurring = any(marker in lower for marker in recurring_markers)
-            if has_one_shot and not has_recurring:
-                schedule_mode = "one_shot"
-            elif has_recurring and not has_one_shot:
-                schedule_mode = "recurring"
-
-        cron_expr = self._extract_cron_expression_from_text(user_text, verified_plan)
-        run_at = self._extract_one_shot_run_at_from_text(user_text, verified_plan)
-
-        if schedule_mode == "one_shot" and not run_at:
-            # deterministic fallback for explicit one-shot wording without parseable datetime.
-            fallback = (datetime.utcnow().replace(second=0, microsecond=0) + timedelta(minutes=1))
-            run_at = fallback.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
-
-        if schedule_mode == "unknown":
-            schedule_mode = "one_shot" if run_at else "recurring"
-
-        if schedule_mode == "one_shot":
-            # keep cron field for backward compatibility / schema compatibility.
-            cron_expr = cron_expr or "*/15 * * * *"
-        else:
-            cron_expr = cron_expr or "*/15 * * * *"
-            run_at = ""
-
-        return {
-            "schedule_mode": schedule_mode,
-            "cron": cron_expr,
-            "run_at": run_at,
-        }
+        return util_extract_cron_schedule_from_text(
+            user_text,
+            verified_plan,
+            extract_cron_expression_from_text_fn=self._extract_cron_expression_from_text,
+            extract_one_shot_run_at_from_text_fn=self._extract_one_shot_run_at_from_text,
+            datetime_cls=datetime,
+            timedelta_cls=timedelta,
+            timezone_utc=timezone.utc,
+        )
 
     @staticmethod
     def _build_cron_name(user_text: str) -> str:
-        lower = str(user_text or "").strip().lower()
-        if not lower:
-            return "trion-cron-job"
-        cleaned = re.sub(r"[^a-z0-9]+", "-", lower).strip("-")
-        if not cleaned:
-            cleaned = "trion-cron-job"
-        return f"cron-{cleaned[:40]}"
+        return util_build_cron_name(user_text)
 
     @staticmethod
     def _looks_like_self_state_request(text: str) -> bool:
-        raw = str(text or "").strip()
-        if not raw:
-            return False
-        low = raw.lower()
-        if "wie dein tag war" in low or "wie dein tag ist" in low:
-            return True
-        if "wie es dir geht" in low:
-            return True
-        if "wie du dich" in low and ("fühl" in low or "fuehl" in low or "feel" in low):
-            return True
-        return False
+        return util_looks_like_self_state_request(text)
 
     @staticmethod
     def _build_cron_objective(user_text: str) -> str:
-        text = str(user_text or "").strip()
-        lower = text.lower()
-        if PipelineOrchestrator._looks_like_self_state_request(text):
-            return f"self_state_report::{text[:220]}"
-        if any(tok in lower for tok in ("erinner", "remind", "erinnerung")):
-            reminder_text = ""
-            m = re.search(r"mir\s+zu\s+sagen[:,]?\s*(.+)$", text, flags=re.IGNORECASE)
-            if m:
-                reminder_text = str(m.group(1) or "").strip()
-            if not reminder_text:
-                m = re.search(
-                    r"(?:erinnere?\s+(?:mich|mir)|remind\s+me)\s*(?:daran)?[:,]?\s*(.+)$",
-                    text,
-                    flags=re.IGNORECASE,
-                )
-                if m:
-                    reminder_text = str(m.group(1) or "").strip()
-            reminder_text = reminder_text.strip(" .,!:;")
-            if not reminder_text:
-                reminder_text = "Cronjob funktioniert?"
-            return f"user_reminder::{reminder_text[:220]}"
-        if any(tok in lower for tok in ("cleanup", "bereinigen", "aufräumen", "aufraeumen")):
-            return "cleanup status summary"
-        if any(tok in lower for tok in ("backup", "sichern", "archiv")):
-            return "backup status summary"
-        if text:
-            return f"user_request::{text[:220]}"
-        return ""
+        return util_build_cron_objective(
+            user_text,
+            looks_like_self_state_request_fn=PipelineOrchestrator._looks_like_self_state_request,
+        )
 
     @staticmethod
     def _extract_direct_cron_reminder_text(objective: str) -> str:
-        txt = str(objective or "").strip()
-        low = txt.lower()
-        if low.startswith("user_reminder::"):
-            rem = txt.split("::", 1)[1].strip()
-            return rem[:180] if rem else "Cronjob funktioniert?"
-        return ""
+        return util_extract_direct_cron_reminder_text(objective)
 
     @staticmethod
     def _extract_cron_ack_message_from_objective(objective: str) -> str:
-        txt = str(objective or "").strip()
-        low = txt.lower()
-        if low.startswith("user_reminder::"):
-            rem = txt.split("::", 1)[1].strip()
-            return rem[:180] if rem else "Cronjob funktioniert?"
-        if low.startswith("self_state_report::"):
-            return "Selbststatus beim Trigger ausgeben."
-        if low.startswith("user_request::"):
-            req = txt.split("::", 1)[1].strip()
-            if PipelineOrchestrator._looks_like_self_state_request(req):
-                return "Selbststatus beim Trigger ausgeben."
-            return req[:180] if req else "Autonomes Ziel ausführen."
-        return "Autonomes Ziel ausführen."
+        return util_extract_cron_ack_message_from_objective(
+            objective,
+            looks_like_self_state_request_fn=PipelineOrchestrator._looks_like_self_state_request,
+        )
 
     @staticmethod
     def _format_utc_compact(raw_iso: str) -> str:
-        raw = str(raw_iso or "").strip()
-        if not raw:
-            return ""
-        try:
-            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            dt_utc = dt.astimezone(timezone.utc)
-            return dt_utc.strftime("%Y-%m-%d %H:%M UTC")
-        except Exception:
-            return raw
+        return util_format_utc_compact(
+            raw_iso,
+            datetime_cls=datetime,
+            timezone_utc=timezone.utc,
+        )
 
     def _build_direct_cron_create_response(
         self,
@@ -4440,40 +2053,14 @@ class PipelineOrchestrator:
         tool_args: Dict[str, Any],
         conversation_id: str,
     ) -> str:
-        payload = result.content if isinstance(result, ToolResult) else result
-        if not isinstance(payload, dict):
-            return ""
-        is_err, _ = detect_tool_error(payload)
-        if is_err:
-            return ""
-
-        job_id = str(payload.get("id") or payload.get("cron_job_id") or "").strip()
-        name = str(payload.get("name") or tool_args.get("name") or "cron-job").strip() or "cron-job"
-        mode = str(payload.get("schedule_mode") or tool_args.get("schedule_mode") or "recurring").strip().lower()
-        run_at = str(payload.get("run_at") or tool_args.get("run_at") or "").strip()
-        cron_expr = str(payload.get("cron") or tool_args.get("cron") or "").strip()
-        objective = str(payload.get("objective") or tool_args.get("objective") or "").strip()
-        effective_conv = str(
-            payload.get("conversation_id") or tool_args.get("conversation_id") or conversation_id or ""
-        ).strip()
-
-        id_part = f" `{job_id}`" if job_id else ""
-        if mode == "one_shot":
-            run_at_label = self._format_utc_compact(run_at) or "bald (UTC)"
-            reminder = self._extract_cron_ack_message_from_objective(objective)
-            return (
-                f"Cronjob erstellt{id_part}: `{name}`. "
-                f"Einmalige Ausführung um {run_at_label}. "
-                f"Rückmeldung: \"{reminder}\"."
-            )
-
-        cron_label = cron_expr or "*/15 * * * *"
-        if effective_conv:
-            return (
-                f"Cronjob erstellt{id_part}: `{name}`. "
-                f"Wiederholend mit `{cron_label}` für Chat `{effective_conv}`."
-            )
-        return f"Cronjob erstellt{id_part}: `{name}`. Wiederholend mit `{cron_label}`."
+        return util_build_direct_cron_create_response(
+            result,
+            tool_args,
+            conversation_id,
+            detect_tool_error_fn=detect_tool_error,
+            format_utc_compact_fn=self._format_utc_compact,
+            extract_cron_ack_message_from_objective_fn=self._extract_cron_ack_message_from_objective,
+        )
 
     def _bind_cron_conversation_id(
         self,
@@ -4481,127 +2068,35 @@ class PipelineOrchestrator:
         tool_args: Dict[str, Any],
         conversation_id: str,
     ) -> None:
-        if str(tool_name or "").strip() != "autonomy_cron_create_job":
-            return
-        if not isinstance(tool_args, dict):
-            return
-        conv_id = str(conversation_id or "").strip()
-        if not conv_id:
-            return
-        prev = str(tool_args.get("conversation_id") or "").strip()
-        if prev != conv_id:
-            tool_args["conversation_id"] = conv_id
-            if prev:
-                log_info(
-                    "[Orchestrator] cron conversation_id override: "
-                    f"{prev} -> {conv_id}"
-                )
+        util_bind_cron_conversation_id(
+            tool_name,
+            tool_args,
+            conversation_id,
+            log_info_fn=log_info,
+        )
 
     @staticmethod
     def _suggest_cron_expression_for_min_interval(min_interval_s: int) -> str:
-        min_s = max(60, int(min_interval_s or 60))
-        # Prefer minute granularity when possible.
-        if min_s <= 59 * 60:
-            minutes = max(1, (min_s + 59) // 60)
-            return f"*/{minutes} * * * *"
-        # Fall back to hour step.
-        if min_s <= 23 * 3600:
-            hours = max(1, (min_s + 3599) // 3600)
-            return f"0 */{hours} * * *"
-        # Last fallback: day step.
-        days = max(1, (min_s + 86399) // 86400)
-        return f"0 0 */{days} * *"
+        return util_suggest_cron_expression_for_min_interval(min_interval_s)
 
     @staticmethod
     def _extract_interval_hint_from_cron(expr: str) -> Dict[str, int]:
-        raw = str(expr or "").strip()
-        if not raw:
-            return {"minutes": 0}
-        m = re.match(r"^\*/(\d{1,3})\s+\*\s+\*\s+\*\s+\*$", raw)
-        if m:
-            return {"minutes": max(1, int(m.group(1)))}
-        m = re.match(r"^0\s+\*/(\d{1,2})\s+\*\s+\*\s+\*$", raw)
-        if m:
-            return {"minutes": max(1, int(m.group(1))) * 60}
-        m = re.match(r"^0\s+0\s+\*/(\d{1,2})\s+\*\s+\*$", raw)
-        if m:
-            return {"minutes": max(1, int(m.group(1))) * 24 * 60}
-        return {"minutes": 0}
+        return util_extract_interval_hint_from_cron(expr)
 
     def _prevalidate_cron_policy_args(
         self,
         tool_name: str,
         args: Dict[str, Any],
     ) -> Tuple[bool, str]:
-        if tool_name not in {"autonomy_cron_create_job", "autonomy_cron_update_job"}:
-            return True, ""
-
-        schedule_mode = str((args or {}).get("schedule_mode") or "recurring").strip().lower()
-        if schedule_mode == "one_shot":
-            run_at_raw = str((args or {}).get("run_at") or "").strip()
-            if not run_at_raw:
-                return False, "one_shot_run_at_missing_precheck"
-            try:
-                run_at = datetime.fromisoformat(run_at_raw.replace("Z", "+00:00"))
-                if run_at.tzinfo is None:
-                    run_at = run_at.replace(tzinfo=timezone.utc)
-                now_utc = datetime.utcnow().replace(tzinfo=timezone.utc)
-                if run_at <= now_utc:
-                    # Auto-heal near-past one-shot values produced from relative phrases
-                    # when generation/verification latency consumed remaining seconds.
-                    drift_s = max(0.0, (now_utc - run_at).total_seconds())
-                    if drift_s <= 120.0:
-                        suggested = (now_utc + timedelta(minutes=1)).replace(second=0, microsecond=0)
-                        args["run_at"] = suggested.isoformat().replace("+00:00", "Z")
-                        return True, ""
-                    suggested = (now_utc + timedelta(minutes=1)).replace(second=0, microsecond=0)
-                    return (
-                        False,
-                        "one_shot_run_at_in_past_precheck: "
-                        f"run_at={run_at.isoformat()} suggested_run_at={suggested.isoformat().replace('+00:00','Z')}",
-                    )
-            except Exception as exc:
-                return False, f"invalid_one_shot_run_at_precheck: {exc}"
-            return True, ""
-
-        cron_expr = str((args or {}).get("cron") or "").strip()
-        if not cron_expr:
-            return True, ""
-
-        try:
-            from core.autonomy.cron_scheduler import (
-                parse_cron_expression,
-                estimate_min_interval_seconds,
-            )
-            parsed = parse_cron_expression(cron_expr)
-            interval_s = int(estimate_min_interval_seconds(parsed))
-        except Exception as exc:
-            return False, f"invalid_cron_expression_precheck: {exc}"
-
-        try:
-            from config import (
-                get_autonomy_cron_min_interval_s,
-                get_autonomy_cron_trion_min_interval_s,
-            )
-            min_interval_s = int(get_autonomy_cron_min_interval_s())
-            created_by = str((args or {}).get("created_by") or "").strip().lower()
-            if created_by == "trion":
-                min_interval_s = max(min_interval_s, int(get_autonomy_cron_trion_min_interval_s()))
-        except Exception:
-            min_interval_s = 300
-
-        if interval_s < min_interval_s:
-            suggested = self._suggest_cron_expression_for_min_interval(min_interval_s)
-            suggested_minutes = self._extract_interval_hint_from_cron(suggested).get("minutes", 0)
-            return (
-                False,
-                "cron_min_interval_violation_precheck: "
-                f"requested={interval_s}s minimum={min_interval_s}s "
-                f"suggested_every_minutes={suggested_minutes or max(1, (min_interval_s + 59)//60)} "
-                f"suggested_cron={suggested} confirm_required=true",
-            )
-
-        return True, ""
+        return util_prevalidate_cron_policy_args(
+            tool_name,
+            args,
+            datetime_cls=datetime,
+            timedelta_cls=timedelta,
+            timezone_utc=timezone.utc,
+            suggest_cron_expression_for_min_interval_fn=self._suggest_cron_expression_for_min_interval,
+            extract_interval_hint_from_cron_fn=self._extract_interval_hint_from_cron,
+        )
 
     def _build_tool_args(self, tool_name: str, user_text: str, verified_plan: Dict = None) -> dict:
         """
@@ -4708,88 +2203,21 @@ class PipelineOrchestrator:
 
 
     def _format_tool_result(self, result, tool_name: str):
-        """
-        Format tool result for consistent handling (Fast Lane + MCP)
-        
-        Returns:
-            (formatted_string, success, metadata)
-        """
-        # Handle ToolResult objects (Fast Lane)
-        if isinstance(result, ToolResult):
-            success = result.success
-            
-            if success:
-                # Format content
-                if isinstance(result.content, (dict, list)):
-                    content_str = json.dumps(result.content, ensure_ascii=False, default=str)
-                else:
-                    content_str = str(result.content)
-                
-                # Truncate if too long
-                if len(content_str) > 3000:
-                    content_str = content_str[:3000] + "... (gekürzt)"
-                
-                # Add Fast Lane indicator
-                formatted = f"\n--- {tool_name} (Fast Lane ⚡ {result.latency_ms:.1f}ms) ---\n{content_str}\n"
-                
-                metadata = {
-                    "execution_mode": "fast_lane",
-                    "latency_ms": result.latency_ms,
-                    "tool_name": tool_name
-                }
-            else:
-                # Error case
-                formatted = f"\n### FEHLER ({tool_name}): {result.error}\n"
-                metadata = {
-                    "execution_mode": "fast_lane",
-                    "error": result.error,
-                    "tool_name": tool_name
-                }
-            
-            return (formatted, success, metadata)
-        
-        # Handle regular results (MCP)
-        else:
-            result_str = json.dumps(result, ensure_ascii=False, default=str) if isinstance(result, (dict, list)) else str(result)
-            _is_error, _err_msg = detect_tool_error(result)
-            
-            if len(result_str) > 3000:
-                result_str = result_str[:3000] + "... (gekürzt)"
-            
-            if _is_error:
-                formatted = f"\n### FEHLER ({tool_name}): {_err_msg or result_str}\n"
-            else:
-                formatted = f"\n### TOOL-ERGEBNIS ({tool_name}):\n{result_str}\n"
-            
-            metadata = {
-                "execution_mode": "mcp",
-                "tool_name": tool_name
-            }
-            if _is_error:
-                metadata["error"] = _err_msg or result_str
-            
-            return (formatted, not _is_error, metadata)
+        return util_format_tool_result(
+            result,
+            tool_name,
+            detect_tool_error_fn=detect_tool_error,
+        )
 
     @staticmethod
     def _tool_context_has_failures_or_skips(tool_context: str) -> bool:
         """Detect tool failures/skips that should prevent high-confidence promotion."""
-        if not tool_context:
-            return False
-        markers = (
-            "TOOL-FEHLER",
-            "VERIFY-FEHLER",
-            "TOOL-SKIP",
-            "[request_container]: FEHLER",
-            "[request_container]: RÜCKFRAGE",
-        )
-        return any(m in tool_context for m in markers)
+        return util_tool_context_has_failures_or_skips(tool_context)
 
     @staticmethod
     def _tool_context_has_success(tool_context: str) -> bool:
         """Require explicit successful tool evidence instead of assuming success by absence of errors."""
-        if not tool_context:
-            return False
-        return "[TOOL-CARD:" in tool_context and "| ✅ ok |" in tool_context
+        return util_tool_context_has_success(tool_context)
 
 
     # ═══════════════════════════════════════════════════════════
@@ -4806,61 +2234,26 @@ class PipelineOrchestrator:
         Returns {"event_type": str, "event_data": dict} or None.
         session_id: conversation_id of the current chat (for Session ↔ Container tracking).
         """
-        if tool_name in {"request_container", "home_start"} and isinstance(result, dict):
-            cid = result.get("container_id", "")
-            if result.get("status") == "running" and cid:
-                return {
-                    "event_type": "container_started",
-                    "event_data": {
-                        "container_id": cid,
-                        "blueprint_id": (
-                            tool_args.get("blueprint_id")
-                            or result.get("blueprint_id")
-                            or "unknown"
-                        ),
-                        "name": result.get("name", ""),
-                        "purpose": user_text[:200],
-                        "ttl_seconds": result.get("ttl_seconds"),
-                        "session_id": session_id,
-                        "started_at": datetime.utcnow().isoformat() + "Z",
-                    },
-                }
-        elif tool_name == "stop_container" and isinstance(result, dict):
-            cid = result.get("container_id", "")
-            if result.get("stopped") and cid:
-                return {
-                    "event_type": "container_stopped",
-                    "event_data": {
-                        "container_id": cid,
-                        "blueprint_id": result.get("blueprint_id", "unknown"),
-                        "session_id": session_id,
-                        "stopped_at": datetime.utcnow().isoformat() + "Z",
-                        "reason": "user_stopped",
-                    },
-                }
-        elif tool_name == "exec_in_container" and isinstance(result, dict):
-            cid = result.get("container_id", tool_args.get("container_id", ""))
-            if cid and "error" not in result:
-                # Resolve blueprint_id from Docker labels (exec tool_args don't carry blueprint_id)
-                _exec_bp_id = tool_args.get("blueprint_id", "")
-                if not _exec_bp_id:
-                    try:
-                        from container_commander.engine import get_client as _get_docker
-                        _exec_bp_id = _get_docker().containers.get(cid).labels.get("trion.blueprint", "unknown")
-                    except Exception:
-                        _exec_bp_id = "unknown"
-                return {
-                    "event_type": "container_exec",
-                    "event_data": {
-                        "container_id": cid,
-                        "blueprint_id": _exec_bp_id,
-                        "command": tool_args.get("command", "")[:500],
-                        "exit_code": result.get("exit_code"),
-                        "session_id": session_id,
-                        "executed_at": datetime.utcnow().isoformat() + "Z",
-                    },
-                }
-        return None
+        def _resolve_exec_blueprint_id(container_id: str, exec_tool_args: Dict[str, Any]) -> str:
+            blueprint_id = exec_tool_args.get("blueprint_id", "")
+            if blueprint_id:
+                return str(blueprint_id)
+            try:
+                from container_commander.engine import get_client as _get_docker
+
+                return _get_docker().containers.get(container_id).labels.get("trion.blueprint", "unknown")
+            except Exception:
+                return "unknown"
+
+        return util_build_container_event_content(
+            tool_name,
+            result,
+            user_text,
+            tool_args,
+            session_id=session_id,
+            utcnow_fn=datetime.utcnow,
+            resolve_exec_blueprint_id_fn=_resolve_exec_blueprint_id,
+        )
 
     def _verify_container_running(self, container_id: str) -> bool:
         """
@@ -4869,18 +2262,12 @@ class PipelineOrchestrator:
         Returns True if container exists and is running, False otherwise.
         Does NOT attempt repair (Phase-1 policy: fail-only).
         """
-        try:
-            hub = get_hub()
-            hub.initialize()
-            result = hub.call_tool("container_stats", {"container_id": container_id})
-            if isinstance(result, dict) and not result.get("error"):
-                log_info(f"[Orchestrator-Verify] Container {container_id[:12]} confirmed running")
-                return True
-            log_warn(f"[Orchestrator-Verify] Container {container_id[:12]} NOT running: {result}")
-            return False
-        except Exception as e:
-            log_warn(f"[Orchestrator-Verify] Check failed for {container_id[:12]}: {e}")
-            return False
+        return util_verify_container_running(
+            container_id,
+            get_hub_fn=get_hub,
+            log_info_fn=log_info,
+            log_warn_fn=log_warn,
+        )
 
     def _save_workspace_entry(
         self,
@@ -4895,12 +2282,13 @@ class PipelineOrchestrator:
         Delegates to WorkspaceEventEmitter.persist().
         """
         from core.workspace_event_emitter import get_workspace_emitter
-        return get_workspace_emitter().persist(
-            conversation_id=conversation_id,
-            content=content,
+        return util_save_workspace_entry(
+            conversation_id,
+            content,
             entry_type=entry_type,
             source_layer=source_layer,
-        ).sse_dict
+            get_workspace_emitter_fn=get_workspace_emitter,
+        )
 
     def _save_container_event(
         self,
@@ -4914,10 +2302,11 @@ class PipelineOrchestrator:
         Delegates to WorkspaceEventEmitter.persist_container().
         """
         from core.workspace_event_emitter import get_workspace_emitter
-        return get_workspace_emitter().persist_container(
-            conversation_id=conversation_id,
-            container_evt=container_evt,
-        ).sse_dict
+        return util_save_container_event(
+            conversation_id,
+            container_evt,
+            get_workspace_emitter_fn=get_workspace_emitter,
+        )
 
     @staticmethod
     def _build_control_workspace_summary(
@@ -4969,82 +2358,7 @@ class PipelineOrchestrator:
 
     @staticmethod
     def _build_master_workspace_summary(event_type: str, payload: Dict[str, Any]) -> str:
-        """Build compact text summary for master-autonomy planning events."""
-        data = payload if isinstance(payload, dict) else {}
-        kind = str(event_type or "").strip() or "planning_event"
-
-        if kind == "planning_start":
-            objective = str(data.get("objective", "") or "").strip()
-            max_loops = data.get("max_loops")
-            state = str(data.get("state", "") or "").strip()
-            planning_mode = str(data.get("planning_mode", "") or "").strip()
-            parts = [f"objective={objective[:140]}" if objective else "objective=unknown"]
-            if max_loops is not None:
-                parts.append(f"max_loops={max_loops}")
-            if state:
-                parts.append(f"state={state}")
-            if planning_mode:
-                parts.append(f"planning_mode={planning_mode}")
-            return " | ".join(parts)
-
-        if kind == "planning_step":
-            parts: List[str] = []
-            phase = str(data.get("phase", "") or "").strip()
-            if phase:
-                parts.append(f"phase={phase}")
-            if data.get("loop") is not None:
-                parts.append(f"loop={data.get('loop')}")
-            state = str(data.get("state", "") or "").strip()
-            if state:
-                parts.append(f"state={state}")
-            decision = str(data.get("decision", "") or "").strip()
-            if decision:
-                parts.append(f"decision={decision}")
-            next_action = str(data.get("next_action", "") or "").strip()
-            if next_action:
-                parts.append(f"next_action={next_action[:140]}")
-            action = str(data.get("action", "") or "").strip()
-            if action:
-                parts.append(f"action={action[:140]}")
-            reason = str(data.get("reason", "") or "").strip()
-            if reason:
-                parts.append(f"reason={reason[:120]}")
-            return " | ".join(parts) if parts else "planning_step"
-
-        if kind == "planning_done":
-            loops = data.get("loops_executed")
-            steps = data.get("steps_completed")
-            final_state = str(data.get("final_state", "") or "").strip()
-            stop_reason = str(data.get("stop_reason", "") or "").strip()
-            parts = []
-            if loops is not None:
-                parts.append(f"loops={loops}")
-            if steps is not None:
-                parts.append(f"steps={steps}")
-            if final_state:
-                parts.append(f"final_state={final_state}")
-            if stop_reason:
-                parts.append(f"stop_reason={stop_reason}")
-            return " | ".join(parts) if parts else "planning_done"
-
-        if kind == "planning_error":
-            phase = str(data.get("phase", "") or "").strip()
-            error = str(data.get("error", "") or "").strip() or "unknown_error"
-            error_code = str(data.get("error_code", "") or "").strip()
-            action = str(data.get("action", "") or "").strip()
-            stop_reason = str(data.get("stop_reason", "") or "").strip()
-            parts = [f"error={error[:180]}"]
-            if error_code:
-                parts.append(f"error_code={error_code[:80]}")
-            if phase:
-                parts.append(f"phase={phase}")
-            if action:
-                parts.append(f"action={action[:120]}")
-            if stop_reason:
-                parts.append(f"stop_reason={stop_reason[:80]}")
-            return " | ".join(parts)
-
-        return json.dumps(data, ensure_ascii=False)[:240] if data else kind
+        return util_build_master_workspace_summary(event_type, payload)
 
     def _persist_master_workspace_event(
         self,
@@ -5052,17 +2366,12 @@ class PipelineOrchestrator:
         event_type: str,
         payload: Dict[str, Any],
     ) -> Optional[Dict[str, Any]]:
-        """Persist master-autonomy events to workspace_events for Planmode visibility."""
-        conv_id = str(conversation_id or "").strip()
-        kind = str(event_type or "").strip()
-        if not conv_id or kind not in {"planning_start", "planning_step", "planning_done", "planning_error"}:
-            return None
-        content = self._build_master_workspace_summary(kind, payload if isinstance(payload, dict) else {})
-        return self._save_workspace_entry(
-            conversation_id=conv_id,
-            content=content,
-            entry_type=kind,
-            source_layer="master",
+        return util_persist_master_workspace_event(
+            conversation_id=conversation_id,
+            event_type=event_type,
+            payload=payload,
+            build_master_workspace_summary_fn=self._build_master_workspace_summary,
+            save_workspace_entry_fn=self._save_workspace_entry,
         )
 
     def _get_compact_context(
@@ -5087,65 +2396,15 @@ class PipelineOrchestrator:
 
         Returns empty string if SMALL_MODEL_MODE is disabled or an error occurs.
         """
-        from config import (
-            get_small_model_mode,
-            get_jit_retrieval_max, get_jit_retrieval_max_on_failure,
-            get_small_model_now_max, get_small_model_rules_max, get_small_model_next_max,
+        return util_get_compact_context(
+            context_manager=self.context,
+            conversation_id=conversation_id,
+            has_tool_failure=has_tool_failure,
+            exclude_event_types=exclude_event_types,
+            csv_trigger=csv_trigger,
+            log_info_fn=log_info,
+            log_warn_fn=log_warn,
         )
-        if not get_small_model_mode():
-            return ""
-
-        try:
-            retrieval_budget = (
-                get_jit_retrieval_max_on_failure() if has_tool_failure else get_jit_retrieval_max()
-            )
-
-            # Compute retrieval_count upfront — wire into limits so CompactContext meta is accurate.
-            retrieval_count = 1 + (1 if retrieval_budget >= 2 and conversation_id != "_container_events" else 0)
-
-            # Budget 1 → only this conversation's events
-            # Budget 2 → also include _container_events store
-            limits = {
-                "now_max": get_small_model_now_max(),
-                "rules_max": get_small_model_rules_max(),
-                "next_max": get_small_model_next_max(),
-                "retrieval_count": retrieval_count,  # Fix 1: propagate real count into meta
-                # Commit B: carry csv_trigger into limits for build_small_model_context
-                "csv_trigger": csv_trigger,
-            }
-
-            text = self.context.build_small_model_context(
-                conversation_id=conversation_id,
-                limits=limits,
-                exclude_event_types=exclude_event_types,
-                trigger=csv_trigger,
-            )
-
-            if retrieval_budget >= 2 and conversation_id != "_container_events":
-                # Second retrieval: global container event store
-                # retrieval_count here is request-global (same value as first call):
-                # both fetches together constitute the one budget-2 retrieval cycle.
-                container_ctx = self.context.build_small_model_context(
-                    conversation_id="_container_events",
-                    limits={"now_max": 3, "rules_max": 0, "next_max": 1, "retrieval_count": retrieval_count},
-                    exclude_event_types=exclude_event_types,
-                )
-                if container_ctx:
-                    text = text + "\n" + container_ctx if text else container_ctx
-
-            log_info(
-                f"[Orchestrator] cleanup_used=True retrieval_count={retrieval_count} "
-                f"context_chars={len(text)} failure={has_tool_failure}"
-            )
-            return text
-        except Exception as e:
-            log_warn(f"[Orchestrator] _get_compact_context failed: {e}")
-            # Fail-closed: return canonical minimal context instead of silent empty string.
-            try:
-                from core.context_cleanup import _minimal_fail_context, format_compact_context
-                return format_compact_context(_minimal_fail_context())
-            except Exception:
-                return "NOW:\n  - CONTEXT ERROR: Zustand unvollständig\nNEXT:\n  - Bitte Anfrage kurz präzisieren oder letzten Schritt wiederholen"
 
     def _build_effective_context(
         self,
@@ -5189,12 +2448,13 @@ class PipelineOrchestrator:
         Updates trace context_sources and context_chars_final.
         Returns the updated context string.
         """
-        if not new_block:
-            return ctx_str
-        updated = (new_block + ctx_str) if prepend else (ctx_str + new_block)
-        trace["context_sources"].append(source_name)
-        trace["context_chars_final"] += len(new_block)
-        return updated
+        return util_append_context_block(
+            ctx_str,
+            new_block,
+            source_name,
+            trace,
+            prepend=prepend,
+        )
 
     # ── Commit 4: Failure-compact via single call-point (Gap D closure) ───
     def _build_failure_compact_block(
@@ -5212,20 +2472,12 @@ class PipelineOrchestrator:
         (the authoritative channel). They are excluded here to prevent double
         injection of the same data into both compact context and tool_ctx.
         """
-        _compact = self._get_compact_context(
-            conv_id, has_tool_failure=True,
-            exclude_event_types={"tool_result"},  # SINGLE_TRUTH_GUARD
+        return util_build_failure_compact_block(
+            conv_id,
+            current_context_len,
+            small_model_mode,
+            get_compact_context_fn=self._get_compact_context,
         )
-        if not _compact:
-            return ""
-        if small_model_mode:
-            from config import get_small_model_char_cap
-            _OVERHEAD = len("[COMPACT-CONTEXT-ON-FAILURE]\n") + len("\n\n")
-            _budget = max(0, get_small_model_char_cap() - current_context_len - _OVERHEAD)
-            _compact = _compact[:_budget]
-        if not _compact:
-            return ""
-        return f"[COMPACT-CONTEXT-ON-FAILURE]\n{_compact}\n\n"
 
     # ── Phase 1.5 Commit 1: Final hard cap — always active in small mode ──
     def _apply_final_cap(self, ctx: str, trace: Dict, small_model_mode: bool, label: str) -> str:
@@ -5234,18 +2486,13 @@ class PipelineOrchestrator:
         Uses SMALL_MODEL_FINAL_CAP if set > 0, otherwise falls back to SMALL_MODEL_CHAR_CAP.
         This ensures the cap is always active in small mode, not just when the env var is set.
         """
-        if not small_model_mode:
-            return ctx
-        from config import get_small_model_final_cap, get_small_model_char_cap
-        cap = get_small_model_final_cap()
-        if cap <= 0:
-            cap = get_small_model_char_cap()  # Hard fallback — always on in small mode
-        if len(ctx) > cap:
-            orig = len(ctx)
-            ctx = ctx[:cap]
-            trace["context_chars_final"] = cap
-            log_warn(f"[CTX] FINAL CAP enforced ({label}): {orig} → {cap} chars")
-        return ctx
+        return util_apply_final_cap(
+            ctx,
+            trace,
+            small_model_mode,
+            label,
+            log_warn_fn=log_warn,
+        )
 
     def _apply_effective_context_guardrail(
         self,
@@ -5254,283 +2501,13 @@ class PipelineOrchestrator:
         small_model_mode: bool,
         label: str,
     ) -> str:
-        """
-        Full-mode context guardrail to cap extreme prompt growth.
-        Keeps head+tail with a truncation marker for debuggability.
-        """
-        if small_model_mode:
-            return ctx
-        from config import get_effective_context_guardrail_chars
-        cap = get_effective_context_guardrail_chars()
-        if cap <= 0 or len(ctx) <= cap:
-            return ctx
-
-        marker = "\n[...context truncated by guardrail...]\n"
-        keep_head = max(0, int(cap * 0.7))
-        keep_tail = max(0, cap - keep_head - len(marker))
-        if keep_tail <= 0:
-            clipped = ctx[:cap]
-        else:
-            clipped = ctx[:keep_head] + marker + ctx[-keep_tail:]
-
-        trace["context_chars_final"] = len(clipped)
-        if "guardrail_ctx" not in trace["context_sources"]:
-            trace["context_sources"].append("guardrail_ctx")
-        log_warn(
-            f"[CTX] guardrail enforced ({label}): {len(ctx)} → {len(clipped)} chars "
-            f"(cap={cap})"
+        return util_apply_effective_context_guardrail(
+            ctx=ctx,
+            trace=trace,
+            small_model_mode=small_model_mode,
+            label=label,
+            log_warn_fn=log_warn,
         )
-        return clipped
-
-    @staticmethod
-    def _compact_json_value(
-        value: Any,
-        *,
-        max_items: int,
-        max_str_len: int,
-        max_depth: int,
-        _depth: int = 0,
-    ) -> Any:
-        """Recursively compact JSON-like values while preserving valid structure."""
-        if _depth >= max_depth:
-            return "...truncated(depth)"
-        if isinstance(value, dict):
-            out: Dict[str, Any] = {}
-            for idx, (k, v) in enumerate(value.items()):
-                if idx >= max_items:
-                    out["_truncated_keys"] = len(value) - max_items
-                    break
-                out[str(k)] = PipelineOrchestrator._compact_json_value(
-                    v,
-                    max_items=max_items,
-                    max_str_len=max_str_len,
-                    max_depth=max_depth,
-                    _depth=_depth + 1,
-                )
-            return out
-        if isinstance(value, list):
-            out = [
-                PipelineOrchestrator._compact_json_value(
-                    item,
-                    max_items=max_items,
-                    max_str_len=max_str_len,
-                    max_depth=max_depth,
-                    _depth=_depth + 1,
-                )
-                for item in value[:max_items]
-            ]
-            if len(value) > max_items:
-                out.append(f"...truncated {len(value) - max_items} item(s)")
-            return out
-        if isinstance(value, str) and len(value) > max_str_len:
-            cut = len(value) - max_str_len
-            return value[:max_str_len] + f"... (truncated {cut} chars)"
-        return value
-
-    def _clip_json_text(self, json_text: str, cap: int) -> str:
-        """Return valid clipped JSON text with length <= cap whenever possible."""
-        if cap <= 0:
-            return ""
-        try:
-            payload = json.loads(json_text)
-        except Exception:
-            return ""
-
-        profiles = [
-            (12, 1200, 5),
-            (8, 600, 4),
-            (4, 240, 3),
-            (2, 120, 2),
-            (1, 60, 1),
-        ]
-        for max_items, max_str_len, max_depth in profiles:
-            compact = self._compact_json_value(
-                payload,
-                max_items=max_items,
-                max_str_len=max_str_len,
-                max_depth=max_depth,
-            )
-            candidate = json.dumps(compact, ensure_ascii=False, separators=(",", ":"))
-            if len(candidate) <= cap:
-                return candidate
-
-        # Last-resort valid JSON summaries per type.
-        if isinstance(payload, dict):
-            fallback = json.dumps(
-                {"_truncated": True, "type": "object", "keys": len(payload)},
-                ensure_ascii=False,
-                separators=(",", ":"),
-            )
-        elif isinstance(payload, list):
-            fallback = json.dumps(
-                ["_truncated", "array", len(payload)],
-                ensure_ascii=False,
-                separators=(",", ":"),
-            )
-        elif isinstance(payload, str):
-            fallback = json.dumps(
-                payload[: max(0, min(len(payload), cap - 2))],
-                ensure_ascii=False,
-                separators=(",", ":"),
-            )
-        else:
-            fallback = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-
-        if len(fallback) <= cap:
-            return fallback
-        if cap >= 2:
-            return "{}"
-        return ""
-
-    @staticmethod
-    def _is_tool_context_block_header(line: str) -> bool:
-        h = line.lstrip()
-        return (
-            h.startswith("[COMPACT-CONTEXT-ON-FAILURE]")
-            or h.startswith("[TOOL-CARD:")
-            or h.startswith("### ")
-            or h.startswith("[request_container]:")
-        )
-
-    def _split_tool_context_blocks(self, tool_context: str) -> List[str]:
-        """Split tool context into logical blocks to avoid mid-structure cuts."""
-        if not tool_context:
-            return []
-        lines = tool_context.splitlines(keepends=True)
-        blocks: List[str] = []
-        current: List[str] = []
-        for line in lines:
-            if current and self._is_tool_context_block_header(line):
-                blocks.append("".join(current))
-                current = [line]
-            else:
-                current.append(line)
-        if current:
-            blocks.append("".join(current))
-        return blocks
-
-    def _clip_tool_context_line(self, line: str, max_chars: int) -> str:
-        """Clip a single line; if line is JSON, keep it syntactically valid."""
-        if max_chars <= 0:
-            return ""
-        if len(line) <= max_chars:
-            return line
-
-        has_nl = line.endswith("\n")
-        base = line[:-1] if has_nl else line
-        left_ws = base[: len(base) - len(base.lstrip())]
-        core = base[len(left_ws):]
-        core_stripped = core.strip()
-        nl_len = 1 if has_nl else 0
-        core_budget = max_chars - len(left_ws) - nl_len
-
-        if (
-            core_budget > 2
-            and core_stripped
-            and core_stripped[0] in "{["
-            and core_stripped[-1] in "}]"
-        ):
-            clipped_json = self._clip_json_text(core_stripped, core_budget)
-            if clipped_json:
-                out = left_ws + clipped_json
-                if has_nl and len(out) + 1 <= max_chars:
-                    out += "\n"
-                return out
-
-        if core_budget <= 0:
-            return ""
-        marker = "... [truncated]"
-        if core_budget <= len(marker):
-            short = core[:core_budget]
-        else:
-            keep = core_budget - len(marker)
-            dropped = max(0, len(core) - keep)
-            marker = f"... [truncated {dropped} chars]"
-            if len(marker) > core_budget:
-                marker = "... [truncated]"
-                keep = max(0, core_budget - len(marker))
-            short = core[:keep] + marker
-        out = left_ws + short
-        if has_nl and len(out) + 1 <= max_chars:
-            out += "\n"
-        return out
-
-    def _compact_tool_context_block(self, block: str, max_chars: int) -> str:
-        """Compact a block into max_chars while preserving line/JSON structure."""
-        if max_chars <= 0:
-            return ""
-        if len(block) <= max_chars:
-            return block
-
-        lines = block.splitlines(keepends=True)
-        out: List[str] = []
-        used = 0
-        for line in lines:
-            if used >= max_chars:
-                break
-            remaining = max_chars - used
-            if len(line) <= remaining:
-                out.append(line)
-                used += len(line)
-                continue
-            clipped = self._clip_tool_context_line(line, remaining)
-            if clipped:
-                out.append(clipped)
-                used += len(clipped)
-            break
-
-        suffix = "\n[...block truncated]\n"
-        if used < len(block) and used + len(suffix) <= max_chars:
-            out.append(suffix)
-        return "".join(out)
-
-    def _clip_tool_context_structured(self, tool_context: str, cap: int) -> str:
-        """
-        Structured clipping that preserves block boundaries and avoids blind cuts.
-        Keeps the newest blocks first (tail-priority) under budget.
-        """
-        marker = "\n[...tool_context truncated...]\n"
-        body_cap = cap - len(marker)
-        if body_cap <= 0:
-            return tool_context[:cap]
-
-        blocks = self._split_tool_context_blocks(tool_context)
-        if not blocks:
-            return tool_context[:cap]
-
-        chosen: List[str] = []
-        used = 0
-        for idx in range(len(blocks) - 1, -1, -1):
-            block = blocks[idx]
-            remaining = body_cap - used
-            if remaining <= 0:
-                break
-            if len(block) <= remaining:
-                chosen.append(block)
-                used += len(block)
-                continue
-            compact = self._compact_tool_context_block(block, remaining)
-            if compact:
-                chosen.append(compact)
-                used += len(compact)
-            break
-
-        body = "".join(reversed(chosen))
-        if not body:
-            body = tool_context[-body_cap:]
-        if len(body) > body_cap:
-            body = body[-body_cap:]
-        return marker + body
-
-    @staticmethod
-    def _prepend_with_cap(prefix: str, content: str, cap: int) -> str:
-        """Prepend prefix while guaranteeing final length <= cap."""
-        if cap <= 0:
-            return ""
-        if len(prefix) >= cap:
-            return prefix[:cap]
-        keep = max(0, cap - len(prefix))
-        return prefix + content[:keep]
 
     # ── Phase 1.5 Commit 2: Clip tool_context to budget (small mode only) ──
     def _clip_tool_context(self, tool_context: str, small_model_mode: bool) -> str:
@@ -5538,61 +2515,15 @@ class PipelineOrchestrator:
         Clip tool_context to SMALL_MODEL_TOOL_CTX_CAP in small-model-mode.
         If cap is 0 (default), no clipping is applied.
         """
-        if not small_model_mode or not tool_context:
-            return tool_context
         from config import get_small_model_tool_ctx_cap
-        cap = get_small_model_tool_ctx_cap()
-        if cap <= 0 or len(tool_context) <= cap:
-            return tool_context
 
-        had_failure_or_skip = self._tool_context_has_failures_or_skips(tool_context)
-
-        # Case 1: JSON-only context → keep valid JSON after clipping.
-        stripped = tool_context.strip()
-        if stripped and stripped[0] in "{[" and stripped[-1] in "}]":
-            clipped_json = self._clip_json_text(stripped, cap)
-            if clipped_json:
-                tool_context = clipped_json
-                log_warn(
-                    f"[CTX] tool_context clipped to {cap} chars (json-aware, {len(tool_context)} kept)"
-                )
-            else:
-                tool_context = tool_context[:cap]
-                log_warn(f"[CTX] tool_context clipped to {cap} chars (json-fallback hard-cut)")
-        else:
-            # Case 2: Structured context with cards/headings → clip block-wise.
-            looks_structured = bool(
-                re.search(
-                    r"(?m)^(?:\[COMPACT-CONTEXT-ON-FAILURE\]|\[TOOL-CARD:|### |\[request_container\]:)",
-                    tool_context,
-                )
-            )
-            if looks_structured:
-                tool_context = self._clip_tool_context_structured(tool_context, cap)
-                log_warn(
-                    f"[CTX] tool_context clipped to {cap} chars (structured, {len(tool_context)} kept)"
-                )
-            else:
-                # Case 3: Plain text fallback (legacy behavior, deterministic marker).
-                clipped = len(tool_context) - cap
-                marker = f"\n[...truncated: {clipped} chars]"
-                keep = cap - len(marker)
-                if keep <= 0:
-                    tool_context = tool_context[:cap]
-                else:
-                    tool_context = tool_context[:keep] + marker
-                log_warn(f"[CTX] tool_context clipped to {cap} chars ({clipped} truncated)")
-
-        # Safety guard: clipping must never erase evidence of failures/skips.
-        if had_failure_or_skip and not self._tool_context_has_failures_or_skips(tool_context):
-            failure_guard = (
-                "\n### TOOL-FEHLER (truncated): Frühere Fehler/Skips wurden "
-                "wegen Context-Limit gekürzt.\n"
-            )
-            tool_context = self._prepend_with_cap(failure_guard, tool_context, cap)
-            log_warn("[CTX] tool_context failure marker re-injected after clipping")
-
-        return tool_context
+        return util_clip_tool_context(
+            tool_context,
+            small_model_mode=small_model_mode,
+            get_small_model_tool_ctx_cap_fn=get_small_model_tool_ctx_cap,
+            tool_context_has_failures_or_skips_fn=self._tool_context_has_failures_or_skips,
+            log_warn_fn=log_warn,
+        )
 
     # ── Commit 2: Tool Result Card + Full Payload in workspace_events ──
     _TOOL_CARD_CHAR_CAP: int = 800
@@ -5613,68 +2544,21 @@ class PipelineOrchestrator:
           - card_str: compact card to embed in tool_context
           - ref_id: 12-char UUID prefix linking to the workspace_event
         """
-        import uuid as _uuid
-        ref_id = _uuid.uuid4().hex[:12]
-        timestamp = datetime.utcnow().isoformat() + "Z"
-
-        # Extract key facts: first N non-empty, non-header lines
-        lines = [
-            l.strip() for l in raw_result.splitlines()
-            if l.strip() and not l.strip().startswith("#")
-        ]
-        key_facts = lines[:self._TOOL_CARD_BULLET_CAP] or [raw_result[:200].strip() or "Keine Ausgabe"]
-
-        # Build compact card — status-aware label
-        status_icon = {"ok": "✅", "error": "❌", "partial": "⚠️"}.get(status, "🔧")
-        bullets = "\n".join(f"- {f[:150]}" for f in key_facts)
-        card = (
-            f"\n[TOOL-CARD: {tool_name} | {status_icon} {status} | ref:{ref_id}]\n"
-            f"{bullets}\n"
-            f"ts:{timestamp}\n"
+        # Legacy contract markers kept here for source-inspection tests:
+        # _entry_type
+        # approval_requested
+        # pending_package_approval
+        # 50_000
+        return util_build_tool_result_card(
+            tool_name=tool_name,
+            raw_result=raw_result,
+            status=status,
+            conversation_id=conversation_id,
+            save_workspace_entry_fn=self._save_workspace_entry,
+            log_warn_fn=log_warn,
+            tool_card_char_cap=self._TOOL_CARD_CHAR_CAP,
+            tool_card_bullet_cap=self._TOOL_CARD_BULLET_CAP,
         )
-        if len(card) > self._TOOL_CARD_CHAR_CAP:
-            card = card[:self._TOOL_CARD_CHAR_CAP] + "\n[...card truncated]\n"
-
-        # Save full payload as workspace_event (audit channel).
-        # C7: detect approval_requested events so context_cleanup populates pending_approvals.
-        _entry_type = "tool_result"
-        _extra_fields: dict = {}
-        try:
-            _parsed = json.loads(raw_result)
-            if isinstance(_parsed, dict):
-                _evt = (
-                    _parsed.get("event_type")
-                    or _parsed.get("action_taken")
-                    or _parsed.get("action")
-                )
-                if _evt in ("approval_requested", "pending_package_approval"):
-                    _entry_type = "approval_requested"
-                    _extra_fields = {
-                        "skill_name": _parsed.get("skill_name") or tool_name,
-                        "missing_packages": _parsed.get("missing_packages", []),
-                        "non_allowlisted_packages": _parsed.get("non_allowlisted_packages", []),
-                    }
-        except Exception:
-            pass
-        try:
-            self._save_workspace_entry(
-                conversation_id,
-                json.dumps({
-                    "tool_name": tool_name,
-                    "status": status,
-                    "ref_id": ref_id,
-                    "timestamp": timestamp,
-                    "key_facts": key_facts,
-                    "payload": raw_result[:50_000],  # large payload cap (50 KB); full raw result for audit
-                    **_extra_fields,
-                }, ensure_ascii=False, default=str),
-                _entry_type,
-                "orchestrator",
-            )
-        except Exception as _ce:
-            log_warn(f"[Orchestrator] Card event save failed for {tool_name}: {_ce}")
-
-        return card, ref_id
 
     # ── Commit 4: Central retrieval policy — single budget authority ──
     def _compute_retrieval_policy(
@@ -5700,37 +2584,22 @@ class PipelineOrchestrator:
           Extra lookup from control corrections counts against budget.
         """
         from config import get_jit_retrieval_max, get_jit_retrieval_max_on_failure
-        tool_failure = bool(
-            (verified_plan or {}).get("_tool_failure")
-            or ("TOOL-FEHLER" in current_tool_context or "VERIFY-FEHLER" in current_tool_context)
+
+        return util_compute_retrieval_policy(
+            thinking_plan,
+            verified_plan,
+            current_tool_context=current_tool_context,
+            get_jit_retrieval_max_fn=get_jit_retrieval_max,
+            get_jit_retrieval_max_on_failure_fn=get_jit_retrieval_max_on_failure,
         )
-        base_max = get_jit_retrieval_max_on_failure() if tool_failure else get_jit_retrieval_max()
-        reasons = []
-        if tool_failure:
-            reasons.append(f"tool_failure → budget={base_max}")
-        else:
-            reasons.append(f"normal → budget={base_max}")
-        return {
-            "max_retrievals": base_max,
-            "tool_failure": tool_failure,
-            "time_reference": (thinking_plan or {}).get("time_reference"),
-            "reasons": reasons,
-        }
 
     def _compute_ctx_mode(self, trace: Dict, is_loop: bool = False) -> str:
-        """
-        Compute the canonical mode string for [CTX-FINAL] logging.
-        Format: (small|full)[+failure][+dryrun][+loop]
-        """
         from config import get_context_trace_dryrun
-        mode = "small" if trace.get("small_model_mode") else "full"
-        if "failure_ctx" in trace.get("context_sources", []):
-            mode += "+failure"
-        if get_context_trace_dryrun():
-            mode += "+dryrun"
-        if is_loop:
-            mode += "+loop"
-        return mode
+        return util_compute_ctx_mode(
+            trace,
+            is_loop=is_loop,
+            get_context_trace_dryrun_fn=get_context_trace_dryrun,
+        )
 
     def _maybe_prefetch_skills(
         self, user_text: str, selected_tools: list
@@ -5752,77 +2621,17 @@ class PipelineOrchestrator:
         small_model_mode=True  → default off; exception for explicit skill-intent
                                   signals (list_skills / autonomous_skill_task) → thin.
         """
-        from config import (
-            get_small_model_mode,
-            get_small_model_skill_prefetch_policy,
-            get_small_model_skill_prefetch_thin_cap,
-            get_skill_context_renderer,
+        return util_maybe_prefetch_skills(
+            user_text,
+            selected_tools,
+            # C6 Single-Truth-Channel: routes through self.context._get_skill_context.
+            get_skill_context_fn=self.context._get_skill_context,
+            read_only_skill_tools=list(self._READ_ONLY_SKILL_TOOLS),
+            log_debug_fn=log_debug,
         )
-
-        renderer = get_skill_context_renderer()
-
-        if not get_small_model_mode():
-            # Full mode: unconditional fetch via centralized authority
-            ctx = self.context._get_skill_context(user_text)
-            return ctx, "full"
-
-        policy = get_small_model_skill_prefetch_policy()
-
-        # Explicit skill-intent signal: selected tools contain a skill action
-        _SKILL_TOOLS = set(self._READ_ONLY_SKILL_TOOLS).union({"autonomous_skill_task"})
-        _has_skill_intent = bool(
-            selected_tools
-            and _SKILL_TOOLS & {
-                (t.get("name", "") if isinstance(t, dict) else str(t))
-                for t in selected_tools
-            }
-        )
-
-        if policy == "off" and not _has_skill_intent:
-            return "", "off"
-
-        # thin: fetch via centralized authority
-        ctx = self.context._get_skill_context(user_text)
-        if not ctx:
-            return "", "off"
-
-        # Legacy renderer: apply line-based thin-cap (header + top-1 skill line)
-        if renderer == "legacy":
-            thin_cap = get_small_model_skill_prefetch_thin_cap()
-            lines = ctx.splitlines()
-            header = lines[0] if lines else ""
-            skill_lines = [l for l in lines[1:] if l.strip().startswith("-")]
-            thin_ctx = "\n".join([header] + skill_lines[:1]).strip()
-            thin_ctx = thin_ctx[:thin_cap]
-            log_debug(f"[Orchestrator] Skill prefetch thin (legacy): {len(thin_ctx)} chars (cap={thin_cap})")
-            return thin_ctx, "thin"
-
-        # TypedState renderer: C5 pipeline already applies top_k + budget; no additional cap
-        log_debug(f"[Orchestrator] Skill prefetch (typedstate): {len(ctx)} chars")
-        return ctx, "thin"
 
     def _extract_workspace_observations(self, thinking_plan: Dict) -> Optional[str]:
-        """Extract noteworthy observations from thinking plan for workspace."""
-        parts = []
-        intent = thinking_plan.get("intent")
-        if intent and intent != "unknown":
-            parts.append(f"**Intent:** {intent}")
-
-        memory_keys = thinking_plan.get("memory_keys", [])
-        if memory_keys:
-            parts.append(f"**Memory keys:** {', '.join(memory_keys)}")
-
-        risk = thinking_plan.get("hallucination_risk", "")
-        if risk == "high":
-            parts.append(f"**Risk:** High hallucination risk detected")
-
-        needs_seq = thinking_plan.get("needs_sequential_thinking", False)
-        if needs_seq:
-            parts.append("**Sequential thinking** required")
-
-        if not parts:
-            return None
-        return "\n".join(parts)
+        return util_extract_workspace_observations(thinking_plan)
 
     # ===============================================================
     # INTENT CONFIRMATION
@@ -5835,7 +2644,7 @@ class PipelineOrchestrator:
         conversation_id: str
     ) -> Optional[CoreChatResponse]:
         """Check if user is responding to a pending confirmation."""
-        return await util_check_pending_confirmation(
+        return await util_api_check_pending_confirmation(
             self,
             user_text,
             conversation_id,
@@ -5844,6 +2653,7 @@ class PipelineOrchestrator:
             get_hub_fn=get_hub,
             intent_state_cls=IntentState if INTENT_SYSTEM_AVAILABLE else None,
             core_chat_response_cls=CoreChatResponse,
+            util_check_pending_confirmation_fn=util_check_pending_confirmation,
             log_info_fn=log_info,
             log_warn_fn=log_warn,
             log_error_fn=log_error,
@@ -5886,17 +2696,13 @@ class PipelineOrchestrator:
                 max_loops=5
             )
         """
-        log_info(f"[Pipeline] Starting autonomous objective: {objective}")
-        
-        result = await self.master.execute_objective(
-            objective=objective,
-            conversation_id=conversation_id,
-            max_loops=max_loops
+        return await util_api_execute_autonomous_objective(
+            objective,
+            conversation_id,
+            master=self.master,
+            max_loops=max_loops,
+            log_info_fn=log_info,
         )
-        
-        log_info(f"[Pipeline] Autonomous objective completed: {result['success']}")
-        
-        return result
 
     async def process(self, request: CoreChatRequest) -> CoreChatResponse:
         """
@@ -5910,7 +2716,7 @@ class PipelineOrchestrator:
         5. Output Layer -> Generate
         6. Memory Save
         """
-        return await util_process_request(
+        return await util_api_process_request(
             self,
             request,
             core_chat_response_cls=CoreChatResponse,
@@ -5918,6 +2724,7 @@ class PipelineOrchestrator:
             get_master_settings_fn=get_master_settings,
             thinking_plan_cache=_thinking_plan_cache,
             soften_control_deny_fn=soften_control_deny,
+            util_process_request_fn=util_process_request,
             log_info_fn=log_info,
             log_warn_fn=log_warn,
             log_warning_fn=log_warn,
@@ -5940,7 +2747,7 @@ class PipelineOrchestrator:
         - Output streaming
         - Memory save
         """
-        async for item in util_process_stream_with_events(
+        async for item in util_api_process_stream_with_events(
             self,
             request,
             intent_system_available=bool(INTENT_SYSTEM_AVAILABLE),
@@ -5953,6 +2760,7 @@ class PipelineOrchestrator:
             skill_creation_intent_cls=SkillCreationIntent if INTENT_SYSTEM_AVAILABLE else None,
             intent_origin_cls=IntentOrigin if INTENT_SYSTEM_AVAILABLE else None,
             get_intent_store_fn=get_intent_store if INTENT_SYSTEM_AVAILABLE else (lambda: None),
+            util_process_stream_with_events_fn=util_process_stream_with_events,
             log_info_fn=log_info,
             log_warn_fn=log_warn,
             log_error_fn=log_error,
@@ -5979,11 +2787,12 @@ class PipelineOrchestrator:
         3. EIN LLM-Aufruf mit kompakter Summary (~15-20 Sek)
         4. Ergebnis zurueck
         """
-        async for chunk in util_process_chunked_stream(
+        async for chunk in util_api_process_chunked_stream(
             self,
             user_text,
             conversation_id,
             request,
+            util_process_chunked_stream_fn=util_process_chunked_stream,
             get_hub_fn=get_hub,
             log_info_fn=log_info,
             log_error_fn=log_error,
@@ -5992,23 +2801,7 @@ class PipelineOrchestrator:
 
     def _build_summary_from_structure(self, structure: Dict) -> str:
         """Build compact summary from MCP structure analysis."""
-        lines = []
-        lines.append("# Document Overview")
-        lines.append(f"- Size: {structure.get('total_chars', 0)} chars, {structure.get('total_tokens', 0)} tokens")
-        lines.append(f"- Complexity: {structure.get('complexity', 0)}/10")
-
-        if structure.get('headings'):
-            lines.append(f"\n## Structure ({len(structure['headings'])} headings):")
-            for h in structure['headings'][:5]:
-                lines.append(f"- {h.get('level', 1)*'#'} {h.get('text', '')}")
-
-        if structure.get('keywords'):
-            lines.append(f"\n## Keywords: {', '.join(structure['keywords'][:10])}")
-
-        if structure.get('intro'):
-            lines.append(f"\n## Intro:\n{structure['intro'][:300]}...")
-
-        return '\n'.join(lines)
+        return util_build_summary_from_structure(structure)
 
     # ===============================================================
     # PRIVATE PIPELINE STEPS
@@ -6016,15 +2809,11 @@ class PipelineOrchestrator:
 
     async def _execute_thinking_layer(self, user_text: str) -> Dict:
         """Execute Thinking Layer (Step 1)."""
-        log_info("[Orchestrator] === LAYER 1: THINKING ===")
-        thinking_plan = await self.thinking.analyze(user_text)
-        
-        log_info(f"[Orchestrator-Thinking] intent={thinking_plan.get('intent')}")
-        log_info(f"[Orchestrator-Thinking] needs_memory={thinking_plan.get('needs_memory')}")
-        log_info(f"[Orchestrator-Thinking] memory_keys={thinking_plan.get('memory_keys')}")
-        log_info(f"[Orchestrator-Thinking] hallucination_risk={thinking_plan.get('hallucination_risk')}")
-        
-        return thinking_plan
+        return await util_execute_thinking_layer(
+            user_text,
+            thinking_layer=self.thinking,
+            log_info_fn=log_info,
+        )
     
     async def _execute_control_layer(
         self,
@@ -6035,7 +2824,7 @@ class PipelineOrchestrator:
         response_mode: str = "interactive",
     ) -> Tuple[Dict, Dict]:
         """Execute Control Layer (Step 2)."""
-        return await util_execute_control_layer(
+        return await util_api_execute_control_layer(
             self,
             user_text,
             thinking_plan,
@@ -6046,6 +2835,7 @@ class PipelineOrchestrator:
             skill_creation_intent_cls=SkillCreationIntent if INTENT_SYSTEM_AVAILABLE else None,
             intent_origin_cls=IntentOrigin if INTENT_SYSTEM_AVAILABLE else None,
             get_intent_store_fn=get_intent_store if INTENT_SYSTEM_AVAILABLE else (lambda: None),
+            util_execute_control_layer_fn=util_execute_control_layer,
             log_info_fn=log_info,
             log_warn_fn=log_warn,
         )
@@ -6057,105 +2847,24 @@ class PipelineOrchestrator:
         answer: str
     ):
         """Save facts and assistant response to memory."""
-        
-        # Save new facts
-        if verified_plan.get("is_new_fact"):
-            fact_key = verified_plan.get("new_fact_key")
-            fact_value = verified_plan.get("new_fact_value")
-            if fact_key and fact_value:
-                log_info(f"[Orchestrator-Save] Saving fact: {fact_key}={fact_value}")
-                try:
-                    fact_args = {
-                        "conversation_id": conversation_id,
-                        "subject": "Danny",
-                        "key": fact_key,
-                        "value": fact_value,
-                        "layer": "ltm",
-                    }
-                    call_tool("memory_fact_save", fact_args)
-                except Exception as e:
-                    log_error(f"[Orchestrator-Save] Error: {e}")
-        
-        # Autosave assistant response
-        # Guard against self-reinforcement of low-quality outputs after failed/skipped tool phases.
-        tool_ctx = str(get_runtime_tool_results(verified_plan) or "")
-        grounding_policy = load_grounding_policy()
-        output_grounding = (grounding_policy or {}).get("output") or {}
-        memory_grounding = (grounding_policy or {}).get("memory") or {}
-        allowed_statuses = output_grounding.get("allowed_evidence_statuses", ["ok"])
-        min_successful_evidence = int(output_grounding.get("min_successful_evidence", 1) or 1)
-        successful_evidence = self._count_successful_grounding_evidence(
-            verified_plan, allowed_statuses=allowed_statuses
+        util_api_save_memory(
+            conversation_id,
+            verified_plan,
+            answer,
+            util_save_memory_fn=util_save_memory,
+            call_tool_fn=call_tool,
+            autosave_assistant_fn=autosave_assistant,
+            load_grounding_policy_fn=load_grounding_policy,
+            get_runtime_tool_results_fn=get_runtime_tool_results,
+            count_successful_grounding_evidence_fn=self._count_successful_grounding_evidence,
+            extract_suggested_tool_names_fn=self._extract_suggested_tool_names,
+            get_runtime_tool_failure_fn=get_runtime_tool_failure,
+            tool_context_has_failures_or_skips_fn=self._tool_context_has_failures_or_skips,
+            get_runtime_grounding_value_fn=get_runtime_grounding_value,
+            get_autosave_dedupe_guard_fn=get_autosave_dedupe_guard,
+            log_info_fn=log_info,
+            log_warn_fn=log_warn,
+            log_error_fn=log_error,
         )
-        is_fact_query = bool(verified_plan.get("is_fact_query", False))
-        has_tool_usage = bool(tool_ctx.strip())
-        has_tool_suggestions = bool(self._extract_suggested_tool_names(verified_plan))
-        require_evidence_for_autosave = bool(
-            memory_grounding.get("autosave_requires_evidence_for_fact_query", True)
-            and is_fact_query
-            and (
-                (
-                    bool(output_grounding.get("enforce_evidence_for_fact_query", True))
-                    and (has_tool_usage or has_tool_suggestions)
-                )
-                or (bool(output_grounding.get("enforce_evidence_when_tools_used", True)) and has_tool_usage)
-                or (
-                    bool(output_grounding.get("enforce_evidence_when_tools_suggested", True))
-                    and has_tool_suggestions
-                )
-            )
-        )
-        skip_autosave = False
-        skip_reason = ""
-        if verified_plan.get("_pending_intent"):
-            skip_autosave = True
-            skip_reason = "pending_intent_confirmation"
-        elif (
-            (get_runtime_tool_failure(verified_plan) or self._tool_context_has_failures_or_skips(tool_ctx))
-            and not (answer or "").strip()
-        ):
-            skip_autosave = True
-            skip_reason = "tool_failure_with_empty_answer"
-        elif bool(
-            get_runtime_grounding_value(
-                verified_plan,
-                key="missing_evidence",
-                default=False,
-            )
-        ):
-            skip_autosave = True
-            skip_reason = "grounding_missing_evidence"
-        elif bool(
-            get_runtime_grounding_value(
-                verified_plan,
-                key="violation_detected",
-                default=False,
-            )
-        ):
-            skip_autosave = True
-            skip_reason = "grounding_violation_detected"
-        elif require_evidence_for_autosave and successful_evidence < min_successful_evidence:
-            skip_autosave = True
-            skip_reason = "insufficient_grounding_evidence"
 
-        if skip_autosave:
-            log_warn(f"[Orchestrator-Autosave] Skipped assistant autosave ({skip_reason})")
-            return
-
-        dedupe_guard = get_autosave_dedupe_guard()
-        if dedupe_guard is not None:
-            try:
-                if dedupe_guard.should_skip(conversation_id=conversation_id, content=answer):
-                    log_warn("[Orchestrator-Autosave] Skipped assistant autosave (duplicate_window)")
-                    return
-            except Exception as dedupe_err:
-                log_warn(f"[Orchestrator-Autosave] Dedupe guard fallback: {dedupe_err}")
-
-        try:
-            autosave_assistant(
-                conversation_id=conversation_id,
-                content=answer,
-                layer="stm",
-            )
-        except Exception as e:
-            log_error(f"[Orchestrator-Autosave] Error: {e}")
+util_bind_policy_catalog_attrs(PipelineOrchestrator, globals())

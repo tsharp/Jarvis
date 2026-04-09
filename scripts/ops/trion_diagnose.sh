@@ -190,6 +190,8 @@ SERVICE_CONTAINERS=(
   trion-runtime
   validator-service
   lobechat-adapter
+  storage-host-helper
+  storage-broker
 )
 
 log "Environment & identity"
@@ -476,7 +478,7 @@ fi
 
 log "Intra-container DNS checks"
 if $docker_ok && docker ps --format '{{.Names}}' | grep -Fxq 'jarvis-admin-api'; then
-  dns_res="$(docker exec -i jarvis-admin-api python3 - <<'PY' 2>/dev/null || true
+  dns_res="$(docker exec --user "${TRION_ADMIN_EXEC_USER:-1000:1000}" -i jarvis-admin-api python3 - <<'PY' 2>/dev/null || true
 import socket
 for host in ('mcp-sql-memory','cim-server','sequential-thinking','document-processor'):
     try:

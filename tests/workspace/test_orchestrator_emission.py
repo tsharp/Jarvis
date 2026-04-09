@@ -182,23 +182,21 @@ class TestSaveWorkspaceEntry:
 
     def test_save_returns_event_dict(self):
         orch = self._make_orch()
-
-        mock_hub = MagicMock()
-        mock_hub.call_tool.return_value = {
-            "structuredContent": {"id": 42, "conversation_id": "conv-1"}
+        mock_emitter = MagicMock()
+        mock_emitter.persist.return_value.sse_dict = {
+            "type": "workspace_update",
+            "entry_id": 42,
+            "content": "test observation",
+            "entry_type": "observation",
+            "source_layer": "thinking",
+            "conversation_id": "conv-1",
+            "timestamp": "2026-02-06T12:00:00Z",
         }
 
-        # Patch get_hub in the orchestrator module
-        orch_module = sys.modules["core.orchestrator"]
-        original_get_hub = getattr(orch_module, "get_hub", None)
-        orch_module.get_hub = MagicMock(return_value=mock_hub)
-        try:
+        with patch("core.workspace_event_emitter.get_workspace_emitter", return_value=mock_emitter):
             event = orch._save_workspace_entry(
                 "conv-1", "test observation", "observation", "thinking"
             )
-        finally:
-            if original_get_hub is not None:
-                orch_module.get_hub = original_get_hub
 
         assert event is not None
         assert event["type"] == "workspace_update"
@@ -211,67 +209,42 @@ class TestSaveWorkspaceEntry:
 
     def test_save_returns_none_on_failure(self):
         orch = self._make_orch()
+        mock_emitter = MagicMock()
+        mock_emitter.persist.return_value.sse_dict = None
 
-        mock_hub = MagicMock()
-        mock_hub.call_tool.side_effect = Exception("MCP connection failed")
-
-        orch_module = sys.modules["core.orchestrator"]
-        original_get_hub = getattr(orch_module, "get_hub", None)
-        orch_module.get_hub = MagicMock(return_value=mock_hub)
-        try:
+        with patch("core.workspace_event_emitter.get_workspace_emitter", return_value=mock_emitter):
             event = orch._save_workspace_entry(
                 "conv-1", "test", "observation", "thinking"
             )
-        finally:
-            if original_get_hub is not None:
-                orch_module.get_hub = original_get_hub
 
         assert event is None
 
     def test_save_returns_none_when_no_id(self):
         orch = self._make_orch()
+        mock_emitter = MagicMock()
+        mock_emitter.persist.return_value.sse_dict = None
 
-        mock_hub = MagicMock()
-        mock_hub.call_tool.return_value = {"structuredContent": {}}
-
-        orch_module = sys.modules["core.orchestrator"]
-        original_get_hub = getattr(orch_module, "get_hub", None)
-        orch_module.get_hub = MagicMock(return_value=mock_hub)
-        try:
+        with patch("core.workspace_event_emitter.get_workspace_emitter", return_value=mock_emitter):
             event = orch._save_workspace_entry(
                 "conv-1", "test", "observation", "thinking"
             )
-        finally:
-            if original_get_hub is not None:
-                orch_module.get_hub = original_get_hub
 
         assert event is None
 
     def test_save_calls_hub_with_correct_args(self):
         orch = self._make_orch()
+        mock_emitter = MagicMock()
+        mock_emitter.persist.return_value.sse_dict = {"type": "workspace_update", "entry_id": 1}
 
-        mock_hub = MagicMock()
-        mock_hub.call_tool.return_value = {
-            "structuredContent": {"id": 1}
-        }
-
-        orch_module = sys.modules["core.orchestrator"]
-        original_get_hub = getattr(orch_module, "get_hub", None)
-        orch_module.get_hub = MagicMock(return_value=mock_hub)
-        try:
+        with patch("core.workspace_event_emitter.get_workspace_emitter", return_value=mock_emitter):
             orch._save_workspace_entry("conv-X", "my content", "task", "control")
-        finally:
-            if original_get_hub is not None:
-                orch_module.get_hub = original_get_hub
 
-        mock_hub.call_tool.assert_called_once_with("workspace_event_save", {
-            "conversation_id": "conv-X",
-            "event_type": "task",
-            "event_data": {
-                "content": "my content",
-                "source_layer": "control",
-            },
-        })
+        mock_emitter.persist.assert_called_once_with(
+            conversation_id="conv-X",
+            content="my content",
+            entry_type="task",
+            source_layer="control",
+        )
 
 
 class TestWorkspaceEmissionInPipeline:

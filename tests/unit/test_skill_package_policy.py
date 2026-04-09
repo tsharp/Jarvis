@@ -31,6 +31,8 @@ import sys
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from tests._orchestrator_layout import read_orchestrator_source
+
 # ── Repo paths ──────────────────────────────────────────────────────────────
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO_ROOT = os.path.abspath(os.path.join(_HERE, "..", ".."))
@@ -470,9 +472,7 @@ class TestOrchestratorApprovalEventRouting(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Load orchestrator source to verify the fix is present."""
-        _orch_path = os.path.join(_REPO_ROOT, "core", "orchestrator.py")
-        with open(_orch_path) as f:
-            cls._orch_source = f.read()
+        cls._orch_source = read_orchestrator_source()
 
     def test_orchestrator_detects_approval_requested_event(self):
         self.assertIn("approval_requested", self._orch_source,

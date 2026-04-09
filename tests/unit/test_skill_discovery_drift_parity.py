@@ -17,6 +17,8 @@ import sys
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from tests._orchestrator_layout import read_first_existing_repo_text
+
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO_ROOT = os.path.abspath(os.path.join(_HERE, "..", ".."))
@@ -166,9 +168,11 @@ class TestDiscoveryDriftAndParity(unittest.IsolatedAsyncioTestCase):
 
 class TestOrchestratorDiscoveryGateSource(unittest.TestCase):
     def test_orchestrator_contains_discovery_gate(self):
-        orch_path = os.path.join(_REPO_ROOT, "core", "orchestrator.py")
-        with open(orch_path, "r", encoding="utf-8") as f:
-            src = f.read()
+        src = read_first_existing_repo_text(
+            "core/orchestrator_modules/interaction_runtime.py",
+            "core/orchestrator_interaction_runtime_utils.py",
+            "core/orchestrator.py",
+        )
         self.assertIn("get_skill_discovery_enable", src)
         self.assertIn("SKILL_DISCOVERY_ENABLE", src)
 

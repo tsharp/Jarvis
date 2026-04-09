@@ -12,6 +12,8 @@ import json
 import types
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 
+from tests._orchestrator_layout import find_orchestrator_source_path
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 
@@ -477,22 +479,8 @@ class TestObservabilityParity:
 # ═════════════════════════════════════════════════════════════════
 
 def _find_orchestrator_path():
-    """Locate orchestrator.py relative to this file or via sys.path."""
-    import pathlib
-    # When run from tests/unit/, parents[2] = project root
-    for depth in (2, 3, 4):
-        try:
-            p = pathlib.Path(__file__).parents[depth] / "core" / "orchestrator.py"
-            if p.exists():
-                return p
-        except IndexError:
-            pass
-    # Fallback: search sys.path
-    for base in sys.path:
-        p = pathlib.Path(base) / "core" / "orchestrator.py"
-        if p.exists():
-            return p
-    return None
+    """Locate the current PipelineOrchestrator source file."""
+    return find_orchestrator_source_path()
 
 
 class TestStreamToolCardParity:

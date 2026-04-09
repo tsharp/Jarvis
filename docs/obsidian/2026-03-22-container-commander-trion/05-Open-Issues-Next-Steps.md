@@ -345,20 +345,148 @@ Archivhinweis 2026-04-01:
 
 - Neuer Architekturpfad dokumentiert in
   [[2026-04-07-orchestrator-architektur-refactor-plan]].
-- Stand 2026-04-07:
-  - `core/orchestrator.py` ist inzwischen ein echter Wartungsblocker
-  - der Refactor soll **kein** Big-Bang-Rewrite sein, sondern eine
-    kontrollierte Extraktion in fachliche Module
-  - zuerst sollen reine oder fast-pure Entscheidungsbloecke herausgezogen
-    werden, nicht sofort der gesamte `process_request(...)`-Pfad
-- bevorzugter erster Schnitt:
-  - Domain-/Container-Policy
-  - Tool-Shaping fuer `request_container` / `home_start` / Binding
-  - Grounding-/Repair-nahe Entscheidungslogik nur dort, wo sie klar abgrenzbar
-    ist
-- explizite Leitplanken:
+- Architektur-Audit dokumentiert in
+  [[2026-04-08-orchestrator-architecture-audit-first-extraction-cut]].
+- Stand 2026-04-09:
+  - `core/orchestrator.py` bleibt ein echter Wartungsblocker, aber der erste
+    kontrollierte Entflechtungspfad laeuft jetzt
+  - der Refactor bleibt **kein** Big-Bang-Rewrite, sondern eine
+    fachlich geschnittene Extraktion mit bestehendem API-/Call-Site-Verhalten
+  - der erste lokale Extraktionsstrang (`Phase 1a` bis `1c`) ist umgesetzt in:
+    - `core/orchestrator_domain_container_policy_utils.py`
+  - der initiale Semantik-Block (`Phase 2`) ist lokal umgesetzt in:
+    - `core/orchestrator_semantic_context_utils.py`
+  - der anschliessende Response-Guard-/Contract-Block ist lokal umgesetzt in:
+    - `core/orchestrator_response_guard_utils.py`
+  - der kleine Output-Glue-Block ist lokal umgesetzt in:
+    - `core/orchestrator_output_glue_utils.py`
+  - der grosse Policy-Catalog-/Cron-/Policy-Runtime-Block ist lokal umgesetzt in:
+    - `core/orchestrator_policy_catalog.py`
+    - `core/orchestrator_cron_intent_utils.py`
+    - `core/orchestrator_policy_runtime_utils.py`
+  - der stateful Runtime-/Follow-up-Block ist lokal umgesetzt in:
+    - `core/orchestrator_state_runtime_utils.py`
+  - der Context-/Workspace-/Retrieval-Block ist lokal umgesetzt in:
+    - `core/orchestrator_context_workspace_utils.py`
+  - der Execution-Resolution-Block ist lokal umgesetzt in:
+    - `core/orchestrator_execution_resolution_utils.py`
+  - der Postprocess-/Autosave-Block ist lokal umgesetzt in:
+    - `core/orchestrator_postprocess_utils.py`
+  - der Compact-Context-/Guardrail-Block ist lokal umgesetzt in:
+    - `core/orchestrator_compact_context_utils.py`
+  - der Container-Candidate-Evidence-Block ist lokal umgesetzt in:
+    - `core/orchestrator_container_candidate_utils.py`
+  - der Interaction-/Response-Mode-Block ist lokal umgesetzt in:
+    - `core/orchestrator_interaction_runtime_utils.py`
+  - der Workspace-/Container-Event-Runtime-Block ist lokal umgesetzt in:
+    - `core/orchestrator_workspace_event_runtime_utils.py`
+  - der Pipeline-/Facade-Restblock ist lokal umgesetzt in:
+    - `core/orchestrator_pipeline_facade_utils.py`
+  - der verbleibende Class-Body-Policy-Catalog ist lokal verschlankt:
+    - mechanische Nachbindung der Class-Attribute statt grossem Inline-Block
+  - der API-/Lifecycle-Facade-Restblock ist lokal umgesetzt in:
+    - `core/orchestrator_api_facade_utils.py`
+  - fuer die Wrapper-/Facade-Ordnung gibt es jetzt zusaetzlich:
+    - `core/orchestrator_modules/`
+    - `api_facade.py`
+    - `pipeline_facade.py`
+    - `interaction_runtime.py`
+    - `workspace_events.py`
+    - `catalog.py`
+    - `policy/`
+    - `runtime/`
+    - `context/`
+    - `output/`
+    - `execution/`
+    - `postprocess.py`
+    - die bisherigen Top-Level-Dateien bleiben vorerst als Compatibility-Shims
+  - die Migrationsbasis fuer einen spaeteren echten Paket-Rename ist jetzt
+    testseitig vorbereitet:
+    - zentrale Orchestrator-Source-Resolver in `tests/_orchestrator_layout.py`
+    - keine harte Bindung wichtiger Drift-/Source-Inspection-Tests mehr nur an
+      `core/orchestrator.py`
+  - zuletzt verifiziert mit:
+    - `167 passed` fuer Source-Layout-/Drift-/Skill-Context-/Package-Policy-Pfade
+    - `59 passed, 2 skipped` fuer die gezielte Modul-Regressionssuite nach
+      dem Umzug unter `core/orchestrator_modules/`
+    - `226 passed, 2 skipped, 9 warnings` fuer die erste grosse persistierte
+      Refactor-Regression
+    - `230 passed, 2 skipped, 9 warnings` fuer den aktuellen Refactor-
+      Regressionslauf nach Clean-Install-/Compose-Haertung
+  - persistente Report-Ablage ist jetzt eingerichtet:
+    - Runner: `scripts/ops/run_orchestrator_refactor_suite.sh`
+    - Reports: `artifacts/test-reports/orchestrator/`
+    - letzter Lauf:
+      - `2026-04-08T23-48-09Z-refactor-regression.log`
+      - `2026-04-08T23-48-09Z-refactor-regression.junit.xml`
+    - aktueller Lauf:
+      - `2026-04-09T20-26-50Z-refactor-regression.log`
+      - `2026-04-09T20-26-50Z-refactor-regression.junit.xml`
+    - stabile Alias-Dateien:
+      - `latest-refactor-regression.log`
+      - `latest-refactor-regression.junit.xml`
+  - aktuell aus dem Monolithen herausgezogen bzw. zentralisiert:
+    - Domain-Route-/Gate-Policy
+    - Home-Info-/Home-Start-/Binding-/Capability-Tool-Shaping
+    - Container-Query-Policy-Materialisierung
+    - Skill-Catalog-nahe Strategy-/Trace-/Finalization-Helfer
+    - Skill-Katalog-/Addon-/Runtime-Snapshot-Kontext
+    - Active-Container-Capability-Context
+    - Conversation-Consistency-Guard
+    - Grounding-Auto-Recovery-Kleber
+    - Tool-Result-Formatierung / Tool-Card / Evidence-Merge
+    - `compute_ctx_mode` / Workspace-Observation-Extraktion
+    - Policy-Konstanten / Marker / Tool-Mappings
+    - Cron-Intent-/Schedule-/Ack-/Tool-Normalisierungslogik
+    - Tone-/Query-Budget-/Domain-/Precontrol-Steuerungsblock
+    - Container-State / Pending-Container-Resolution
+    - Grounding-State / Carryover / usable-grounding
+    - Follow-up-Tool-Reuse inklusive state-only Fallback
+    - Master-Workspace-Event-Summary / Persistenz-Kleber
+    - Retrieval-Budget-Policy
+    - Tool-Context-Clipping inklusive JSON-/Structured-Fail-Safes
+    - Control-Tool-Decision-Sammlung
+    - finale Execution-Tool-Resolution / Follow-up-Reuse / Fallback-Kette
+    - archive-embedding queue / fallback
+    - fact-save / assistant-autosave / grounding-gates
+    - compact-context / fail-closed retrieval-build
+    - effective-context guardrail / full-mode clipping
+    - blueprint hint extraction / `_container_resolution` / `_container_candidates`
+    - interaction/runtime helpers fuer response mode / think filtering / output-model resolution
+    - keyword fallback / trigger router / requested skill extraction
+    - workspace/container event build + emitter delegation
+    - explicit deep/think markers / tool-name extraction
+    - home-info-vs-home-start detection / skill-router / blueprint-router glue
+    - context-append / failure-compact / final-cap / tool-context helpers
+    - skill-prefetch / container-verify / structure-summary / thinking execution
+    - class-body policy catalog binding statt grossem Inline-Attributblock
+    - api-/lifecycle-facade fuer process / stream / chunking / control / memory
+  - `core/orchestrator.py` liegt lokal jetzt bei `2870` statt `6161` Zeilen
+  - Clean-Install-/Release-Gate wurde lokal erfolgreich durchlaufen:
+    - `bash scripts/ops/trion_release_clean.sh --yes --non-interactive`
+    - Live Restore `status=success`
+    - Abschlussdiagnose `Status: HEALTHY`, `PASS=30`
+    - aktueller Restore-Report:
+      `logs/live_restore_report_20260409-202618.json`
+  - dabei stack-seitig gehaertet:
+    - `storage-broker` bereitet sein Named Volume per EntryPoint vor und droppt
+      danach auf UID/GID `1000`
+    - `jarvis-admin-api` bereitet `commander-data`, `storage-broker-data`,
+      `trion_home_data`, `memory-data`, `memory` und `memory_speicher` per
+      EntryPoint vor und droppt danach auf UID/GID `1000`
+    - Restore-/Reset-Skripte nutzen Admin-API-`docker exec`-Schreibpfade
+      explizit als `1000:1000`
+    - `trion_release_clean.sh` wartet nach Service-Restart vor der Diagnose auf
+      Admin-API- und Runtime-Readiness
+  - verifiziert ueber die zuletzt gezielten Suites mit:
+    - `161 passed` fuer Workspace-/Emitter-/Event-Drift-Pfade
+    - `156 passed` fuer Interaction-/Routing-/Skill-Context-Pfade
+    - `215 passed, 5 skipped` fuer Pipeline-/Context-/Budget-/Runtime-Safeguard-Pfade
+    - `100 passed, 2 skipped` fuer Class-Attr-/Import-/Runtime-Grundpfade
+    - `116 passed, 2 skipped` fuer API-/Control-/Runtime-Grundpfade
+- weiter gueltige Leitplanken:
   - keine Produktfeatures mit dem Refactor vermischen
-  - vor jedem Schnitt Pinning-Regressionen fuer Container-/Control-/Output-
+  - vor jedem weiteren Schnitt Pinning-Regressionen fuer Container-/Control-/Output-
     Pfade sichern
 
 ## Empfohlene nächste Schritte
@@ -407,10 +535,10 @@ Archivhinweis 2026-04-01:
 16. neuen `userdata`-Mount bei nächstem Recreate/Neu-Deploy praktisch verifizieren:
    - `/data/services/gaming-station/data/userdata -> /home/default/.local/share`
    - EOS-/Save-Dateien müssen danach ohne manuellen `chown` sauber entstehen
-17. Architekturpfad fuer `core/orchestrator.py` starten
-   - zuerst kurzer Audit der Funktionscluster
-   - dann erster Extraktionsschnitt fuer Domain-/Container-Policy
-   - erst spaeter stateful Streaming-/Sync-/Lifecycle-Pfade anfassen
+17. Architekturpfad fuer `core/orchestrator.py` nach Phase `1`, Semantik-Block
+   Response-Guard-Block und Output-Glue-Block weiterfuehren
+   - naechster Block: groessere stateful/runtime-nahe Pfade
+   - stateful Streaming-/Sync-/Lifecycle-Pfade weiter bewusst spaeter anfassen
 
 ## Mögliche spätere Ausbaustufen
 

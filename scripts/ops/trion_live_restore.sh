@@ -48,6 +48,7 @@ MEM_CONTAINER="mcp-sql-memory"
 MEM_DB="/app/data/memory.db"
 CMD_CONTAINER="jarvis-admin-api"
 CMD_DB="/app/data/commander.db"
+ADMIN_EXEC_USER="${TRION_ADMIN_EXEC_USER:-1000:1000}"
 DIGEST_WORKER="digest-worker"
 TRION_LABEL="trion.managed=true"
 
@@ -432,7 +433,7 @@ fi
 if $OPT_DRY_RUN; then
     echo "  [dry-run] prepare /trion-home/{${THD_JOINED}}"
 else
-    do_cmd docker exec -e THD_JOINED="${THD_JOINED}" "${CMD_CONTAINER}" sh -lc '
+    do_cmd docker exec --user "${ADMIN_EXEC_USER}" -e THD_JOINED="${THD_JOINED}" "${CMD_CONTAINER}" sh -lc '
 set -e
 if [ "'"${OPT_HARD}"'" = "true" ]; then
   rm -rf /trion-home/* /trion-home/.[!.]* 2>/dev/null || true
@@ -476,7 +477,7 @@ conn.close()
 PY
 
         PY_CMD_TABLES="$(py_list "${CMD_HARD_TABLES[@]}")"
-        do_cmd docker exec -i "${CMD_CONTAINER}" python3 - <<PY
+        do_cmd docker exec --user "${ADMIN_EXEC_USER}" -i "${CMD_CONTAINER}" python3 - <<PY
 import sqlite3
 conn=sqlite3.connect("${CMD_DB}")
 conn.execute("PRAGMA busy_timeout=5000")
@@ -559,7 +560,7 @@ if $OPT_RESEED_BLUEPRINTS; then
     if $OPT_DRY_RUN; then
         echo "  [dry-run] seed_default_blueprints()"
     else
-        if ! BP_OUT="$(docker exec -i "${CMD_CONTAINER}" python3 - <<'PY' 2>&1
+        if ! BP_OUT="$(docker exec --user "${ADMIN_EXEC_USER}" -i "${CMD_CONTAINER}" python3 - <<'PY' 2>&1
 import os
 import sqlite3
 from container_commander.blueprint_store import init_db, seed_default_blueprints, list_blueprints
@@ -646,7 +647,7 @@ PY
         if $OPT_DRY_RUN; then
             echo "  [dry-run] sync_blueprints_to_graph()"
         else
-            GS_OUT="$(do_cmd docker exec -i "${CMD_CONTAINER}" python3 - <<'PY'
+            GS_OUT="$(do_cmd docker exec --user "${ADMIN_EXEC_USER}" -i "${CMD_CONTAINER}" python3 - <<'PY'
 from container_commander.blueprint_store import sync_blueprints_to_graph
 print(sync_blueprints_to_graph())
 PY
@@ -749,7 +750,7 @@ else
     if $OPT_DRY_RUN; then
         echo "  [dry-run] ensure TRION home container via container_commander.mcp_tools._ensure_trion_home()"
     else
-        if ! HOME_OUT="$(docker exec -i "${CMD_CONTAINER}" python3 - <<'PY' 2>&1
+        if ! HOME_OUT="$(docker exec --user "${ADMIN_EXEC_USER}" -i "${CMD_CONTAINER}" python3 - <<'PY' 2>&1
 from container_commander.mcp_tools import _ensure_trion_home
 cid = _ensure_trion_home()
 print("HOME_METRIC_cid=" + str(cid))
@@ -760,7 +761,7 @@ PY
         else
             TRION_HOME_CID="$(echo "${HOME_OUT}" | awk -F= '/^HOME_METRIC_cid=/{print $2}' | tail -n1)"
             if [ -z "${TRION_HOME_CID}" ]; then
-                TRION_HOME_CID="$(docker exec -i "${CMD_CONTAINER}" python3 - <<'PY' 2>/dev/null || true
+                TRION_HOME_CID="$(docker exec --user "${ADMIN_EXEC_USER}" -i "${CMD_CONTAINER}" python3 - <<'PY' 2>/dev/null || true
 from container_commander.engine import list_containers
 for c in list_containers():
     if getattr(c, "blueprint_id", "") == "trion-home" and getattr(c, "status", None) and getattr(c.status, "value", "") == "running":
@@ -784,7 +785,7 @@ if $OPT_PULL_IMAGES; then
     if $OPT_DRY_RUN; then
         echo "  [dry-run] pull blueprint images from blueprint store"
     else
-        IMG_LIST="$(do_cmd docker exec -i "${CMD_CONTAINER}" python3 - <<'PY'
+        IMG_LIST="$(do_cmd docker exec --user "${ADMIN_EXEC_USER}" -i "${CMD_CONTAINER}" python3 - <<'PY'
 import sqlite3
 conn=sqlite3.connect('/app/data/commander.db')
 rows=conn.execute("SELECT DISTINCT image FROM blueprints WHERE image IS NOT NULL AND TRIM(image) != ''").fetchall()

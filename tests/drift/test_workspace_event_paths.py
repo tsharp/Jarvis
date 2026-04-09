@@ -35,6 +35,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from tests._orchestrator_layout import read_orchestrator_source
+
 # ---------------------------------------------------------------------------
 # Hilfsfunktionen
 # ---------------------------------------------------------------------------
@@ -94,7 +96,7 @@ class TestOnlyEmitterCallsFastLane:
 
     def test_orchestrator_has_no_direct_fast_lane_call(self):
         """core/orchestrator.py darf workspace_event_save nicht direkt aufrufen."""
-        src = _read("core/orchestrator.py")
+        src = read_orchestrator_source()
         count = _count_pattern(src, self._FAST_LANE_PATTERN)
         assert count == 0, (
             f"orchestrator.py ruft workspace_event_save direkt auf ({count}×). "
@@ -300,12 +302,12 @@ class TestEmitterMandatoryFields:
 
     def test_orchestrator_save_workspace_entry_delegates_to_emitter(self):
         """orchestrator._save_workspace_entry muss an get_workspace_emitter().persist() delegieren."""
-        src = _read("core/orchestrator.py")
+        src = read_orchestrator_source()
         # Finde die _save_workspace_entry Methode und prüfe ob sie workspace_event_emitter importiert
         match = re.search(
             r'def _save_workspace_entry\b.*?(?=\n    def |\Z)', src, re.DOTALL
         )
-        assert match, "orchestrator.py: _save_workspace_entry Methode nicht gefunden"
+        assert match, "PipelineOrchestrator source: _save_workspace_entry Methode nicht gefunden"
         body = match.group(0)
         assert "workspace_event_emitter" in body, (
             "orchestrator._save_workspace_entry delegiert nicht an workspace_event_emitter. "
@@ -314,11 +316,11 @@ class TestEmitterMandatoryFields:
 
     def test_orchestrator_save_container_event_delegates_to_emitter(self):
         """orchestrator._save_container_event muss an get_workspace_emitter().persist_container() delegieren."""
-        src = _read("core/orchestrator.py")
+        src = read_orchestrator_source()
         match = re.search(
             r'def _save_container_event\b.*?(?=\n    def |\Z)', src, re.DOTALL
         )
-        assert match, "orchestrator.py: _save_container_event Methode nicht gefunden"
+        assert match, "PipelineOrchestrator source: _save_container_event Methode nicht gefunden"
         body = match.group(0)
         assert "workspace_event_emitter" in body, (
             "orchestrator._save_container_event delegiert nicht an workspace_event_emitter. "

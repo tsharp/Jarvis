@@ -152,7 +152,6 @@ services:
     - big-bear-lobe-chat_default
     group_add:
     - '988'
-    user: 1000:1000
     restart: unless-stopped
     depends_on:
     - mcp-sql-memory
@@ -392,7 +391,6 @@ services:
     - 8089:8089
     networks:
     - big-bear-lobe-chat_default
-    user: 1000:1000
     restart: unless-stopped
 
 volumes:

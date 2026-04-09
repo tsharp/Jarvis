@@ -32,6 +32,10 @@ DIAG_SCRIPT="${SCRIPT_DIR}/trion_diagnose.sh"
 MANIFEST_PATH="${RESTORE_MANIFEST_PATH:-${REPO_ROOT}/seed/restore_manifest.json}"
 SHARED_SKILLS_DIR="${TRION_SHARED_SKILLS_DIR:-/DATA/AppData/MCP/Jarvis/shared_skills}"
 LOCK_FILE="${TRION_RELEASE_CLEAN_LOCK_FILE:-${REPO_ROOT}/memory_speicher/trion_release_clean.lock}"
+ADMIN_API_BASE="${TRION_ADMIN_API_BASE:-http://localhost:8200}"
+ADMIN_API_BASE="${ADMIN_API_BASE%/}"
+READY_WAIT_MAX_S="${TRION_RELEASE_CLEAN_READY_WAIT_MAX_S:-60}"
+READY_WAIT_DELAY_S="${TRION_RELEASE_CLEAN_READY_WAIT_DELAY_S:-2}"
 
 OPT_DRY_RUN=false
 OPT_PLAN=false
@@ -94,6 +98,29 @@ do_cmd() {
     return 0
   fi
   "$@"
+}
+
+wait_http_ready() {
+  local label="$1"
+  local url="$2"
+  local waited=0
+
+  if $OPT_DRY_RUN; then
+    echo -e "  ${DIM}[dry-run] wait for ${label}: ${url}${NC}"
+    return 0
+  fi
+
+  while [ "${waited}" -le "${READY_WAIT_MAX_S}" ]; do
+    if curl -fsS --max-time 3 "${url}" >/dev/null 2>&1; then
+      ok "${label} ready (${url})"
+      return 0
+    fi
+    sleep "${READY_WAIT_DELAY_S}"
+    waited=$((waited + READY_WAIT_DELAY_S))
+  done
+
+  err "${label} not ready after ${READY_WAIT_MAX_S}s (${url})"
+  return 1
 }
 
 parse_args() {
@@ -299,6 +326,8 @@ restart_services() {
   fi
   log "Phase 3: restart core services"
   do_cmd docker compose -f "${COMPOSE_FILE}" restart skill-server tool-executor jarvis-admin-api
+  wait_http_ready "Admin API" "${ADMIN_API_BASE}/health"
+  wait_http_ready "Runtime digest endpoint" "${ADMIN_API_BASE}/api/runtime/digest-state"
 }
 
 run_diagnose() {

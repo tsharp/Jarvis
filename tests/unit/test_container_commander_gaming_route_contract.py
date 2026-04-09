@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from tests._orchestrator_layout import read_orchestrator_source
+
 
 def _read(path: str) -> str:
     root = Path(__file__).resolve().parents[2]
@@ -447,7 +449,7 @@ def test_host_bridge_dockerfile_writes_unindented_start_script():
 
 
 def test_orchestrator_build_tool_args_has_gaming_fallbacks():
-    src = _read("core/orchestrator.py")
+    src = read_orchestrator_source()
     assert "if any(tok in lower for tok in (\"steam-headless\", \"sunshine\", \"gaming station\", \"gaming-station\", \"zocken\", \"moonlight\")):" in src
     assert "return {\"blueprint_id\": \"gaming-station\"}" in src
     assert "elif tool_name == \"blueprint_create\":" in src
