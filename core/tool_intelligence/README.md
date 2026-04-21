@@ -1,37 +1,69 @@
 # Tool Intelligence Module
 
-**Namespace:** `core.tool_intelligence`
-**Manager:** `ToolIntelligenceManager`
+Dieses Paket ist der Zielort fuer tool-nahe Fehlererkennung, Loesungssuche
+und gezielte Retry-/Reflection-Helfer.
 
-## Purpose
-This module handles the "Self-Correction" and "Resilience" capabilities of the Jarvis architecture. It sits between the Orchestrator and the Tool Execution, monitoring results for errors and attempting autonomous recovery.
+## Aktiver Zustand
 
-## Components
+- `manager.py`
+  Zentrale Fassade `ToolIntelligenceManager`.
+  Sie kombiniert Fehlererkennung, Suche nach frueheren Loesungen und
+  optionalen Auto-Retry.
 
-### 1. `manager.py`
-- **Role:** Central Facade / Entry Point.
-- **Responsibility:** Coordinates the flow between detection, search, and retry.
-- **Usage:** Injected into `PipelineOrchestrator`.
+- `error_detector.py`
+  Aktive Fehlererkennung und Fehlerklassifikation.
+  Erkennt nicht nur Top-Level-`error`-Felder, sondern auch semantische
+  verschachtelte Fehler in Tool-Resultaten.
 
-### 2. `error_detector.py`
-- **Role:** Analysis.
-- **Responsibility:** Inspects tool results (dicts, objects, strings) to determine if a failure occurred.
-- **Key Function:** `detect_tool_error(result)`
+- `auto_search.py`
+  Aktive Suche nach frueheren Loesungen.
+  Nutzt zwei Quellen:
+  den `archive_manager` und Workspace-Eintraege aus der SQLite-DB
+  unter `/app/memory_data/memory.db`.
 
-### 3. `auto_search.py`
-- **Role:** Knowledge Retrieval.
-- **Responsibility:** Searches both the `archive` (long-term) and `workspace_events` (short-term/FastLane) for past solutions to similar errors.
-- **Key Function:** `search_past_solutions(tool_name, error_msg)`
+- `auto_retry.py`
+  Verfuegbarer Retry-Helfer fuer retrybare Fehler.
+  Wird vom Manager lazy aktiviert, wenn:
+  ein Fehler als retrybar klassifiziert ist,
+  ein `tool_hub` vorhanden ist
+  und Original-Args vorliegen.
 
-### 4. `auto_retry.py` (Phase 3.5)
-- **Role:** Active Recovery.
-- **Responsibility:** Determines if an error is retryable and modifies parameters for a second attempt.
-- **Status:** *Pending Implementation*
+- `reflection_loop.py`
+  Verfuegbarer Regel-Helfer fuer eine alternative zweite Tool-Runde.
+  Das Modul ist im Paket exportiert, aber nicht der zentrale Standardpfad des
+  `ToolIntelligenceManager`.
 
-## Integration
-Used in `core/orchestrator.py`:
-```python
-self.tool_intelligence = ToolIntelligenceManager(self.archive_manager)
-# ...
-ti_result = self.tool_intelligence.handle_tool_result(tool_name, result, tool_args)
-```
+## Paketrolle
+
+Dieses Paket sitzt logisch zwischen Tool-Ergebnisbewertung und moeglicher
+Recovery:
+
+1. Tool-Resultat wird auf echte Fehler geprueft.
+2. Fehler werden in retrybar vs. nicht retrybar klassifiziert.
+3. Fruehere aehnliche Loesungen koennen aus Workspace/Archiv geholt werden.
+4. Bei passenden Fehlern kann ein gezielter Retry mit korrigierten Args
+   erfolgen.
+
+## Integrationslage
+
+Die produktive Integration laeuft ueber `core/orchestrator.py`.
+
+Dabei gilt:
+
+- `ToolIntelligenceManager` ist der sichtbare Entry-Point des Pakets.
+- `detect_tool_error(...)` wird auch direkt vom Orchestrator importiert.
+- `AutoRetry` ist kein reiner "Phase-3-Platzhalter" mehr, sondern ein
+  vorhandener Hilfsbaustein.
+- `ReflectionLoop` ist verfuegbar, aber nicht als Standardpfad dieser README
+  zu behandeln wie der Manager-Pfad.
+
+## Stable Surface
+
+Das Paket exportiert ueber `core.tool_intelligence`:
+
+- `ToolIntelligenceManager`
+- `detect_tool_error`
+- `classify_error`
+- `AutoSearch`
+- `AutoRetry`
+- `ReflectionLoop`

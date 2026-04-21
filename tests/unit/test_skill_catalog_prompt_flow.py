@@ -123,9 +123,9 @@ async def _build_skill_prompt_flow(user_text: str, raw_plan=None):
     set_runtime_tool_results(verified_plan, semantic_ctx["tool_results_text"])
     verified_plan["_selected_tools_for_prompt"] = ["list_skills"]
 
-    with patch("core.layers.output.get_enabled_tools", return_value=_TOOLS), \
-         patch("core.layers.output.get_output_tool_prompt_limit", return_value=10), \
-         patch("core.layers.output.get_output_tool_injection_mode", return_value="selected"):
+    with patch("core.layers.output.prompt.tool_injection.list_live_tools", return_value=_TOOLS), \
+         patch("core.layers.output.prompt.tool_injection.get_output_tool_prompt_limit", return_value=10), \
+         patch("core.layers.output.prompt.tool_injection.get_output_tool_injection_mode", return_value="selected"):
         prompt = OutputLayer().build_system_prompt(verified_plan, semantic_ctx["context_text"])
 
     return thinking_plan, verified_plan, semantic_ctx, prompt

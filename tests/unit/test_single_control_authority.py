@@ -38,7 +38,7 @@ Test coverage (23 Tests):
     18. test_executor_legacy_dual_approve_installs
     19. test_executor_legacy_dual_block_returns_decision
 
-  Part 6 — config.py getter
+  Part 6 — config getter
     20. test_get_skill_control_authority_default_is_skill_server
     21. test_get_skill_control_authority_env_override
     22. test_get_skill_control_authority_legacy_dual
@@ -560,21 +560,23 @@ class TestLegacyDualRollback(unittest.IsolatedAsyncioTestCase):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Part 6 — config.py getter
+# Part 6 — config getter
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class TestConfigGetter(unittest.TestCase):
     """get_skill_control_authority() returns correct value."""
 
     def _load_config(self):
-        """Load config.py with settings mock. Caller patches env as needed."""
+        """Load the config package with settings mock. Caller patches env as needed."""
         _settings_mod = MagicMock()
         _settings_mod.settings = MagicMock()
         _settings_mod.settings.get = lambda key, default="": default
 
         with patch.dict(sys.modules, {"utils.settings": _settings_mod}):
             spec = importlib.util.spec_from_file_location(
-                "config_test", os.path.join(_REPO_ROOT, "config.py")
+                "config_test",
+                os.path.join(_REPO_ROOT, "config", "__init__.py"),
+                submodule_search_locations=[os.path.join(_REPO_ROOT, "config")],
             )
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)

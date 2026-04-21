@@ -24,6 +24,8 @@ __pycache__/
 **/.windsurf/
 .mcp/
 **/.mcp/
+.obsidian/
+**/.obsidian/
 .env.local
 .env.secrets
 .env.*.local

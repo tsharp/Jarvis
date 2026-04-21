@@ -13,7 +13,6 @@ from utils.logger import log_info, log_error, log_debug
 from utils.json_parser import safe_parse_json
 from utils.role_endpoint_resolver import resolve_role_endpoint
 from core.llm_provider_client import resolve_role_provider, stream_prompt
-from mcp.hub import get_hub
 
 
 THINKING_PROMPT = """Du bist der THINKING-Layer von TRION.
@@ -49,6 +48,12 @@ AUSGABE: NUR dieses JSON, nichts anderes:
     "tone_confidence": 0.0,
     "needs_sequential_thinking": true/false,
     "sequential_complexity": 0,
+    "task_loop_candidate": true/false,
+    "task_loop_kind": "visible_multistep/none",
+    "task_loop_confidence": 0.0,
+    "estimated_steps": 0,
+    "needs_visible_progress": true/false,
+    "task_loop_reason": "Kurze Begründung oder null",
     "suggested_cim_modes": [],
     "suggested_tools": [],
     "reasoning_type": "causal/temporal/simulation/direct",
@@ -162,11 +167,12 @@ class ThinkingLayer:
         return self._model_override or get_thinking_model()
     
     async def analyze_stream(
-        self, 
-        user_text: str, 
+        self,
+        user_text: str,
         memory_context: str = "",
         available_tools: list = None,
         tone_signal: Optional[Dict[str, Any]] = None,
+        tool_hints: Optional[str] = None,
     ) -> AsyncGenerator[Tuple[str, bool, Dict[str, Any]], None]:
         """
         Analysiert die User-Anfrage MIT STREAMING.
@@ -191,14 +197,9 @@ class ThinkingLayer:
                 "Nutze dieses Signal als Leitplanke für dialog_act/response_tone/response_length_hint.\n\n"
             )
         
-        # Dynamic MCP Detection Rules
-        try:
-            mcp_rules = get_hub().get_system_knowledge("mcp_detection_rules")
-            if mcp_rules:
-                prompt += f"{mcp_rules}\n\n"
-                log_debug(f"[ThinkingLayer] Injected detection rules ({len(mcp_rules)} chars)")
-        except Exception as e:
-            log_error(f"[ThinkingLayer] Failed to inject detection rules: {e}")
+        if tool_hints:
+            prompt += f"{tool_hints}\n\n"
+            log_debug(f"[ThinkingLayer] Injected detection hints ({len(tool_hints)} chars)")
 
         prompt += f"USER-ANFRAGE:\n{user_text}\n\nDeine Überlegung:"
 
@@ -267,6 +268,7 @@ class ThinkingLayer:
         memory_context: str = "",
         available_tools: list = None,
         tone_signal: Optional[Dict[str, Any]] = None,
+        tool_hints: Optional[str] = None,
     ) -> Dict[str, Any]:
         """NON-STREAMING Version (Kompatibilität)."""
         plan = self._default_plan()
@@ -275,6 +277,7 @@ class ThinkingLayer:
             memory_context,
             available_tools,
             tone_signal=tone_signal,
+            tool_hints=tool_hints,
         ):
             if is_done:
                 plan = result
@@ -303,6 +306,12 @@ class ThinkingLayer:
             "tone_confidence": 0.55,
             "needs_sequential_thinking": False,
             "sequential_complexity": 3,
+            "task_loop_candidate": False,
+            "task_loop_kind": "none",
+            "task_loop_confidence": 0.0,
+            "estimated_steps": 0,
+            "needs_visible_progress": False,
+            "task_loop_reason": None,
             "suggested_cim_modes": [],
             "suggested_tools": [],
             "reasoning_type": "direct",

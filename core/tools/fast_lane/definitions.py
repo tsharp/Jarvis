@@ -4,6 +4,7 @@ import os
 import sqlite3
 import json
 import threading
+import urllib.request
 from pathlib import Path
 from datetime import datetime
 
@@ -403,6 +404,42 @@ class WorkspaceEventListTool(BaseNativeTool):
 
 
 # ==============================================================================
+# SECRETS TOOLS
+# ==============================================================================
+
+class ListSecretNamesTool(BaseNativeTool):
+    """Lists all secret names from the vault. Values are never returned."""
+
+    def execute(self) -> List[str]:
+        url = os.getenv(
+            "SECRETS_API_URL",
+            "http://jarvis-admin-api:8200/api/secrets/resolve",
+        )
+        # Derive the list endpoint from the resolve endpoint
+        base = url.rstrip("/")
+        if base.endswith("/resolve"):
+            base = base[: -len("/resolve")]
+        list_url = base.rstrip("/")
+
+        try:
+            req = urllib.request.Request(list_url)
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                payload = json.loads(resp.read())
+        except Exception as exc:
+            raise RuntimeError(f"list_secret_names: could not reach secrets endpoint: {exc}")
+
+        # Admin-API returns various shapes — normalise to a flat name list
+        if isinstance(payload, list):
+            names = [str(item) for item in payload if item]
+        elif isinstance(payload, dict):
+            names = [str(item) for item in (payload.get("names") or payload.get("secrets") or []) if item]
+        else:
+            names = []
+
+        return sorted(set(names))
+
+
+# ==============================================================================
 # TOOL REGISTRY
 # ==============================================================================
 
@@ -414,6 +451,7 @@ NATIVE_TOOLS = {
     "memory_search": MemorySearchTool,
     "workspace_event_save": WorkspaceEventSaveTool,
     "workspace_event_list": WorkspaceEventListTool,
+    "list_secret_names": ListSecretNamesTool,
 }
 
 
@@ -516,6 +554,20 @@ def get_fast_lane_tools_summary() -> List[Dict[str, Any]]:
                     "event_type": {"type": "string", "description": "Filter by event type."},
                     "limit": {"type": "integer", "description": "Max results.", "default": 20},
                 },
+                "required": [],
+            },
+        },
+        {
+            "name": "list_secret_names",
+            "mcp": "fast-lane",
+            "description": (
+                "Listet alle Secret-Namen aus dem Vault. "
+                "Werte werden niemals zurückgegeben — nur Namen (z. B. OPENAI_KEY). "
+                "Nutze dies um herauszufinden welche API-Keys konfiguriert sind."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
                 "required": [],
             },
         },

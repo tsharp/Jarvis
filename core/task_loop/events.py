@@ -9,6 +9,7 @@ from core.task_loop.contracts import TaskLoopSnapshot
 class TaskLoopEventType(str, Enum):
     STARTED = "task_loop_started"
     PLAN_UPDATED = "task_loop_plan_updated"
+    CONTEXT_UPDATED = "task_loop_context_updated"
     STEP_STARTED = "task_loop_step_started"
     STEP_ANSWERED = "task_loop_step_answered"
     STEP_COMPLETED = "task_loop_step_completed"

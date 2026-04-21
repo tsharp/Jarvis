@@ -2,6 +2,171 @@ import { log } from "./debug.js";
 
 const planState = new Map(); // planId -> { count: number, hasError: boolean, finished: boolean }
 
+// ─── Task-Loop live view ─────────────────────────────────────────────────────
+// Separate from the generic plan-event approach: task_loop_update events get
+// a live step-list view that updates in place instead of appending new rows.
+
+const taskLoopViewState = new Map(); // planId -> { planLength, stepEls: Map<title, el> }
+
+function _esc(text) {
+    return String(text ?? "")
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function _stepIcon(status) {
+    if (status === "completed")            return '<span class="text-green-400 font-bold">✓</span>';
+    if (status === "running")              return '<span class="text-blue-400 animate-pulse">◉</span>';
+    if (status === "waiting_for_approval") return '<span class="text-yellow-400">⚠</span>';
+    if (status === "waiting_for_user")     return '<span class="text-yellow-300">?</span>';
+    if (status === "blocked")              return '<span class="text-red-400">✗</span>';
+    if (status === "failed")               return '<span class="text-red-400">✗</span>';
+    return '<span class="text-gray-600">○</span>';
+}
+
+function _stepTextClass(status) {
+    if (status === "completed")            return "text-gray-400 line-through";
+    if (status === "running")              return "text-blue-200 font-medium";
+    if (status === "waiting_for_approval") return "text-yellow-300 font-medium";
+    if (status === "waiting_for_user")     return "text-yellow-200";
+    if (status === "blocked")              return "text-red-400";
+    if (status === "failed")               return "text-red-400";
+    return "text-gray-600";
+}
+
+function _stepBg(status) {
+    if (status === "running")              return "bg-blue-950/30 border border-blue-900/40";
+    if (status === "waiting_for_approval") return "bg-yellow-950/30 border border-yellow-900/40";
+    if (status === "waiting_for_user")     return "bg-yellow-950/20 border border-yellow-900/30";
+    if (status === "blocked" || status === "failed") return "bg-red-950/20 border border-red-900/30";
+    return "";
+}
+
+function _resolveStepStatus(stepTitle, completedSteps, pendingStep, currentStepStatus, isFinal, doneReason) {
+    if (completedSteps.has(stepTitle)) return "completed";
+    if (stepTitle !== pendingStep)     return "pending";
+    // Current step
+    if (isFinal) {
+        if (doneReason === "task_loop_completed")          return "completed";
+        if (doneReason === "task_loop_risk_gate_required") return "waiting_for_approval";
+        if (doneReason === "task_loop_user_decision_required") return "waiting_for_user";
+        return currentStepStatus || "blocked";
+    }
+    return "running";
+}
+
+function updateTaskLoopView(planId, payload) {
+    const stepsEl  = document.getElementById(`${planId}-steps`);
+    const titleEl  = document.getElementById(`${planId}-title`);
+    const iconEl   = document.querySelector(`#${planId} summary [data-lucide]`);
+    if (!stepsEl) return;
+
+    const tl = (payload.task_loop && typeof payload.task_loop === "object") ? payload.task_loop : {};
+    const isFinal       = Boolean(payload.is_final);
+    const doneReason    = String(payload.done_reason || "");
+    const currentPlan   = Array.isArray(tl.current_plan) ? tl.current_plan : [];
+    const completedSet  = new Set(Array.isArray(tl.completed_steps) ? tl.completed_steps : []);
+    const pendingStep   = String(tl.pending_step || "");
+    const stepStatus    = String(tl.current_step_status || "");
+    const stepRuntime   = (payload.step_runtime && typeof payload.step_runtime === "object") ? payload.step_runtime : {};
+    const planStepsMeta = Array.isArray(tl.plan_steps) ? tl.plan_steps : [];
+
+    // ── Header title + icon ──────────────────────────────────────────────────
+    if (titleEl) {
+        if (isFinal) {
+            if (doneReason === "task_loop_completed") {
+                titleEl.innerHTML = '<span class="text-green-400">Task-Loop abgeschlossen</span>';
+                if (iconEl) { iconEl.setAttribute("data-lucide", "check-circle-2"); iconEl.classList.remove("animate-pulse"); iconEl.classList.add("text-green-400"); }
+            } else if (doneReason === "task_loop_risk_gate_required") {
+                titleEl.innerHTML = '<span class="text-yellow-400">Freigabe erforderlich</span>';
+                if (iconEl) { iconEl.setAttribute("data-lucide", "shield-alert"); iconEl.classList.remove("animate-pulse"); iconEl.classList.add("text-yellow-400"); }
+            } else if (doneReason === "task_loop_user_decision_required") {
+                titleEl.innerHTML = '<span class="text-yellow-300">Wartet auf Eingabe</span>';
+                if (iconEl) { iconEl.setAttribute("data-lucide", "message-circle-question"); iconEl.classList.remove("animate-pulse"); iconEl.classList.add("text-yellow-300"); }
+            } else {
+                titleEl.innerHTML = `<span class="text-orange-400">Task-Loop gestoppt</span>`;
+                if (iconEl) { iconEl.setAttribute("data-lucide", "circle-stop"); iconEl.classList.remove("animate-pulse"); }
+            }
+        } else {
+            titleEl.textContent = "Task-Loop aktiv";
+        }
+        if (window.lucide) window.lucide.createIcons({ icons: window.lucide.icons, nameAttr: "data-lucide" });
+    }
+
+    if (!currentPlan.length) return;
+
+    // ── Build step list (once), then update each step's status ───────────────
+    const vs = taskLoopViewState.get(planId);
+    if (!vs || vs.planLength !== currentPlan.length) {
+        stepsEl.innerHTML = "";
+        const stepEls = new Map();
+        currentPlan.forEach((title, idx) => {
+            const el = document.createElement("details");
+            el.id = `${planId}-step-${idx}`;
+            stepsEl.appendChild(el);
+            stepEls.set(title, el);
+        });
+        taskLoopViewState.set(planId, { planLength: currentPlan.length, stepEls });
+    }
+
+    const sv = taskLoopViewState.get(planId);
+    if (!sv) return;
+
+    // Build capability lookup from plan_steps metadata
+    const capabilityMap = new Map();
+    planStepsMeta.forEach(s => {
+        if (s?.title && s?.requested_capability) {
+            const cap = s.requested_capability;
+            capabilityMap.set(s.title, cap.capability_action || cap.capability_type || "");
+        }
+    });
+
+    currentPlan.forEach((stepTitle, idx) => {
+        const el = sv.stepEls.get(stepTitle);
+        if (!el) return;
+
+        const status = _resolveStepStatus(stepTitle, completedSet, pendingStep, stepStatus, isFinal, doneReason);
+        const isCurrentStep = stepTitle === pendingStep;
+        const capability = capabilityMap.get(stepTitle) || "";
+
+        // Step type label (only for current running/waiting steps)
+        const runtimeType = isCurrentStep ? (stepRuntime.step_type || "") : "";
+        const showType = runtimeType && runtimeType !== "analysis" && !completedSet.has(stepTitle);
+
+        // Summary label: state-aware prefix + step title
+        const labelPrefix = {
+            completed:            `Schritt ${idx + 1} abgeschlossen`,
+            running:              `Schritt ${idx + 1} läuft`,
+            waiting_for_approval: `Schritt ${idx + 1} wartet auf Freigabe`,
+            waiting_for_user:     `Schritt ${idx + 1} wartet auf Eingabe`,
+            blocked:              `Schritt ${idx + 1} blockiert`,
+            failed:               `Schritt ${idx + 1} fehlgeschlagen`,
+        }[status] ?? `Schritt ${idx + 1}`;
+
+        // Auto-open for active/waiting steps; close completed/pending
+        const shouldBeOpen = status === "running" || status === "waiting_for_approval" || status === "waiting_for_user";
+        el.open = shouldBeOpen;
+
+        el.className = `rounded-lg text-xs transition-all duration-200 ${_stepBg(status)}`;
+        el.innerHTML = `
+            <summary class="flex items-center gap-2 px-2 py-1.5 cursor-pointer list-none select-none">
+                <span class="w-4 flex-shrink-0 text-center leading-none">${_stepIcon(status)}</span>
+                <span class="${_stepTextClass(status)} leading-relaxed break-words flex-1">
+                    ${_esc(labelPrefix)}: <span class="opacity-80">${_esc(stepTitle)}</span>
+                </span>
+            </summary>
+            <div class="px-8 pb-2 pt-0.5 space-y-1 text-[11px] text-gray-500">
+                ${capability ? `<div>Tool: <span class="font-mono text-gray-400">${_esc(capability)}</span></div>` : ""}
+                ${showType  ? `<div>Typ: <span class="italic">${_esc(runtimeType)}</span></div>` : ""}
+                ${status === "waiting_for_approval" ? `<div class="text-yellow-500">→ Schreibe "freigeben" um fortzufahren</div>` : ""}
+                ${status === "waiting_for_user"     ? `<div class="text-yellow-400">→ Warte auf deine Eingabe</div>` : ""}
+            </div>
+        `;
+    });
+
+    ensureAutoScroll();
+}
+
 function esc(text) {
     return String(text ?? "")
         .replace(/&/g, "&amp;")
@@ -189,6 +354,24 @@ function buildEventView(eventType, payload) {
             }),
         };
     }
+    if (eventType === "task_loop_routing") {
+        return {
+            title: "Task-Loop Routing",
+            badge: String(p.branch || "").includes("task_loop") ? "step" : "done",
+            detail: toText({
+                execution_mode: p.execution_mode,
+                turn_mode: p.turn_mode,
+                is_authoritative_task_loop_turn: p.is_authoritative_task_loop_turn,
+                active_task_loop_reason: p.active_task_loop_reason,
+                branch: p.branch,
+                task_loop_candidate: p.task_loop_candidate,
+                task_loop_kind: p.task_loop_kind,
+                task_loop_confidence: p.task_loop_confidence,
+                needs_visible_progress: p.needs_visible_progress,
+                task_loop_reason: p.task_loop_reason,
+            }),
+        };
+    }
     if (eventType === "task_loop_update") {
         const state = p.state || "";
         const stepIndex = p.task_loop?.step_index ?? "";
@@ -218,6 +401,37 @@ function buildEventView(eventType, payload) {
             }),
         };
     }
+    if (/^task_loop_/.test(eventType)) {
+        const labels = {
+            task_loop_started: "Task-Loop gestartet",
+            task_loop_plan_updated: "Task-Loop Plan aktualisiert",
+            task_loop_context_updated: "Task-Loop Kontext aktualisiert",
+            task_loop_step_started: "Task-Loop Schritt gestartet",
+            task_loop_step_answered: "Task-Loop Schritt beantwortet",
+            task_loop_step_completed: "Task-Loop Schritt abgeschlossen",
+            task_loop_reflection: "Task-Loop Reflexion",
+            task_loop_waiting_for_user: "Task-Loop wartet auf Eingabe",
+            task_loop_blocked: "Task-Loop blockiert",
+            task_loop_completed: "Task-Loop abgeschlossen",
+            task_loop_cancelled: "Task-Loop abgebrochen",
+        };
+        const badge = (
+            eventType === "task_loop_completed" ? "done"
+            : eventType === "task_loop_blocked" ? "error"
+            : eventType === "task_loop_cancelled" ? "warn"
+            : eventType === "task_loop_waiting_for_user" ? "step"
+            : "step"
+        );
+        return {
+            title: labels[eventType] || eventType,
+            badge,
+            detail: toText({
+                summary: p.summary || p.content || undefined,
+                source_layer: p.source_layer || undefined,
+                replay: p.replay || undefined,
+            }),
+        };
+    }
     return {
         title: eventType || "plan_event",
         badge: "step",
@@ -241,15 +455,19 @@ function updateHeader(planId) {
     const state = planState.get(planId);
     if (!state) return;
     const statusEl = document.getElementById(`${planId}-status`);
-    const titleEl = document.getElementById(`${planId}-title`);
-    if (!statusEl || !titleEl) return;
-    const stepText = `${state.count} Schritt${state.count === 1 ? "" : "e"}`;
+    if (!statusEl) return;
+
+    // For task-loop boxes, show plan length from taskLoopViewState
+    const tlvs = taskLoopViewState.get(planId);
+    const count = tlvs ? tlvs.planLength : state.count;
+    const stepText = count ? `${count} Schritt${count === 1 ? "" : "e"}` : "";
+
     if (state.hasError) {
-        statusEl.innerHTML = `${stepText} · <span class="text-red-400">Fehler</span>`;
+        statusEl.innerHTML = `${stepText}${stepText ? " · " : ""}<span class="text-red-400">Fehler</span>`;
     } else if (state.finished) {
-        statusEl.innerHTML = `${stepText} · <span class="text-green-400">Fertig</span>`;
+        statusEl.innerHTML = `${stepText}${stepText ? " · " : ""}<span class="text-green-400">Fertig</span>`;
     } else {
-        statusEl.textContent = stepText;
+        statusEl.textContent = stepText || "läuft…";
     }
 }
 
@@ -291,23 +509,29 @@ export function appendPlanEvent(planId, eventType, payload = {}) {
     const stepsEl = document.getElementById(`${planId}-steps`);
     if (!state || !stepsEl) return;
 
+    // Task-loop events get a live step-list view, not a <details> block.
+    // Handle state flags without incrementing the step counter.
+    if (eventType === "task_loop_update") {
+        if (Boolean(payload?.is_final) && String(payload?.done_reason || "") !== "task_loop_completed") {
+            state.hasError = true;
+        }
+        if (Boolean(payload?.is_final)) state.finished = true;
+        updateTaskLoopView(planId, payload);
+        updateHeader(planId);
+        return;
+    }
+
     const stepNo = state.count + 1;
     state.count = stepNo;
     if (
         eventType === "planning_error"
         || eventType === "sequential_error"
-        || (
-            eventType === "task_loop_update"
-            && Boolean(payload?.is_final)
-            && String(payload?.done_reason || "") !== "task_loop_completed"
-        )
     ) {
         state.hasError = true;
     }
     if (
         eventType === "planning_done"
         || eventType === "loop_trace_completed"
-        || (eventType === "task_loop_update" && Boolean(payload?.is_final))
     ) {
         state.finished = true;
     }
@@ -339,15 +563,19 @@ export function finalizePlanBox(planId, summary = "") {
     if (!state) return;
     state.finished = true;
 
-    const titleEl = document.getElementById(`${planId}-title`);
-    if (titleEl) {
-        titleEl.textContent = state.hasError ? "Planmodus (mit Fehlern)" : "Planmodus abgeschlossen";
-    }
+    // If this is a task-loop box, updateTaskLoopView already set the final title/icon
+    // on the is_final event — don't overwrite it here.
+    if (!taskLoopViewState.has(planId)) {
+        const titleEl = document.getElementById(`${planId}-title`);
+        if (titleEl) {
+            titleEl.textContent = state.hasError ? "Planmodus (mit Fehlern)" : "Planmodus abgeschlossen";
+        }
 
-    const icon = document.querySelector(`#${planId} summary [data-lucide]`);
-    if (icon) {
-        icon.classList.remove("animate-pulse");
-        icon.setAttribute("data-lucide", state.hasError ? "alert-triangle" : "check-circle");
+        const icon = document.querySelector(`#${planId} summary [data-lucide]`);
+        if (icon) {
+            icon.classList.remove("animate-pulse");
+            icon.setAttribute("data-lucide", state.hasError ? "alert-triangle" : "check-circle");
+        }
     }
 
     if (summary) {

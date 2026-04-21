@@ -600,11 +600,11 @@ class TestContainerEntityV1Fields:
 
 
 # ─────────────────────────────────────────────────────────────────
-# config.py TypedState Flags (Commit 1)
+# config TypedState Flags (Commit 1)
 # ─────────────────────────────────────────────────────────────────
 
 class TestConfigTypedStateFlags:
-    """config.py must expose TypedState toggle getters with stable defaults."""
+    """The config package must expose TypedState toggle getters with stable defaults."""
 
     def test_typedstate_mode_default_off(self):
         try:

@@ -26,7 +26,7 @@ from unittest.mock import MagicMock, patch
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO_ROOT = os.path.abspath(os.path.join(_HERE, "..", ".."))
-if not os.path.isfile(os.path.join(_REPO_ROOT, "config.py")):
+if not os.path.isfile(os.path.join(_REPO_ROOT, "config", "__init__.py")):
     _REPO_ROOT = "/DATA/AppData/MCP/Jarvis/Jarvis"
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
@@ -171,9 +171,9 @@ class TestContractPolicy(unittest.TestCase):
             self.assertEqual(obj.embedding_runtime_policy, policy)
 
     def test_p1_config_has_get_embedding_runtime_policy(self):
-        """config.py must define get_embedding_runtime_policy()."""
-        src = _read_source("config.py")
-        self.assertIn("def get_embedding_runtime_policy()", src)
+        """config/models/embedding.py must define get_embedding_runtime_policy()."""
+        src = _read_source("config/models/embedding.py")
+        self.assertIn("def get_embedding_runtime_policy", src)
 
     def test_p1_settings_routes_has_embedding_runtime_policy_field(self):
         """settings_routes.py EmbeddingRuntimeUpdate must have embedding_runtime_policy."""
@@ -613,8 +613,8 @@ class TestRegressionCallSites(unittest.TestCase):
         self.assertIn("effective_target=", src)
 
     def test_p6_embedding_resolver_has_routing_decision(self):
-        """utils/embedding_resolver.py must define RoutingDecision."""
-        src = _read_source("utils/embedding_resolver.py")
+        """utils/embedding/resolver.py must define RoutingDecision."""
+        src = _read_source("utils/embedding/resolver.py")
         self.assertIn("RoutingDecision", src)
         self.assertIn("hard_error", src)
         self.assertIn("effective_target", src)

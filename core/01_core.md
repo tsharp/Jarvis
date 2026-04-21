@@ -1,54 +1,77 @@
 # Core Modul Dokumentation (`/core`)
 
-Das `/core` Modul ist das zentrale Nervensystem des Frameworks. Hier laufen alle Fäden zusammen: State-Management, Layer-Orchestrierung und Memory-Zugriff.
+Das `/core`-Modul ist der aktive Laufzeitkern des Systems. Hier laufen
+Orchestrierung, Layer-Verdrahtung, Policy-Entscheidungen, Grounding,
+Tool-Ausfuehrung und mehrschrittige Task-Loops zusammen.
 
-## Wichtige Dateien
+## Wichtige Einstiegspunkte
 
--   **`bridge.py` (`CoreBridge`)**: Die Hauptklasse. Sie steuert den Ablauf `Thinking -> Control -> Output`.
--   **`models.py`**: Definiert die internen Datenstrukturen (`CoreChatRequest`, `CoreChatResponse`, `Message`).
--   **`layers/`**: Beinhaltet die Logik der drei kognitiven Schichten.
+- `bridge.py`
+  Rueckwaertskompatible Fassade. `CoreBridge` stellt weiter `get_bridge()`
+  bereit, delegiert die produktive Verarbeitung aber an den
+  `PipelineOrchestrator`.
 
-## Die Core Bridge (`bridge.py`)
+- `orchestrator.py`
+  Produktiver Integrationspunkt fuer Request-Verarbeitung, Streaming,
+  Layer-Aufrufe, MCP-Hub-Anbindung, Workspace-Events und Task-Loop-Einstieg.
 
-Die `CoreBridge` ist als Singleton implementiert (`get_bridge()`) und orchestriert die Anfrageverarbeitung.
+- `models.py`
+  Zentrale Request-/Response-Typen wie `CoreChatRequest` und
+  `CoreChatResponse`.
 
-### Hauptablauf (Pipeline)
+- `layers/`
+  Aktive Layer-Struktur mit `thinking.py`, `control/` und `output/`.
 
-1.  **Initialisierung**: `CoreBridge` wird instanziiert, lädt Layer.
-2.  **Memory Retrieval (`_search_memory_multi_context`)**:
-    *   Sucht parallel in zwei Kontexten:
-        *   `user` (aktuelle Konversation, Fakten über Danny).
-        *   `system` (Instruktionen, Tool-Dokumentation).
-    *   Nutzt Fakten-Suche, Graph-Suche und Semantische Suche.
-3.  **Layer-Exekution**:
-    *   Die Bridge ruft nacheinander die Layer auf (Logik in `layers/`).
-    *   Daten werden über `CoreChatRequest` und `CoreChatResponse` Objekte weitergereicht.
+- `orchestrator_modules/`
+  Ausgelagerte Hilfsmodule fuer Kontext, Policy, Runtime, Execution, Output
+  und Workspace-Event-Pfade.
 
-## Datenmodelle (`models.py`)
+- `task_loop/`
+  Eigener Bereich fuer mehrschrittige Planung, Step-Runtime und Runner.
 
-Zentralisierung der Datenstrukturen ist kritisch für die Stabilität.
+## Laufzeitbild
 
--   **`Message`**: Standarisiertes Format für Chat-Nachrichten (`role`, `content`).
--   **`CoreChatRequest`**:
-    *   Enthält alle Messages.
-    *   `conversation_id`: Trennung von Kontexten.
-    *   Metadaten vom Adapter.
--   **`CoreChatResponse`**:
-    *   Antwort-Text.
-    *   `done_reason`: Warum wurde gestoppt?
-    *   `classifier_result`: Was hat der Classifier am Anfang gesagt?
+Der produktive Request-Pfad ist heute:
 
-## Speicher-Strategie (Memory)
+1. `CoreBridge` oder ein direkter Call landet im `PipelineOrchestrator`.
+2. Der Orchestrator sammelt Kontext, Runtime-Signale und Routing-Hinweise.
+3. Thinking bereitet Intent und Arbeitsplan vor.
+4. Control verifiziert Plan, Policy und erlaubte Tools.
+5. Output erzeugt Antwort, fuehrt freigegebene Tools aus und haelt
+   Grounding-/Contract-Regeln ein.
+6. Falls noetig uebernimmt der `task_loop/`-Bereich die mehrschrittige
+   Weiterfuehrung derselben Aufgabe.
 
-Das Core-Modul unterscheidet strikt zwischen:
--   **User Memory**: Fakten über den Nutzer (Alter, Vorlieben, Aufgaben).
--   **System Memory**: "Wissen" des Assistenten über sich selbst und seine Tools.
+## Datenmodelle
 
-Die Methoden `_search_memory_multi_context` und `get_system_knowledge` stellen sicher, dass der Assistent Zugriff auf *beide* Wissenspools hat, ohne sie zu vermischen.
+- `CoreChatRequest`
+  Tragt Messages, `conversation_id`, Modellwahl und Adapter-Metadaten.
+
+- `CoreChatResponse`
+  Tragt Inhalt, `done_reason` und die Rueckgabe fuer Sync-/Stream-Caller.
+
+- `Message`
+  Standardformat fuer Chat-Nachrichten im Core-Pfad.
+
+## Architektur-Hinweise
+
+- `CoreBridge` bleibt wichtig als Compat-Surface, ist aber nicht mehr der
+  alleinige Besitzort der Pipeline-Logik.
+- Die eigentliche Implementierung ist inzwischen stark in Packages und
+  `orchestrator_modules/` aufgeteilt.
+- `core/layers/control` und `core/layers/output` sind aktive Packages, keine
+  alten Top-Level-Dateien mehr.
+- Der Task-Loop ist in die normale Orchestrierung integriert und kein
+  separater Nebenpfad.
 
 ## Wichtig zu beachten
 
 > [!IMPORTANT]
-> **Async Flow**: Die gesamte Bridge arbeitet asynchron. Blockierende Aufrufe sollten vermieden werden.
-> **Singleton**: `get_bridge()` garantiert, dass der State global konsistent bleibt.
-> **System Context**: Die `conversation_id="system"` ist reserviert für Tool-Definitionen und Meta-Wissen.
+> **Async Flow**: Die Kernpfade sind asynchron und fuer Streaming ausgelegt.
+> Blockierende Aufrufe im produktiven Pfad bleiben riskant.
+> **Compat Surface**: `get_bridge()` existiert weiter fuer bestehende Call-Sites
+> und Tests, auch wenn die eigentliche Laufzeit im `PipelineOrchestrator`
+> lebt.
+> **Referenzdoku**: Fuer die aktuelle Detailstruktur sind
+> `core/README.md`, `core/layers/README.md` und `core/task_loop/README.md`
+> die massgeblichen Uebersichten.

@@ -27,7 +27,7 @@ from unittest.mock import patch, MagicMock
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO_ROOT = os.path.abspath(os.path.join(_HERE, "..", ".."))
-if not os.path.isfile(os.path.join(_REPO_ROOT, "config.py")):
+if not os.path.isfile(os.path.join(_REPO_ROOT, "config", "__init__.py")):
     _REPO_ROOT = "/DATA/AppData/MCP/Jarvis/Jarvis"
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
@@ -305,8 +305,8 @@ class TestSourceInspection(unittest.TestCase):
                          "get_embedding() still references EMBEDDING_MODEL directly")
 
     def test_config_has_get_embedding_model_function(self):
-        src = _read_source("config.py")
-        self.assertIn("def get_embedding_model():", src)
+        src = _read_source("config/models/embedding.py")
+        self.assertIn("def get_embedding_model", src)
 
     def test_sqlmem_has_resolver_function(self):
         src = _read_source("sql-memory/embedding.py")

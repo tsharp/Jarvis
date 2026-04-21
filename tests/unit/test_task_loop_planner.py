@@ -1,4 +1,4 @@
-from core.task_loop.contracts import RiskLevel
+from core.task_loop.contracts import RiskLevel, TaskLoopStepType
 from core.task_loop.planner import (
     build_task_loop_steps,
     clean_task_loop_objective,
@@ -99,6 +99,49 @@ def test_build_task_loop_steps_marks_tool_steps_as_needing_confirmation():
     assert steps[2].risk_level is RiskLevel.NEEDS_CONFIRMATION
     assert steps[2].requires_user is True
     assert steps[2].suggested_tools == ["request_container"]
+    assert steps[2].step_type is TaskLoopStepType.TOOL_REQUEST
+    assert steps[2].requested_capability["capability_type"] == "container_manager"
+    assert steps[3].step_type is TaskLoopStepType.TOOL_EXECUTION
+    assert steps[3].suggested_tools == ["request_container"]
+
+
+def test_build_task_loop_steps_uses_capability_focused_template_for_container_requests():
+    steps = build_task_loop_steps(
+        "Bitte schrittweise arbeiten: pruefe wie du einen Gaming-Container anfordern wuerdest",
+        thinking_plan={
+            "intent": "Gaming-Container kontrolliert anfordern",
+            "hallucination_risk": "low",
+            "suggested_tools": ["request_container"],
+        },
+    )
+
+    assert steps[0].title == "Container-Anforderungsziel klaeren: Gaming-Container kontrolliert anfordern"
+    assert steps[1].title == "Fehlende Container-Angaben sammeln"
+    assert steps[2].title == "Container-Anfrage zur Freigabe vorbereiten"
+    assert steps[3].title == "Container-Anfrage ausfuehren"
+    assert steps[4].title == "Rueckfrage oder naechsten Container-Pfad zusammenfassen"
+
+
+def test_build_task_loop_steps_preserves_tool_step_metadata_on_complexity_rewrite():
+    steps = build_task_loop_steps(
+        "Bitte schrittweise arbeiten: pruefe wie du einen Gaming-Container anfordern wuerdest",
+        thinking_plan={
+            "intent": "Gaming-Container kontrolliert anfordern",
+            "hallucination_risk": "low",
+            "suggested_tools": ["request_container"],
+            "reasoning": "Fehlende Parameter gezielt einsammeln und danach kontrolliert anfragen.",
+            "sequential_complexity": 8,
+        },
+    )
+
+    assert steps[1].step_type is TaskLoopStepType.ANALYSIS
+    assert "Planhinweis" in steps[1].goal
+    assert steps[2].title == "Container-Anfrage zur Freigabe vorbereiten"
+    assert steps[2].step_type is TaskLoopStepType.TOOL_REQUEST
+    assert steps[2].suggested_tools == ["request_container"]
+    assert steps[2].requested_capability["capability_action"] == "request_container"
+    assert steps[3].title == "Container-Anfrage ausfuehren"
+    assert steps[3].step_type is TaskLoopStepType.TOOL_EXECUTION
 
 
 def test_create_task_loop_snapshot_carries_structured_plan_steps():
@@ -111,3 +154,97 @@ def test_create_task_loop_snapshot_carries_structured_plan_steps():
     assert snapshot.current_plan[0] == "Pruefziel festlegen: Loop pruefen"
     assert snapshot.plan_steps[0]["title"] == "Pruefziel festlegen: Loop pruefen"
     assert snapshot.pending_step == "Pruefziel festlegen: Loop pruefen"
+
+
+def test_build_task_loop_steps_blueprint_list_uses_container_manager_template():
+    steps = build_task_loop_steps(
+        "Zeige mir alle Container-Blueprints",
+        thinking_plan={
+            "intent": "Blueprints auflisten",
+            "hallucination_risk": "low",
+            "suggested_tools": ["blueprint_list"],
+        },
+    )
+
+    assert steps[0].title.startswith("Container-Anforderungsziel klaeren")
+    assert steps[1].title == "Fehlende Container-Angaben sammeln"
+    assert steps[2].step_type is TaskLoopStepType.TOOL_EXECUTION
+    assert steps[2].suggested_tools == ["blueprint_list"]
+
+
+def test_build_task_loop_steps_mixed_container_tools_scope_request_step_to_action_tool():
+    steps = build_task_loop_steps(
+        "Bitte schrittweise arbeiten: fordere einen Gaming-Container an",
+        thinking_plan={
+            "intent": "Gaming-Container kontrolliert anfordern",
+            "hallucination_risk": "low",
+            "suggested_tools": ["blueprint_list", "request_container"],
+        },
+    )
+
+    assert steps[1].title == "Verfuegbare Blueprints oder Container-Basis pruefen"
+    assert steps[1].step_type is TaskLoopStepType.TOOL_EXECUTION
+    assert steps[1].suggested_tools == ["blueprint_list"]
+    assert steps[1].requested_capability["capability_action"] == "blueprint_list"
+    assert steps[2].title == "Container-Anfrage zur Freigabe vorbereiten"
+    assert steps[2].step_type is TaskLoopStepType.TOOL_REQUEST
+    assert steps[2].suggested_tools == ["request_container"]
+    assert steps[2].requested_capability["capability_type"] == "container_manager"
+    assert steps[2].requested_capability["capability_action"] == "request_container"
+    assert steps[3].title == "Container-Anfrage ausfuehren"
+    assert steps[3].step_type is TaskLoopStepType.TOOL_EXECUTION
+    assert steps[3].suggested_tools == ["request_container"]
+    assert steps[3].requested_capability["capability_action"] == "request_container"
+
+
+def test_build_task_loop_steps_carries_python_container_capability_context():
+    steps = build_task_loop_steps(
+        "Bitte plane einen Python-Container fuer Datenanalyse",
+        thinking_plan={
+            "intent": "Python-Container fuer Datenanalyse vorbereiten",
+            "hallucination_risk": "low",
+            "suggested_tools": ["request_container"],
+            "_container_capability_context": {
+                "request_family": "python_container",
+                "python_requested": True,
+                "known_fields": {},
+            },
+        },
+    )
+
+    assert steps[1].title == "Verfuegbare Blueprints oder Container-Basis pruefen"
+    assert steps[1].suggested_tools == ["blueprint_list"]
+    assert steps[2].capability_context["request_family"] == "python_container"
+    assert steps[2].capability_context["python_requested"] is True
+
+
+def test_build_task_loop_steps_collection_step_does_not_require_user():
+    steps = build_task_loop_steps(
+        "Starte einen neuen Container",
+        thinking_plan={
+            "intent": "Container starten",
+            "hallucination_risk": "low",
+            "suggested_tools": ["request_container"],
+        },
+    )
+
+    # Collection step "Fehlende Container-Angaben sammeln" is SAFE and autonomous:
+    # the AI fills gaps with sensible defaults instead of blocking on user input.
+    collection_step = steps[1]
+    assert collection_step.title == "Fehlende Container-Angaben sammeln"
+    assert collection_step.risk_level is RiskLevel.SAFE
+    assert collection_step.requires_user is False
+
+
+def test_build_task_loop_steps_non_collection_safe_step_has_requires_user_false():
+    steps = build_task_loop_steps(
+        "Starte einen neuen Container",
+        thinking_plan={
+            "intent": "Container starten",
+            "hallucination_risk": "low",
+            "suggested_tools": ["request_container"],
+        },
+    )
+
+    # Step 1 (goal clarification) is SAFE and NOT a collection step
+    assert steps[0].requires_user is False

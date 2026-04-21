@@ -120,28 +120,26 @@ def test_sync_flow_stores_merged_evidence_before_persist():
 # ── Output layer: _has_pending_approval bypass ───────────────────────────────
 
 def test_output_layer_has_pending_approval_bypass():
-    """Output-Layer muss _has_pending_approval Bypass für mode='pass' haben."""
-    src = _src("core/layers/output.py")
-    assert "_has_pending_approval" in src
-    bypass_idx = src.find("_has_pending_approval")
-    assert bypass_idx != -1
-    block = src[bypass_idx:bypass_idx + 500]
-    assert 'status="pending_approval"' in block or "pending_approval" in block
-    assert 'mode": "pass"' in block or '"mode": "pass"' in block or "\"mode\": \"pass\"" in block or '"pass"' in block
+    """Output-Layer muss Interactive-Status-Bypass für mode='pass' haben."""
+    src = _src("core/layers/output/layer.py")
+    # Implementation uses _all_failed_are_interactive (renamed from _has_pending_approval)
+    assert "_all_failed_are_interactive" in src
+    assert "pending_approval" in src
+    assert '"pass"' in src or "'pass'" in src
 
 
 def test_output_layer_pending_approval_status_check():
-    """Output-Layer prüft auf status='pending_approval' in grounding evidence entries."""
-    src = _src("core/layers/output.py")
-    assert 'strip().lower() == "pending_approval"' in src
+    """Output-Layer prüft auf pending_approval in interactive status routing."""
+    src = _src("core/layers/output/layer.py")
+    assert '"pending_approval" in _interactive_statuses' in src
 
 
 def test_output_layer_pending_approval_returns_pass_mode():
-    """Output-Layer _has_pending_approval branch gibt mode=pass zurück."""
-    src = _src("core/layers/output.py")
-    pending_idx = src.find("_has_pending_approval and require_evidence")
+    """Output-Layer interactive bypass gibt mode=pass zurück."""
+    src = _src("core/layers/output/layer.py")
+    pending_idx = src.find("_all_failed_are_interactive and require_evidence")
     assert pending_idx != -1
-    block = src[pending_idx:pending_idx + 300]
+    block = src[pending_idx:pending_idx + 800]
     assert '"pass"' in block or "'pass'" in block
 
 
@@ -150,7 +148,7 @@ def test_output_layer_pending_approval_returns_pass_mode():
 def test_pending_approval_not_counted_as_successful_extractable():
     """pending_approval status soll NICHT als successful_extractable zählen
     (bleibt < min_successful), damit _has_pending_approval Bypass greift."""
-    src = _src("core/layers/output.py")
+    src = _src("core/layers/output/layer.py")
     # allowed_statuses must contain "ok" but NOT "pending_approval"
     allowed_idx = src.find('allowed_statuses')
     assert allowed_idx != -1

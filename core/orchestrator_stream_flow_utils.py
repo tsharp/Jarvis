@@ -32,6 +32,7 @@ from core.control_contract import (
     persist_execution_result,
     tool_allowed_by_control_decision,
 )
+from core.task_loop.context_writeback import persist_context_only_turn
 from core.plan_runtime_bridge import (
     append_runtime_tool_results,
     get_runtime_grounding_evidence,
@@ -81,6 +82,12 @@ def _build_thinking_ui_payload(plan: Optional[Dict[str, Any]], **overrides: Any)
         "final_execution_tools": final_execution_tools,
         "hallucination_risk": base.get("hallucination_risk", "medium"),
         "needs_sequential_thinking": bool(base.get("needs_sequential_thinking", False)),
+        "task_loop_candidate": bool(base.get("task_loop_candidate", False)),
+        "task_loop_kind": base.get("task_loop_kind"),
+        "task_loop_confidence": base.get("task_loop_confidence"),
+        "estimated_steps": base.get("estimated_steps"),
+        "needs_visible_progress": bool(base.get("needs_visible_progress", False)),
+        "task_loop_reason": base.get("task_loop_reason"),
         "response_length_hint": base.get("response_length_hint"),
         "resolution_strategy": (
             base.get("resolution_strategy")
@@ -113,9 +120,33 @@ def _build_thinking_ui_payload(plan: Optional[Dict[str, Any]], **overrides: Any)
             if isinstance(base.get("_loop_trace_normalization"), dict)
             else []
         ),
+        "authoritative_execution_mode": base.get("_authoritative_execution_mode") or base.get("execution_mode"),
+        "authoritative_turn_mode": base.get("_authoritative_turn_mode") or base.get("turn_mode"),
     }
     payload.update(overrides)
     return {key: value for key, value in payload.items() if value is not None}
+
+
+def _build_task_loop_routing_payload(
+    verified_plan: Optional[Dict[str, Any]],
+    *,
+    routing_decision,
+) -> Dict[str, Any]:
+    plan = dict(verified_plan or {})
+    return {
+        "type": "task_loop_routing",
+        "execution_mode": str(routing_decision.execution_mode or "").strip().lower(),
+        "turn_mode": str(routing_decision.turn_mode or "").strip().lower(),
+        "authority_source": str(routing_decision.authority_source or "").strip(),
+        "is_authoritative_task_loop_turn": bool(routing_decision.is_authoritative_task_loop_turn),
+        "active_task_loop_reason": str(routing_decision.active_task_loop_reason or "").strip(),
+        "branch": str(routing_decision.branch or "").strip(),
+        "task_loop_candidate": bool(plan.get("task_loop_candidate", False)),
+        "task_loop_kind": plan.get("task_loop_kind"),
+        "task_loop_confidence": plan.get("task_loop_confidence"),
+        "needs_visible_progress": bool(plan.get("needs_visible_progress", False)),
+        "task_loop_reason": plan.get("task_loop_reason"),
+    }
 
 async def process_stream_with_events(
     orch: Any,
@@ -192,21 +223,14 @@ async def process_stream_with_events(
         except Exception as e:
             log_info_fn(f"[Orchestrator] Intent check skipped: {e}")
 
-    from core.orchestrator_modules.task_loop import is_task_loop_request, stream_task_loop_events
-    if is_task_loop_request(user_text, request):
-        orch.lifecycle.finish_task(req_id_str, {"task_loop": True, "stream": True})
-        orch._post_task_processing()
-        async for event in stream_task_loop_events(
-            orch,
-            request,
-            user_text,
-            conversation_id,
-            log_info_fn=log_info_fn,
-            log_warn_fn=log_warn_fn,
-            tone_signal=tone_signal,
-        ):
-            yield event
-        return
+    from core.orchestrator_modules.task_loop import (
+        clear_active_task_loop,
+        get_active_task_loop_snapshot,
+        inject_active_task_loop_context,
+        stream_task_loop_events,
+    )
+    from core.orchestrator_modules.task_loop_routing import decide_task_loop_routing
+    active_task_loop_snapshot = get_active_task_loop_snapshot(conversation_id)
     
     # ═══════════════════════════════════════════════════
     # STEP 0.5: CHUNKING (large inputs)
@@ -402,11 +426,21 @@ async def process_stream_with_events(
                     _thinking_user_text = f"{user_text}. [Kontext: {_ctx_snippet}]"
                     log_info_fn("[Orchestrator] A-Enrichment: ThinkingLayer user_text angereichert [stream]")
 
+                from core.tool_exposure import build_available_tools_snapshot, build_detection_hints
+
+                _hub_ref = getattr(orch, "mcp_hub", None)
+                available_tools_snapshot = build_available_tools_snapshot(
+                    selected_tools,
+                    hub=_hub_ref,
+                )
+                tool_hints = build_detection_hints(hub=_hub_ref)
+
                 async for chunk, is_done, plan in orch.thinking.analyze_stream(
                     _thinking_user_text,
                     memory_context=_thinking_skill_ctx,
-                    available_tools=selected_tools,
+                    available_tools=available_tools_snapshot,
                     tone_signal=tone_signal,
+                    tool_hints=tool_hints,
                 ):
                     if not is_done:
                         yield ("", False, {
@@ -445,6 +479,12 @@ async def process_stream_with_events(
         orch, user_text, request, thinking_plan, selected_tools,
         query_budget_signal, domain_route_signal, forced_response_mode,
         conversation_id, log_info_fn,
+    )
+    thinking_plan = inject_active_task_loop_context(
+        thinking_plan,
+        active_task_loop_snapshot,
+        user_text=user_text,
+        raw_request=getattr(request, "raw_request", None),
     )
     log_info_fn(f"[Orchestrator] response_mode={response_mode_stream} (stream)")
     _loop_trace_normalized = build_loop_trace_plan_normalized_event(thinking_plan)
@@ -814,6 +854,79 @@ async def process_stream_with_events(
             "skipped": skip_control,
         },
     )
+
+    routing_decision = decide_task_loop_routing(
+        user_text,
+        active_task_loop_snapshot,
+        verified_plan,
+        raw_request=getattr(request, "raw_request", None),
+    )
+
+    yield (
+        "",
+        False,
+        _build_task_loop_routing_payload(
+            verified_plan,
+            routing_decision=routing_decision,
+        ),
+    )
+
+    if routing_decision.use_task_loop and active_task_loop_snapshot is not None:
+        orch.lifecycle.finish_task(
+            req_id_str,
+            {
+                "task_loop": True,
+                "stream": True,
+                "turn_mode": routing_decision.turn_mode or "task_loop",
+                "active_loop_reason": routing_decision.active_task_loop_reason,
+            },
+        )
+        orch._post_task_processing()
+        async for event in stream_task_loop_events(
+            orch,
+            request,
+            user_text,
+            conversation_id,
+            log_info_fn=log_info_fn,
+            log_warn_fn=log_warn_fn,
+            tone_signal=tone_signal,
+            thinking_plan=verified_plan,
+            force_start=routing_decision.force_start,
+        ):
+            yield event
+        return
+    elif routing_decision.clear_active_loop:
+        clear_active_task_loop(conversation_id)
+        verified_plan["_active_task_loop_reason"] = routing_decision.active_task_loop_reason
+        log_info_fn(f"[TaskLoop] active loop cleared reason={routing_decision.active_task_loop_reason}")
+    elif routing_decision.context_only:
+        verified_plan["_active_task_loop_reason"] = routing_decision.active_task_loop_reason
+        log_info_fn("[TaskLoop] active loop kept as context-only turn")
+
+    if routing_decision.use_task_loop and active_task_loop_snapshot is None:
+        orch.lifecycle.finish_task(
+            req_id_str,
+            {
+                "task_loop": True,
+                "stream": True,
+                "turn_mode": routing_decision.turn_mode or "task_loop",
+                "active_loop_reason": routing_decision.active_task_loop_reason,
+            },
+        )
+        orch._post_task_processing()
+        async for event in stream_task_loop_events(
+            orch,
+            request,
+            user_text,
+            conversation_id,
+            log_info_fn=log_info_fn,
+            log_warn_fn=log_warn_fn,
+            tone_signal=tone_signal,
+            thinking_plan=verified_plan,
+            force_start=routing_decision.force_start,
+        ):
+            yield event
+        return
 
     # ═══════════════════════════════════════════════════
     # LOOP ENGINE TRIGGER CHECK
@@ -2079,11 +2192,10 @@ async def process_stream_with_events(
     )
     verified_plan["_ctx_trace"] = ctx_trace_stream
     verified_plan["_response_mode"] = response_mode_stream
-    if "skill_catalog" in ctx_trace_stream:
-        yield ("", False, {
-            "type": "thinking_trace",
-            "thinking": _build_thinking_ui_payload(verified_plan, source="trace"),
-        })
+    yield ("", False, {
+        "type": "thinking_trace",
+        "thinking": _build_thinking_ui_payload(verified_plan, source="trace"),
+    })
 
     from core.orchestrator_pipeline_stages import prepare_output_invocation
     resolved_output_model_stream, memory_required_but_missing_stream = prepare_output_invocation(
@@ -2214,13 +2326,10 @@ async def process_stream_with_events(
                     summary="Antwort wurde nach dem Schreiben konsistent korrigiert.",
                     reasons=["consistency_guard"],
                 ))
-    if isinstance(verified_plan.get("_ctx_trace"), dict) and isinstance(
-        verified_plan["_ctx_trace"].get("skill_catalog"), dict
-    ):
-        yield ("", False, {
-            "type": "thinking_trace",
-            "thinking": _build_thinking_ui_payload(verified_plan, source="trace_final"),
-        })
+    yield ("", False, {
+        "type": "thinking_trace",
+        "thinking": _build_thinking_ui_payload(verified_plan, source="trace_final"),
+    })
     
     # ═══════════════════════════════════════════════════
     # STEP 4: MEMORY SAVE
@@ -2254,6 +2363,32 @@ async def process_stream_with_events(
     )
     if ws_done:
         yield ("", False, ws_done)
+
+    if routing_decision.context_only and active_task_loop_snapshot is not None:
+        updated_snapshot, _event, workspace_updates, _event_ids = persist_context_only_turn(
+            active_task_loop_snapshot,
+            full_response,
+            done_reason=_final_done_reason,
+            save_workspace_entry_fn=getattr(orch, "_save_workspace_entry", None),
+        )
+        from core.task_loop.store import get_task_loop_store
+        get_task_loop_store().put(updated_snapshot)
+        yield (
+            "",
+            False,
+            {
+                "type": "task_loop_update",
+                "state": updated_snapshot.state.value,
+                "done_reason": "task_loop_context_updated",
+                "task_loop": updated_snapshot.to_dict(),
+                "event_types": ["task_loop_context_updated"],
+                "is_final": False,
+                "context_only": True,
+            },
+        )
+        for workspace_update in workspace_updates:
+            yield ("", False, workspace_update)
+        log_info_fn("[TaskLoop] context-only stream turn written back to active loop")
 
     _correction_count = 0
     if isinstance(_analysis_guard_violation, dict) and _analysis_guard_violation.get("violated"):

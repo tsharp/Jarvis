@@ -255,6 +255,7 @@ VALID_SKIP_REASONS: Tuple[str, ...] = (
     "control_disabled",
     "fact_query_requires_control",
     "hardware_gate_requires_control",
+    "task_loop_candidate_requires_control",
     "control_required",
     "sensitive_tools",
     "creation_keywords",

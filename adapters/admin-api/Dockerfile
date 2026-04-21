@@ -15,7 +15,7 @@ COPY core /app/core
 COPY maintenance /app/maintenance
 COPY utils /app/utils
 COPY mcp /app/mcp
-COPY config.py /app/config.py
+COPY config /app/config
 
 # Copy lobechat adapter (needed for chat endpoint)
 COPY adapters/lobechat /app/adapters/lobechat

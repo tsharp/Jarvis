@@ -47,7 +47,7 @@ def test_grounding_precheck_missing_evidence_uses_fallback_mode_without_hard_blo
         "suggested_tools": ["get_system_info"],
     }
     set_runtime_grounding_evidence(plan, [])
-    with patch("core.layers.output.load_grounding_policy", return_value=_policy()):
+    with patch("core.layers.output.layer.load_grounding_policy", return_value=_policy()):
         precheck = layer._grounding_precheck(plan, memory_data="")
     assert precheck["blocked"] is False
     assert precheck.get("mode") == "missing_evidence_fallback"
@@ -63,7 +63,7 @@ def test_grounding_precheck_conversational_mode_does_not_require_evidence_for_su
         "suggested_tools": ["request_container"],
     }
     set_runtime_grounding_evidence(plan, [])
-    with patch("core.layers.output.load_grounding_policy", return_value=_policy()):
+    with patch("core.layers.output.layer.load_grounding_policy", return_value=_policy()):
         precheck = layer._grounding_precheck(plan, memory_data="")
     assert precheck["blocked"] is False
     assert precheck.get("mode") == "pass"
@@ -81,7 +81,7 @@ def test_grounding_precheck_tool_error_uses_fallback_mode_without_hard_block():
             "key_facts": ["cron interval 60s is below policy minimum 300s"],
         }
     ])
-    with patch("core.layers.output.load_grounding_policy", return_value=_policy()):
+    with patch("core.layers.output.layer.load_grounding_policy", return_value=_policy()):
         precheck = layer._grounding_precheck(plan, memory_data="")
     assert precheck["blocked"] is False
     assert precheck.get("blocked_reason") == "tool_execution_failed"
@@ -110,7 +110,7 @@ def test_grounding_precheck_needs_clarification_passes_through():
             }
         ],
     )
-    with patch("core.layers.output.load_grounding_policy", return_value=_policy()):
+    with patch("core.layers.output.layer.load_grounding_policy", return_value=_policy()):
         precheck = layer._grounding_precheck(plan, memory_data="")
     assert precheck["blocked"] is False
     assert precheck.get("mode") == "pass"
@@ -219,7 +219,7 @@ def test_analysis_turn_prompt_includes_guard_rules():
         "needs_sequential_thinking": True,
         "is_fact_query": False,
     }
-    with patch("core.layers.output.load_grounding_policy", return_value=_policy()):
+    with patch("core.layers.output.layer.load_grounding_policy", return_value=_policy()):
         prompt = layer.build_system_prompt(plan, memory_data="")
     assert "### ANALYSE-GUARD:" in prompt
     assert "konzeptionelle Analyse ohne Runtime-Nachweise" in prompt
@@ -265,10 +265,10 @@ def test_output_budget_caps_interactive_analytical_query():
         "response_length_hint": "medium",
         "_query_budget": {"query_type": "analytical"},
     }
-    with patch("core.layers.output.get_output_char_cap_interactive", return_value=2600), \
-         patch("core.layers.output.get_output_char_target_interactive", return_value=1600), \
-         patch("core.layers.output.get_output_char_cap_interactive_analytical", return_value=1400), \
-         patch("core.layers.output.get_output_char_target_interactive_analytical", return_value=1000):
+    with patch("core.layers.output.layer.get_output_char_cap_interactive", return_value=2600), \
+         patch("core.layers.output.layer.get_output_char_target_interactive", return_value=1600), \
+         patch("core.layers.output.layer.get_output_char_cap_interactive_analytical", return_value=1400), \
+         patch("core.layers.output.layer.get_output_char_target_interactive_analytical", return_value=1000):
         budgets = layer._resolve_output_budgets(plan)
     assert budgets["hard_cap"] == 1400
     assert budgets["soft_target"] <= 1000
@@ -618,7 +618,7 @@ def test_grounding_precheck_strict_fact_mode_returns_evidence_summary():
     ])
     policy = _policy()
     policy["output"]["fact_query_response_mode"] = "evidence_summary"
-    with patch("core.layers.output.load_grounding_policy", return_value=policy):
+    with patch("core.layers.output.layer.load_grounding_policy", return_value=policy):
         precheck = layer._grounding_precheck(plan, memory_data="")
     assert precheck["blocked"] is False
     assert precheck.get("mode") == "evidence_summary_fallback"
@@ -729,9 +729,9 @@ def test_generate_stream_skill_catalog_context_repair_does_not_leak_grounding_la
                      "Einordnung: Built-in Tools sind davon getrennt."
                  ),
              ), \
-             patch("core.layers.output.resolve_role_provider", return_value="ollama"), \
+             patch("core.layers.output.layer.resolve_role_provider", return_value="ollama"), \
              patch(
-                 "core.layers.output.resolve_role_endpoint",
+                 "core.layers.output.layer.resolve_role_endpoint",
                  return_value={
                      "requested_target": "local",
                      "effective_target": "local",
@@ -741,7 +741,7 @@ def test_generate_stream_skill_catalog_context_repair_does_not_leak_grounding_la
                      "endpoint": "http://example.invalid",
                  },
              ), \
-             patch("core.layers.output.stream_chat", new=_fake_stream_chat):
+             patch("core.layers.output.layer.stream_chat", new=_fake_stream_chat):
             async for chunk in layer.generate_stream(
                 user_text="Welche Skills hast du?",
                 verified_plan=plan,
@@ -780,9 +780,9 @@ def test_generate_stream_non_skill_tail_repair_keeps_visible_grounding_label():
         chunks = []
         with patch.object(layer, "_grounding_precheck", return_value=precheck), \
              patch.object(layer, "_grounding_postcheck", return_value="Verifizierte Korrektur."), \
-             patch("core.layers.output.resolve_role_provider", return_value="ollama"), \
+             patch("core.layers.output.layer.resolve_role_provider", return_value="ollama"), \
              patch(
-                 "core.layers.output.resolve_role_endpoint",
+                 "core.layers.output.layer.resolve_role_endpoint",
                  return_value={
                      "requested_target": "local",
                      "effective_target": "local",
@@ -792,7 +792,7 @@ def test_generate_stream_non_skill_tail_repair_keeps_visible_grounding_label():
                      "endpoint": "http://example.invalid",
                  },
              ), \
-             patch("core.layers.output.stream_chat", new=_fake_stream_chat):
+             patch("core.layers.output.layer.stream_chat", new=_fake_stream_chat):
             async for chunk in layer.generate_stream(
                 user_text="Taugt das fuer 70B?",
                 verified_plan=plan,
@@ -1078,7 +1078,7 @@ def test_grounding_precheck_header_only_ok_evidence_uses_missing_evidence_fallba
             "key_facts": [],
         }
     ])
-    with patch("core.layers.output.load_grounding_policy", return_value=_policy()):
+    with patch("core.layers.output.layer.load_grounding_policy", return_value=_policy()):
         precheck = layer._grounding_precheck(plan, memory_data="")
     assert precheck["blocked"] is False
     assert precheck.get("mode") == "missing_evidence_fallback"
@@ -1105,7 +1105,7 @@ def test_grounding_precheck_accepts_carryover_evidence_with_content():
             ],
         }
     ])
-    with patch("core.layers.output.load_grounding_policy", return_value=_policy()):
+    with patch("core.layers.output.layer.load_grounding_policy", return_value=_policy()):
         precheck = layer._grounding_precheck(plan, memory_data="")
     assert precheck["blocked"] is False
     assert precheck.get("mode") == "pass"

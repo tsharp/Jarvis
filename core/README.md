@@ -1,114 +1,104 @@
-# TRION Core Module Documentation
+# Core Architecture
 
-**Path:** `/DATA/AppData/MCP/Jarvis/Jarvis/core/`
-**Version:** 4.0 (Adaptive Architecture)
-**Last Updated:** 2026-02-07
+Dieses Verzeichnis ist der aktive Kern der TRION-Laufzeit.
 
-## 1. Overview
+Die fruehere Beschreibung als starre "4-Layer-Architektur" mit festen
+Modellannahmen ist nicht mehr aktuell. Der heutige Stand ist:
 
-The `core` module is the **Brain of TRION**. It implements the **Cognitive Architecture** that drives the AI's reasoning, decision-making, and execution capabilities. Unlike simple LLM wrappers, TRION uses a multi-layered approach to separate planning, verification, and action.
+- ein produktiver `PipelineOrchestrator`
+- drei aktive Haupt-Layer unter `core/layers/`
+- ein ausgelagerter Satz von `orchestrator_modules/` fuer Routing-, Policy-,
+  Kontext-, Output- und Runtime-Helfer
+- ein eigener `task_loop/`-Bereich fuer mehrschrittige Ausfuehrung
+- typed Contracts fuer die Trennung von Policy-Entscheidung und Runtime-Result
 
----
+## Aktive Hauptbausteine
 
-## 2. Architecture: The 4-Layer Model
+- `bridge.py`
+  Rueckwaertskompatible Fassade. `CoreBridge` delegiert an den
+  `PipelineOrchestrator`, haelt aber die bestehende Singleton-/Patch-Surface.
 
-TRION follows a "System 2 Thinking" approach, broken down into 4 distinct layers:
+- `orchestrator.py`
+  Produktiver Integrationspunkt fuer Request-Verarbeitung, Streaming,
+  Layer-Verdrahtung, MCP-Hub-Anbindung, Grounding, Tool-Ausfuehrung,
+  Workspace-Events und Task-Loop-Einstieg.
 
-| Layer | Name | Model (Typ.) | Responsibility |
-|-------|------|--------------|----------------|
-| **0** | **Tool Selector** | Qwen 1.5B | **Pre-Filtering:** Selects relevant tools from the massive inventory (65+) *before* reasoning begins. Prevents context pollution. |
-| **1** | **Thinking** | DeepSeek-R1 | **Planning:** Analyzes intent, checks memory needs, and creates a structured execution plan. Does NOT execute tools. |
-| **2** | **Control** | Qwen 2.5 | **Verification:** acts as the "Critic". Checks the plan for safety, logic errors, and policy violations. Streams "Sequential Thinking" steps. |
-| **3** | **Output** | Llama 3 | **Action:** Generates the final response and executes the specific tools requested. Uses Native Tool Calling. |
+- `layers/`
+  Aktive Layer-Struktur:
+  `thinking.py`, `control/`, `output/`.
+  Details dazu stehen in `core/layers/README.md`.
 
----
+- `orchestrator_modules/`
+  Aus dem Monolithen herausgezogene Hilfsmodule fuer:
+  `context/`, `policy/`, `runtime/`, `execution/`, `output/`,
+  `workspace_events.py`, `postprocess.py`, `interaction_runtime.py`
+  und `task_loop.py`.
 
-## 3. Key Components
+- `task_loop/`
+  Mehrschrittige Chat-/Tool-Ausfuehrung mit eigener Planner-, Step-Runtime-
+  und Runner-Struktur sowie container-spezifischen Capability-Paketen.
+  Details dazu stehen in `core/task_loop/README.md`.
 
-### 3.1 Orchestrator (`orchestrator.py`)
+- `control_contract.py`
+  Typed Contracts fuer den Single-Authority-Pfad:
+  `ControlDecision` ist die Policy-Autoritaet,
+  `ExecutionResult` beschreibt nur Runtime-Ergebnisse.
 
-The **PipelineOrchestrator** is the central nervous system. It manages the flow between layers and handles streaming data to the frontend.
+## Layer-Einordnung
 
-* **Responsibilities:**
-  * Initializing the ContextManager and Layers.
-  * Routing the request through Layer 0 $\to$ 1 $\to$ 2 $\to$ 3.
-  * **Heuristic Tool Argument Construction:** (Currently) fills in missing tool parameters (e.g., for `home_write`).
-  * **Streaming:** Manages SSE (Server-Sent Events) for real-time feedback.
-  * **Chunking:** Splits large inputs for processing via MCP.
+- Thinking
+  Intent-, Plan- und Kontextvorbereitung.
 
-### 3.2 layer 0: Tool Selector (`tool_selector.py`)
+- Control
+  Verifikation, Policy, Tool-Entscheidung, Turn-Mode-/Strategie-Autoritaet
+  und Safety-Normalisierung.
 
-* **Purpose:** Solves "Attention Dilution" by filtering tools.
-* **Mechanism:**
-    1. **Semantic Search:** Finds top 15 relevant tools via vector search.
-    2. **LLM Selection:** Uses a small, fast model to pick the best 3-5 tools.
-* **Input:** User Query + Context.
-* **Output:** List of Tool Names.
+- Output
+  Prompt-Zusammensetzung, Grounding, Contract-Pruefung, Antwortgenerierung
+  und Tool-nahe Ausgabepfade.
 
-### 3.3 Layer 1: Thinking (`layers/thinking.py`)
+Es gibt weiterhin einen `tool_selector.py`, aber dieser ist heute ein
+Hilfsbaustein des Orchestrators und keine separat dokumentierte "Layer 0"
+im Sinne einer eigenen stabilen Architekturgrenze.
 
-* **Purpose:** Deep Reasoning & Planning.
-* **Prompt:** `THINKING_PROMPT` enforces a structured JSON output containing:
-  * `intent`: What does the user want?
-  * `suggested_tools`: Which tools are needed?
-  * `complexity`: 1-10 scale.
-  * `needs_memory`: Should we search the database?
-* **Streaming:** Shows the user "TRION is thinking..." with live chunks.
+## Task-Loop-Einordnung
 
-### 3.4 Layer 2: Control (`layers/control.py`)
+Der Task-Loop ist kein externer Sonderpfad mehr, sondern in den Orchestrator
+integriert. Die relevanten Eintrittspunkte liegen in:
 
-* **Purpose:** Safety & Logic Check.
-* **Features:**
-  * **Sequential Thinking v5:** For complex tasks, it streams a step-by-step logic chain (`## Step 1...`) to the UI.
-  * **LightCIM:** Fast keyword-based safety checks.
-  * **Policy Engine:** Can block actions or request user confirmation (e.g., "Create Skill").
+- `core/orchestrator_modules/task_loop.py`
+- `core/task_loop/chat_runtime.py`
+- `core/task_loop/runner/`
+- `core/task_loop/step_runtime/`
+- `core/task_loop/planner/`
 
-### 3.5 Layer 3: Output (`layers/output.py`)
+Der Loop nutzt die echten `ControlLayer`- und `OutputLayer`-Instanzen fuer
+aktive Schritte weiter und haelt den Zustandsverlauf ueber den Task-Loop-Store
+und Workspace-Events sichtbar.
 
-* **Purpose:** Final Execution & Response.
-* **Mechanism:**
-  * Converts MCP Tools to **Native Ollama Format**.
-  * Executes the "Tool Loop": Call Tool $\to$ Get Result $\to$ Feed to LLM $\to$ Token Stream.
-  * Injects the **Persona** (Tone, Style).
+## Typischer Laufzeitfluss
 
-### 3.6 Context Manager (`context_manager.py`)
+1. Request kommt ueber `CoreBridge` oder direkt in den `PipelineOrchestrator`.
+2. Der Orchestrator sammelt Kontext, Runtime-Signale und Policy-Hinweise.
+3. Thinking erzeugt oder ergaenzt den Arbeitsplan.
+4. Control verifiziert den Plan und bleibt die Autoritaet fuer Policy,
+   Korrekturen, Warning-/Block-Signale und erlaubte Tools.
+5. Output erzeugt die Antwort bzw. fuehrt freigegebene Tools aus und haelt
+   Grounding-/Contract-Regeln ein.
+6. Bei mehrschrittigen Aufgaben uebernimmt der Task-Loop die Schrittfuehrung
+   und bindet denselben Control-/Output-Pfad erneut pro Schritt ein.
 
-* **Purpose:** Data Retrieval Hub.
-* **Sources:**
-  * **Memory:** User facts, graph data.
-  * **System Knowledge:** Documentation about tools (RAG).
-  * **Conversation History:** Recent chat logs.
+## Stable Surface
 
-### 3.7 Safety (`safety/light_cim.py`)
+Die relevanten stabilen Import-/Patch-Surfaces sind:
 
-* **Purpose:** Low-latency safety guardrails.
-* **Checks:** Regex/Keyword matching for dangerous topics (PII, violence, system attacks) before the LLM even sees the request.
+- `core.bridge`
+- `core.orchestrator`
+- `core.layers.thinking`
+- `core.layers.control`
+- `core.layers.output`
+- `core.task_loop.*`
 
-### 3.8 Persona (`persona.py`)
-
-* **Purpose:** Dynamic System Prompt generation.
-* **Features:**
-  * Adapts to User Profile (Name, context).
-  * Injects "Home Awareness" (TRION Home instructions).
-  * Defines Capabilities and Guidelines.
-
----
-
-## 4. Data Flow
-
-1. **Request:** User sends message.
-2. **Safety:** `LightCIM` checks for immediate red flags.
-3. **Layer 0:** `ToolSelector` reduces 65 tools to 5 relevant ones.
-4. **Layer 1:** `ThinkingLayer` analyzes intent and requests specific tools/memory.
-5. **Context:** `Orchestrator` fetches Memory and Tool Context.
-6. **Layer 2:** `ControlLayer` verifies the plan. If complex, runs `Sequential Thinking`.
-7. **Layer 3:** `OutputLayer` executes valid tools (via `mcp.hub`) and streams the final answer.
-8. **Memory:** New facts are saved back to the Learning Loop.
-
----
-
-## 5. Recent Changes (v4.0)
-
-* **Tool Selector (Layer 0):** Added to improve tool selection accuracy.
-* **TRION Home Awareness:** `persona.py` now instructs TRION to use persistent storage.
-* **Heuristic Argument Fix:** `orchestrator.py` now specifically handles `home_` tools to fix missing parameters.
+Die interne Implementierung ist inzwischen deutlich staerker in Packages und
+Hilfsmodule aufgeteilt, aber diese sichtbaren Entry-Points bleiben die
+entscheidenden Andockstellen.

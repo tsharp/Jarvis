@@ -460,3 +460,41 @@ def test_apply_container_query_policy_marks_home_start_reuse_mode():
     assert verified_plan["needs_chat_history"] is True
     assert verified_plan["_container_query_policy"]["truth_mode"] == "home_start_reuse"
     assert verified_plan["_container_query_policy"]["selected_tools"] == ["home_start"]
+
+
+def test_apply_container_query_policy_preserves_task_loop_blueprint_discovery_step():
+    logs = []
+    verified_plan = {
+        "_task_loop_step_runtime": True,
+        "_authoritative_resolution_strategy": "container_request",
+    }
+
+    out = apply_container_query_policy(
+        "Task-Loop Schritt 2/5",
+        verified_plan,
+        ["blueprint_list"],
+        conversation_id="conv-loop",
+        get_effective_resolution_strategy_fn=lambda plan: str(
+            (plan or {}).get("_authoritative_resolution_strategy") or ""
+        ),
+        is_active_container_capability_query_fn=lambda text: False,
+        is_container_state_binding_query_fn=lambda text: False,
+        is_container_blueprint_catalog_query_fn=lambda text: False,
+        is_container_request_query_fn=lambda text: True,
+        is_container_inventory_query_fn=lambda text: False,
+        materialize_container_query_policy_fn=lambda plan, strategy: materialize_container_query_policy(
+            plan,
+            strategy=strategy,
+        ),
+        get_recent_container_state_fn=lambda conversation_id: {},
+        container_state_has_active_target_fn=lambda state: False,
+        is_home_container_start_query_fn=lambda text: False,
+        extract_tool_name_fn=_extract_tool_name,
+        tool_name_list_fn=_tool_name_list,
+        log_info_fn=logs.append,
+    )
+
+    assert out == ["blueprint_list"]
+    assert verified_plan["_container_query_policy"]["query_class"] == "container_blueprint_catalog"
+    assert verified_plan["_container_query_policy"]["selected_tools"] == ["blueprint_list"]
+    assert any("Task-loop container discovery preserved" in entry for entry in logs)

@@ -12,6 +12,7 @@ Funktionen:
 from typing import Dict, Any, List, Optional
 from mcp_registry import MCPS, get_enabled_mcps, get_mcp_config
 from mcp.transports import HTTPTransport, SSETransport, STDIOTransport
+from mcp.tool_prompt_hints import TOOL_KEYWORDS, iter_base_detection_rules
 
 from utils.logger import log_info, log_error, log_debug, log_warning
 import json
@@ -19,118 +20,6 @@ import os
 import threading
 import asyncio
 from pathlib import Path
-
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# TOOL KEYWORDS: Enriched Keywords für bessere Semantic-Search-Treffsicherheit.
-# Jede Eintragung erweitert den gespeicherten Content beim Auto-Registration.
-# ─────────────────────────────────────────────────────────────────────────────
-TOOL_KEYWORDS: Dict[str, List[str]] = {
-    # SysInfo
-    "get_system_info": [
-        "GPU", "VRAM", "CPU", "RAM", "Arbeitsspeicher", "Disk", "Festplatte",
-        "Temperatur", "Hardware", "nvidia", "Prozessor", "Auslastung",
-        "Netzwerk", "Ports", "Docker-Status", "Uptime", "Kernel", "dmesg",
-    ],
-    "get_system_overview": [
-        "System", "Übersicht", "Hardware", "Status", "GPU", "CPU", "RAM", "Disk",
-        "alle Infos", "Zusammenfassung",
-    ],
-    # Container Commander
-    "request_container": [
-        "Container", "starten", "erstellen", "Python", "Code ausführen",
-        "Sandbox", "deployen", "aufsetzen", "neuen Container",
-    ],
-    "stop_container": [
-        "Container", "stoppen", "beenden", "löschen", "herunterfahren",
-    ],
-    "exec_in_container": [
-        "Code", "ausführen", "Container", "Python", "Script", "Command",
-        "Bash", "Shell", "Terminal", "run",
-    ],
-    "container_logs": [
-        "Logs", "Container", "Ausgabe", "Output", "Fehler", "Error", "Log",
-    ],
-    "container_stats": [
-        "Container", "Stats", "Status", "läuft", "aktiv", "Ressourcen",
-    ],
-    "container_list": [
-        "Container", "auflisten", "alle Container", "welche Container", "laufende Container", "list containers",
-    ],
-    "container_inspect": [
-        "Container", "inspizieren", "Details", "Konfiguration", "Container-Info", "inspect",
-    ],
-    "blueprint_list": [
-        "Blueprint", "Container-Typen", "verfügbare Typen", "Vorlagen",
-    ],
-    "blueprint_get": ["Blueprint", "Details", "Konfiguration"],
-    "blueprint_create": ["Blueprint", "erstellen", "neue Vorlage"],
-    "snapshot_list": ["Snapshot", "Backup", "Versionen", "gespeichert"],
-    "snapshot_restore": ["Snapshot", "wiederherstellen", "zurücksetzen"],
-    "optimize_container": ["Container", "optimieren", "Performance", "tuning"],
-    # Skills
-    "list_skills": [
-        "Skills", "auflisten", "installiert", "verfügbar", "was kann ich",
-        "Fähigkeiten",
-    ],
-    "run_skill": [
-        "Skill", "ausführen", "starten", "verwenden", "benutzen",
-    ],
-    "create_skill": [
-        "Skill", "erstellen", "bauen", "programmieren", "neu schreiben",
-        "implementieren",
-    ],
-    "autonomous_skill_task": [
-        "Skill", "automatisch", "eigenständig", "selbst erstellen",
-        "Aufgabe erledigen", "reparieren", "verbessern",
-    ],
-    "promote_skill_draft": [
-        "Skill", "veröffentlichen", "promoten", "Draft aktivieren",
-    ],
-    # Home / Dateien (Fast Lane)
-    "home_read": [
-        "Datei", "lesen", "öffnen", "Inhalt anzeigen", "Notiz lesen", "was steht",
-    ],
-    "home_write": [
-        "Datei", "schreiben", "speichern", "Notiz", "erstellen", "notieren",
-        "aufschreiben", "festhalten",
-    ],
-    "home_list": [
-        "Dateien", "auflisten", "Verzeichnis", "Ordner", "welche Dateien",
-    ],
-    # Memory / Knowledge
-    "memory_save": [
-        "merken", "speichern", "Fakt", "Notiz", "wissen", "nicht vergessen",
-    ],
-    "memory_search": [
-        "suchen", "finden", "erinnern", "Erinnerung", "was weiß ich",
-        "gespeichert", "Fakten",
-    ],
-    "memory_graph_search": [
-        "Graph", "Wissen", "Zusammenhang", "verbunden", "Beziehung",
-    ],
-    # Workspace — editierbare Einträge (sql-memory)
-    "workspace_save": [
-        "Workspace", "Notiz", "Task", "Aufgabe merken", "Plan speichern", "Eintrag erstellen",
-    ],
-    "workspace_list": [
-        "Workspace", "Einträge anzeigen", "offene Aufgaben", "Was habe ich geplant",
-    ],
-    # Workspace Events — interne Telemetrie (Fast-Lane, read-only)
-    "workspace_event_save": [
-        "Workspace-Event", "Telemetrie", "Container-Event speichern", "internes Ereignis",
-    ],
-    "workspace_event_list": [
-        "Workspace-Events", "Container-Status", "aktive Container", "Event-Log lesen",
-    ],
-    # Skill-Metriken
-    "skill_metric_record": ["Skill", "Metriken", "Statistik", "aufzeichnen"],
-    "skill_metrics_list": ["Skill", "Statistiken", "Übersicht", "Metriken"],
-    # Graph
-    "graph_add_node": ["Graph", "Knoten", "Wissen", "speichern", "Relation"],
-}
-
 
 class MCPHub:
     """Zentraler Hub für alle MCPs."""
@@ -358,87 +247,7 @@ class MCPHub:
         Liest detection Block aus config.json aller Custom MCPs.
         Inkludiert auch Core MCP Rules für Memory Tools.
         """
-        rules = []
-        
-        # CORE MCP DETECTION RULES (hardcoded für sql-memory)
-        core_memory_rules = """
-TOOL: memory_save (MCP: sql-memory)
-Priority: high
-Keywords: remember, save, store, note, keep in mind, merken, speichern, notieren
-Triggers: remember that, save this, note that, please remember, bitte merken
-Examples: User: Remember my favorite color is blue -> memory_save
-
-TOOL: memory_graph_search (MCP: sql-memory)
-Priority: high
-Keywords: recall, remember, what do you know, search memory, erinnern, was weisst du
-Triggers: do you remember, what did I say, what do you know about, was habe ich gesagt
-Examples: User: What is my favorite color? -> memory_graph_search
-
-TOOL: memory_all_recent (MCP: sql-memory)
-Priority: medium
-Keywords: recent memories, last conversations, previous chats, letzte gespraeche
-Triggers: what did we talk about, show recent memories
-Examples: User: What did we discuss yesterday? -> memory_all_recent
-"""
-        rules.append((0, core_memory_rules))
-
-        # CORE CONTAINER COMMANDER DETECTION RULES
-        core_commander_rules = """
-TOOL: blueprint_list (MCP: container-commander)
-Priority: high
-Keywords: blueprint, blueprints, container-typ, sandbox, container typen, welche container, verfügbare container
-Triggers: zeig blueprints, welche blueprints, list blueprints, was für container gibt es, verfügbare sandboxes
-Examples: User: Welche Blueprints hast du? -> blueprint_list; User: Was für Container gibt es? -> blueprint_list
-
-TOOL: request_container (MCP: container-commander)
-Priority: high
-Keywords: starte container, deploy, container starten, brauche sandbox, code ausführen, python starten, node starten
-Triggers: starte einen container, deploy blueprint, ich brauche einen container, führe code aus
-Examples: User: Starte einen Python Container -> request_container; User: Ich brauche eine Sandbox -> request_container
-
-TOOL: home_start (MCP: container-commander)
-Priority: high
-Keywords: trion home starten, home workspace starten, trion-home, home container starten
-Triggers: starte TRION Home, starte TRION Home Workspace, starte den Home Container
-Examples: User: Starte TRION Home Workspace -> home_start
-
-TOOL: stop_container (MCP: container-commander)
-Priority: high
-Keywords: stoppe container, stop container, beende container, container beenden, container stoppen
-Triggers: stoppe den container, beende den container, container runterfahren
-Examples: User: Stoppe den Container -> stop_container
-
-TOOL: exec_in_container (MCP: container-commander)
-Priority: high
-Keywords: ausführen, execute, run code, berechne, programmiere, führe aus, code ausführen
-Triggers: führe diesen code aus, berechne fibonacci, execute in container
-Examples: User: Berechne die Fibonacci-Folge -> request_container + exec_in_container
-
-TOOL: container_stats (MCP: container-commander)
-Priority: medium
-Keywords: container stats, container status, auslastung, efficiency, resource usage
-Triggers: wie läuft der container, container auslastung, zeig container stats
-Examples: User: Wie ist die Container-Auslastung? -> container_stats
-
-TOOL: container_list (MCP: container-commander)
-Priority: medium
-Keywords: alle container, laufende container, welche container laufen, container auflisten, list containers
-Triggers: zeig alle container, welche container sind aktiv, liste container auf
-Examples: User: Welche Container laufen gerade? -> container_list; User: Liste alle aktiven Container -> container_list
-
-TOOL: container_inspect (MCP: container-commander)
-Priority: medium
-Keywords: container details, container info, container konfiguration, inspiziere container, inspect container
-Triggers: zeig container details, was ist die konfiguration des containers, inspect container
-Examples: User: Zeig mir die Details von Container abc123 -> container_inspect
-
-TOOL: container_logs (MCP: container-commander)
-Priority: medium
-Keywords: container logs, container ausgabe, log output
-Triggers: zeig container logs, was hat der container ausgegeben
-Examples: User: Zeig mir die Container Logs -> container_logs
-"""
-        rules.append((0, core_commander_rules))
+        rules = list(iter_base_detection_rules())
 
         # CUSTOM MCP DETECTION RULES (aus config.json)
         for mcp_name in self._transports.keys():
@@ -658,6 +467,15 @@ Examples: {"; ".join(examples[:2])}
     # SYSTEM KNOWLEDGE: Abrufen von System-Wissen
     # ═══════════════════════════════════════════════════════════════
     
+    def get_detection_rules(self) -> str:
+        """Returns detection rules text for ThinkingLayer injection.
+
+        Combines static base rules from tool_prompt_hints with dynamic rules
+        from each enabled custom MCP's config.json. Does NOT require
+        sql-memory or any DB roundtrip — uses already-loaded transport data.
+        """
+        return self._generate_detection_rules()
+
     def get_system_knowledge(self, key: str) -> Optional[str]:
         """
         Ruft System-Wissen aus dem Graph ab.

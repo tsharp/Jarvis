@@ -53,6 +53,7 @@ def initialize_pipeline_orchestrator(
         orch.master.set_event_sink(orch._persist_master_workspace_event)
 
     hub = get_hub_fn()
+    orch.mcp_hub = hub
     orch.control.set_mcp_hub(hub)
     orch.ollama_base = ollama_base
     from config import (

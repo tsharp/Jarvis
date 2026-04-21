@@ -90,11 +90,16 @@ def run_pre_control_gates(
         if _dec == "resolver_error":
             thinking_plan["_blueprint_gate_blocked"] = True
             thinking_plan["_blueprint_gate_reason"] = _res.get("reason", "blueprint_router_unavailable")
+            thinking_plan["_blueprint_recheck_required"] = False
+            thinking_plan["_blueprint_recheck_reason"] = ""
             log_warn_fn(
                 f"[Pipeline] Blueprint gate blocked — reason={thinking_plan['_blueprint_gate_reason']}"
             )
         elif _dec == "use_blueprint":
             thinking_plan["_blueprint_gate_blocked"] = False
+            thinking_plan["_blueprint_gate_reason"] = ""
+            thinking_plan["_blueprint_recheck_required"] = False
+            thinking_plan["_blueprint_recheck_reason"] = ""
             thinking_plan["_blueprint_router"] = {
                 "blueprint_id": _res.get("blueprint_id", ""),
                 "score": _res.get("score", 0.0),
@@ -106,21 +111,30 @@ def run_pre_control_gates(
                 f"(score={_res.get('score', 0.0):.2f})"
             )
         elif _dec == "suggest_blueprint":
-            thinking_plan["_blueprint_gate_blocked"] = True
+            thinking_plan["_blueprint_gate_blocked"] = False
+            thinking_plan["_blueprint_gate_reason"] = ""
+            thinking_plan["_blueprint_recheck_required"] = True
+            thinking_plan["_blueprint_recheck_reason"] = "container_blueprint_recheck_required"
             thinking_plan["_blueprint_suggest"] = {
                 "blueprint_id": _res.get("blueprint_id", ""),
                 "score": _res.get("score", 0.0),
                 "suggest": True,
                 "candidates": _res.get("candidates", []),
             }
-            log_info_fn("[Pipeline] Blueprint suggest: Rückfrage nötig")
+            _cur_tools = list(thinking_plan.get("suggested_tools") or [])
+            if "blueprint_list" not in _cur_tools:
+                thinking_plan["suggested_tools"] = ["blueprint_list"] + _cur_tools
+            log_info_fn("[Pipeline] Blueprint suggest: Recheck via blueprint_list vor User-Rückfrage")
         else:  # no_blueprint or unknown
-            thinking_plan["_blueprint_gate_blocked"] = True
+            thinking_plan["_blueprint_gate_blocked"] = False
+            thinking_plan["_blueprint_gate_reason"] = ""
+            thinking_plan["_blueprint_recheck_required"] = True
+            thinking_plan["_blueprint_recheck_reason"] = "container_blueprint_discovery_required"
             thinking_plan["_blueprint_no_match"] = True
             _cur_tools = list(thinking_plan.get("suggested_tools") or [])
             if "blueprint_list" not in _cur_tools:
-                thinking_plan["suggested_tools"] = _cur_tools + ["blueprint_list"]
-            log_info_fn("[Pipeline] Blueprint: kein Match — blueprint_list als Fallback-Signal injiziert")
+                thinking_plan["suggested_tools"] = ["blueprint_list"] + _cur_tools
+            log_info_fn("[Pipeline] Blueprint: kein Match — blueprint_list als Discovery-Schritt injiziert")
 
     # ── Hardware Gate Early ───────────────────────────────────────
     hardware_gate_msg: Optional[str] = None

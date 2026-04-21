@@ -2,7 +2,7 @@
 Skill-server config fallback guards.
 
 Ensures create_skill package-mode resolution has no hard runtime dependency on
-top-level /app/config.py inside isolated skill-server containers.
+the shared TRION config package inside isolated skill-server containers.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ def _detect_project_root() -> str:
         if not root or root in seen:
             continue
         seen.add(root)
-        if os.path.exists(os.path.join(root, "config.py")) and os.path.exists(
+        if os.path.exists(os.path.join(root, "config", "__init__.py")) and os.path.exists(
             os.path.join(root, "core")
         ):
             return root

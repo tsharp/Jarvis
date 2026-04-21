@@ -31,7 +31,6 @@ services:
     - ./core:/app/core:ro
     - ./intelligence_modules:/app/intelligence_modules:ro
     - ./mcp_registry.py:/app/mcp_registry.py:ro
-    - ./config.py:/app/config.py:ro
     - ./mcp:/app/mcp:ro
     - ./utils:/app/utils:ro
     - ./maintenance:/app/maintenance:ro
@@ -114,15 +113,16 @@ services:
     - INTERNAL_SECRET_RESOLVE_TOKEN=${INTERNAL_SECRET_RESOLVE_TOKEN:-trion-internal-secret-resolve-token}
     - STORAGE_BROKER_URL=http://storage-broker:8089
     - STORAGE_BROKER_SETTINGS_PATH=/app/storage_broker/storage_policy.json
+    - MCP_SYSTEM_ADDONS=http://system-addons:8090/mcp
     - RUNTIME_HARDWARE_URL=http://host.docker.internal:8420
     volumes:
     - ./personas:/app/personas
     - ./adapters/lobechat:/app/adapters/lobechat:ro
     - ./core:/app/core:ro
+    - ./config:/app/config:ro
     - ./intelligence_modules:/app/intelligence_modules:ro
     - ./custom_mcps:/app/custom_mcps
     - ./mcp_registry.py:/app/mcp_registry.py:ro
-    - ./config.py:/app/config.py:ro
     - ./mcp:/app/mcp:ro
     - ./utils:/app/utils:ro
     - ./maintenance:/app/maintenance:ro
@@ -323,8 +323,8 @@ services:
     - DIGEST_LOCK_PATH=memory_speicher/digest.lock
     volumes:
     - ./core:/app/core:ro
+    - ./config:/app/config:ro
     - ./mcp_registry.py:/app/mcp_registry.py:ro
-    - ./config.py:/app/config.py:ro
     - ./utils:/app/utils:ro
     - ./scripts/digest_worker.py:/app/scripts/digest_worker.py:ro
     - ./memory_speicher:/app/memory_speicher
@@ -391,6 +391,25 @@ services:
     - '6'
     ports:
     - 8089:8089
+    networks:
+    - big-bear-lobe-chat_default
+    restart: unless-stopped
+
+  system-addons:
+    build:
+      context: .
+      dockerfile: mcp-servers/system-addons/Dockerfile
+    container_name: system-addons
+    depends_on:
+    - mcp-sql-memory
+    environment:
+    - LOG_LEVEL=INFO
+    - SQL_MEMORY_ROOT=/app/sql-memory
+    - SQL_MEMORY_DB_PATH=/data/memory.db
+    volumes:
+    - memory-data:/data
+    ports:
+    - 8090:8090
     networks:
     - big-bear-lobe-chat_default
     restart: unless-stopped

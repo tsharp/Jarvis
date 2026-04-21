@@ -32,15 +32,15 @@ class TestRoleEndpointResolver(unittest.TestCase):
         clear_ollama_discovery_cache()
 
     def test_unknown_role_falls_back_to_default(self):
-        with patch("utils.role_endpoint_resolver.resolve_ollama_base_endpoint", return_value="http://ollama:11434"):
+        with patch("utils.routing.role_endpoint.resolve_ollama_base_endpoint", return_value="http://ollama:11434"):
             d = resolve_role_endpoint("unknown_role", default_endpoint="http://ollama:11434")
         self.assertFalse(d["hard_error"])
         self.assertEqual(d["endpoint"], "http://ollama:11434")
         self.assertEqual(d["endpoint_source"], "default")
 
     def test_snapshot_unavailable_falls_back_to_default(self):
-        with patch("utils.role_endpoint_resolver._get_snapshot", return_value=None), \
-             patch("utils.role_endpoint_resolver.resolve_ollama_base_endpoint", return_value="http://ollama:11434"):
+        with patch("utils.routing.role_endpoint._get_snapshot", return_value=None), \
+             patch("utils.routing.role_endpoint.resolve_ollama_base_endpoint", return_value="http://ollama:11434"):
             d = resolve_role_endpoint("output", default_endpoint="http://ollama:11434")
         self.assertFalse(d["hard_error"])
         self.assertEqual(d["endpoint"], "http://ollama:11434")
@@ -57,8 +57,8 @@ class TestRoleEndpointResolver(unittest.TestCase):
                 }
             }
         }
-        with patch("utils.role_endpoint_resolver._get_snapshot", return_value=snap), \
-             patch("utils.role_endpoint_resolver.resolve_ollama_base_endpoint", return_value="http://ollama:11434"):
+        with patch("utils.routing.role_endpoint._get_snapshot", return_value=snap), \
+             patch("utils.routing.role_endpoint.resolve_ollama_base_endpoint", return_value="http://ollama:11434"):
             d = resolve_role_endpoint("output", default_endpoint="http://ollama:11434")
         self.assertTrue(d["hard_error"])
         self.assertEqual(d["error_code"], 503)
@@ -75,8 +75,8 @@ class TestRoleEndpointResolver(unittest.TestCase):
                 }
             }
         }
-        with patch("utils.role_endpoint_resolver._get_snapshot", return_value=snap), \
-             patch("utils.role_endpoint_resolver.resolve_ollama_base_endpoint", return_value="http://ollama:11434"):
+        with patch("utils.routing.role_endpoint._get_snapshot", return_value=snap), \
+             patch("utils.routing.role_endpoint.resolve_ollama_base_endpoint", return_value="http://ollama:11434"):
             d = resolve_role_endpoint("thinking", default_endpoint="http://ollama:11434")
         self.assertFalse(d["hard_error"])
         self.assertEqual(d["endpoint"], "http://ollama:11434")
@@ -104,8 +104,8 @@ class TestRoleEndpointResolver(unittest.TestCase):
                 }
             },
         }
-        with patch("utils.role_endpoint_resolver._get_snapshot", return_value=snap), \
-             patch("utils.role_endpoint_resolver.resolve_ollama_base_endpoint", return_value="http://ollama:11434"):
+        with patch("utils.routing.role_endpoint._get_snapshot", return_value=snap), \
+             patch("utils.routing.role_endpoint.resolve_ollama_base_endpoint", return_value="http://ollama:11434"):
             d = resolve_role_endpoint("thinking", default_endpoint="http://ollama:11434")
         self.assertFalse(d["hard_error"])
         self.assertEqual(d["endpoint"], "http://trion-ollama-cpu:11434")
@@ -135,8 +135,8 @@ class TestRoleEndpointResolver(unittest.TestCase):
                 }
             },
         }
-        with patch("utils.role_endpoint_resolver._get_snapshot", return_value=snap), \
-             patch("utils.role_endpoint_resolver.resolve_ollama_base_endpoint", return_value="http://ollama:11434"):
+        with patch("utils.routing.role_endpoint._get_snapshot", return_value=snap), \
+             patch("utils.routing.role_endpoint.resolve_ollama_base_endpoint", return_value="http://ollama:11434"):
             d = resolve_role_endpoint("output", default_endpoint="http://ollama:11434")
         self.assertFalse(d["hard_error"])
         self.assertEqual(d["endpoint"], "http://trion-ollama-gpu1:11434")
@@ -166,8 +166,8 @@ class TestRoleEndpointResolver(unittest.TestCase):
                 }
             },
         }
-        with patch("utils.role_endpoint_resolver._get_snapshot", return_value=snap), \
-             patch("utils.role_endpoint_resolver.resolve_ollama_base_endpoint", return_value="http://ollama:11434"):
+        with patch("utils.routing.role_endpoint._get_snapshot", return_value=snap), \
+             patch("utils.routing.role_endpoint.resolve_ollama_base_endpoint", return_value="http://ollama:11434"):
             d = resolve_role_endpoint("thinking", default_endpoint="http://ollama:11434")
         self.assertFalse(d["hard_error"])
         self.assertEqual(d["endpoint"], "http://ollama:11434")
@@ -185,8 +185,8 @@ class TestRoleEndpointResolver(unittest.TestCase):
                 }
             }
         }
-        with patch("utils.role_endpoint_resolver._get_snapshot", return_value=snap), \
-             patch("utils.role_endpoint_resolver.resolve_ollama_base_endpoint", return_value="http://ollama:11434"):
+        with patch("utils.routing.role_endpoint._get_snapshot", return_value=snap), \
+             patch("utils.routing.role_endpoint.resolve_ollama_base_endpoint", return_value="http://ollama:11434"):
             d = resolve_role_endpoint("control", default_endpoint="http://ollama:11434")
         self.assertFalse(d["hard_error"])
         self.assertEqual(d["endpoint"], "http://trion-ollama-gpu0:11434")
@@ -207,25 +207,25 @@ class TestOllamaBaseDiscovery(unittest.TestCase):
         self.assertEqual(endpoint, "http://172.18.0.1:11434")
 
     def test_candidate_defaults_use_dynamic_gateway_not_fixed_bridges(self):
-        with patch("utils.role_endpoint_resolver._docker_default_gateway_endpoint", return_value="http://172.19.0.1:11434"):
+        with patch("utils.routing.role_endpoint._docker_default_gateway_endpoint", return_value="http://172.19.0.1:11434"):
             endpoints = _candidate_default_endpoints("http://ollama:11434")
         self.assertIn("http://172.19.0.1:11434", endpoints)
         self.assertNotIn("http://172.17.0.1:11434", endpoints)
         self.assertNotIn("http://172.18.0.1:11434", endpoints)
 
     def test_prefers_first_healthy_candidate(self):
-        with patch("utils.role_endpoint_resolver._candidate_default_endpoints", return_value=[
+        with patch("utils.routing.role_endpoint._candidate_default_endpoints", return_value=[
             "http://ollama:11434",
             "http://host.docker.internal:11434",
-        ]), patch("utils.role_endpoint_resolver._probe_ollama_tags", side_effect=[False, True]):
+        ]), patch("utils.routing.role_endpoint._probe_ollama_tags", side_effect=[False, True]):
             resolved = resolve_ollama_base_endpoint("http://ollama:11434")
         self.assertEqual(resolved, "http://host.docker.internal:11434")
 
     def test_discovery_cache_reuses_previous_result(self):
-        with patch("utils.role_endpoint_resolver._candidate_default_endpoints", return_value=[
+        with patch("utils.routing.role_endpoint._candidate_default_endpoints", return_value=[
             "http://ollama:11434",
             "http://host.docker.internal:11434",
-        ]), patch("utils.role_endpoint_resolver._probe_ollama_tags", side_effect=[False, True]) as probe:
+        ]), patch("utils.routing.role_endpoint._probe_ollama_tags", side_effect=[False, True]) as probe:
             first = resolve_ollama_base_endpoint("http://ollama:11434")
             second = resolve_ollama_base_endpoint("http://ollama:11434")
         self.assertEqual(first, "http://host.docker.internal:11434")
@@ -255,8 +255,8 @@ class TestRoleRoutingCacheFallback(unittest.TestCase):
         _CACHE["snapshot"] = stale
         _CACHE["ts"] = 0.0  # force stale branch
 
-        with patch("utils.role_endpoint_resolver._build_snapshot", side_effect=RuntimeError("boom")), \
-             patch("utils.role_endpoint_resolver.resolve_ollama_base_endpoint", return_value="http://ollama:11434"):
+        with patch("utils.routing.role_endpoint._build_snapshot", side_effect=RuntimeError("boom")), \
+             patch("utils.routing.role_endpoint.resolve_ollama_base_endpoint", return_value="http://ollama:11434"):
             d = resolve_role_endpoint("thinking", default_endpoint="http://ollama:11434")
 
         self.assertFalse(d["hard_error"])
@@ -271,12 +271,12 @@ class TestScope4WiringSource(unittest.TestCase):
         self.assertIn("role=thinking", src)
 
     def test_control_layer_uses_role_endpoint_resolver(self):
-        src = _read("core/layers/control.py")
+        src = _read("core/layers/control/verification/verify_flow.py")
         self.assertIn("resolve_role_endpoint", src)
         self.assertIn("role=control", src)
 
     def test_output_layer_uses_role_endpoint_resolver(self):
-        src = _read("core/layers/output.py")
+        src = _read("core/layers/output/layer.py")
         self.assertIn("resolve_role_endpoint", src)
         self.assertIn("role=output", src)
 

@@ -1,0 +1,51 @@
+signal_phrase,language,mode,confidence,category,example_context
+jeden tag,de,persistent,0.96,temporal,Führe den Bericht jeden Tag um 8 Uhr aus
+täglich,de,persistent,0.95,temporal,Prüfe täglich die Fehlerlogs
+jede stunde,de,persistent,0.97,temporal,Starte jede Stunde einen Sync
+wöchentlich,de,persistent,0.94,temporal,Erstelle wöchentlich ein Backup
+monatlich,de,persistent,0.93,temporal,Sende monatlich einen Statusbericht
+jeden montag,de,persistent,0.92,temporal,Führe jeden Montag das Review aus
+jeden morgen,de,persistent,0.91,temporal,Erzeuge jeden Morgen einen Bericht
+regelmäßig,de,persistent,0.84,temporal,Prüfe regelmäßig die Queue
+dauerhaft,de,persistent,0.83,simplicity,Lass das dauerhaft im Hintergrund laufen
+kontinuierlich,de,persistent,0.87,system,Kontinuierlich überwache die CPU-Last
+im hintergrund weiter,de,persistent,0.85,system,Das soll im Hintergrund weiterlaufen
+monitoring,en,persistent,0.86,system,Keep this running as monitoring
+every day,en,persistent,0.96,temporal,Run the summary every day
+daily,en,persistent,0.95,temporal,Generate the report daily
+every hour,en,persistent,0.97,temporal,Poll the endpoint every hour
+hourly,en,persistent,0.96,temporal,Run an hourly check
+weekly,en,persistent,0.94,temporal,Create a weekly digest
+monthly,en,persistent,0.93,temporal,Produce a monthly archive
+every monday,en,persistent,0.92,temporal,Run the cleanup every Monday
+nightly,en,persistent,0.91,temporal,Execute a nightly rebuild
+recurring,en,persistent,0.90,temporal,Make this a recurring task
+keep running,en,persistent,0.85,system,Keep running in the background
+background service,en,persistent,0.88,integration,Turn this into a background service
+heartbeat,en,persistent,0.82,integration,Use a heartbeat to ping the MCP server
+poll the api,en,persistent,0.84,integration,Poll the API every 10 minutes
+einmal,de,one_shot,0.96,simplicity,Führe das einmal sofort aus
+nur jetzt,de,one_shot,0.95,simplicity,Mach das nur jetzt und nicht später
+sofort,de,one_shot,0.91,simplicity,Bitte sofort ausführen
+diesmal,de,one_shot,0.88,simplicity,Mach es nur diesmal
+ad hoc,de,one_shot,0.86,simplicity,Starte einen ad hoc Export
+einmalig,de,one_shot,0.97,temporal,Einmalig einen Bericht erzeugen
+kurz prüfen,de,one_shot,0.82,simplicity,Prüfe das kurz und gib Antwort
+nur antworten,de,one_shot,0.90,simplicity,"Nur antworten, nichts planen"
+ohne cron,de,one_shot,0.89,temporal,Führe es ohne Cron einmal aus
+kein hintergrundjob,de,one_shot,0.87,system,Das soll kein Hintergrundjob werden
+one time,en,one_shot,0.96,temporal,Run this one time only
+just once,en,one_shot,0.97,temporal,Do it just once
+for now,en,one_shot,0.84,simplicity,Handle it for now and stop
+right now,en,one_shot,0.90,simplicity,Execute it right now
+immediately,en,one_shot,0.89,simplicity,Run immediately and return the result
+ad hoc,en,one_shot,0.86,simplicity,Perform an ad hoc check
+no schedule,en,one_shot,0.93,temporal,Run it with no schedule
+no recurring task,en,one_shot,0.94,temporal,This should be no recurring task
+just answer,en,one_shot,0.91,simplicity,Just answer the question
+direct response,en,one_shot,0.88,simplicity,Give a direct response only
+without automation,en,one_shot,0.87,tooling,Do it without automation
+temporary check,en,one_shot,0.81,system,Use a temporary check and stop
+single run,en,one_shot,0.95,temporal,Use a single run for this sync
+manual trigger,en,one_shot,0.83,tooling,Treat this as a manual trigger
+kein workflow,de,one_shot,0.90,tooling,"Kein Workflow, nur dieser eine Lauf"

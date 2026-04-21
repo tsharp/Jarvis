@@ -494,9 +494,7 @@ class TestCtxFinalPayloadChars:
         except ImportError as e:
             pytest.skip(f"Cannot import OutputLayer: {e}")
 
-        with patch("core.layers.output.get_hub", return_value=MagicMock()), \
-             patch("core.layers.output.get_enabled_tools", return_value=[]), \
-             patch("core.layers.output.get_persona") as mock_persona:
+        with patch("core.layers.output.prompt.system_prompt.get_persona") as mock_persona:
 
             mock_p = MagicMock()
             mock_p.build_system_prompt.return_value = "SYSTEM_PROMPT_TEXT"
@@ -745,7 +743,7 @@ class TestBlueprintRouterGates:
         return store
 
     def test_strict_score_auto_routes(self):
-        """Score >= 0.85 → use_blueprint (auto-route, no user input needed)."""
+        """Score >= 0.80 → use_blueprint (auto-route, no user input needed)."""
         router = self._make_router()
         mock_results = [{"similarity": 0.91, "metadata": self._verified_meta("bp-python")}]
 
@@ -756,10 +754,10 @@ class TestBlueprintRouterGates:
 
         assert decision.decision == "use_blueprint"
         assert decision.blueprint_id == "bp-python"
-        assert decision.score >= 0.85
+        assert decision.score >= 0.80
 
-    def test_suggest_zone_asks_user(self):
-        """Score in [0.68, 0.85) → suggest_blueprint (ask user, don't auto-start)."""
+    def test_suggest_zone_returns_recheck_evidence(self):
+        """Score in [0.68, 0.80) → suggest_blueprint as recheck/discovery evidence."""
         router = self._make_router()
         mock_results = [{"similarity": 0.75, "metadata": self._verified_meta("bp-node")}]
 
@@ -769,8 +767,9 @@ class TestBlueprintRouterGates:
             decision = router.route("run something node-like")
 
         assert decision.decision == "suggest_blueprint", \
-            "Score in suggest zone must trigger user confirmation, not auto-route"
+            "Score in suggest zone must stay below auto-route and return recheck evidence"
         assert decision.blueprint_id is not None
+        assert "recheck" in decision.reason.lower() or "discovery" in decision.reason.lower()
 
     def test_no_match_blocks_request_container(self):
         """Score < 0.68 → no_blueprint (hard gate, no freestyle fallback)."""
@@ -848,6 +847,50 @@ class TestBlueprintRouterGates:
         if decision.decision == "suggest_blueprint":
             assert len(decision.candidates) >= 1, \
                 "Suggest response must include at least 1 candidate for user selection"
+
+
+def test_run_pre_control_gates_turns_suggest_into_blueprint_recheck():
+    from core.orchestrator_pipeline_stages import run_pre_control_gates
+
+    class _Orch:
+        def _contains_explicit_skill_intent(self, _user_text):
+            return False
+
+        def _rewrite_home_start_request_tools(self, _user_text, _plan, tools, prefix=""):
+            return list(tools)
+
+        def _prepare_container_candidate_evidence(self, _user_text, thinking_plan, **_kwargs):
+            thinking_plan["_container_resolution"] = {
+                "decision": "suggest_blueprint",
+                "blueprint_id": "python-sandbox",
+                "score": 0.71,
+                "reason": "semantic match below strict threshold",
+                "candidates": [{"id": "python-sandbox", "score": 0.71}],
+            }
+
+        def _check_hardware_gate_early(self, _user_text, _thinking_plan):
+            return None
+
+    thinking_plan = {
+        "intent": "python container starten",
+        "suggested_tools": ["request_container"],
+    }
+    request = MagicMock()
+    request.messages = []
+
+    run_pre_control_gates(
+        _Orch(),
+        "Starte bitte einen Python-Container",
+        thinking_plan,
+        request,
+        log_info_fn=lambda _msg: None,
+        log_warn_fn=lambda _msg: None,
+    )
+
+    assert thinking_plan["_blueprint_gate_blocked"] is False
+    assert thinking_plan["_blueprint_recheck_required"] is True
+    assert thinking_plan["_blueprint_recheck_reason"] == "container_blueprint_recheck_required"
+    assert "blueprint_list" in thinking_plan["suggested_tools"]
 
 
 # ═════════════════════════════════════════════════════════════════

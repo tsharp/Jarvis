@@ -76,9 +76,9 @@ def test_output_prompt_contains_anti_hallucination_block_when_flag_true():
     mock_persona.build_system_prompt.return_value = "Du bist TRION."
     mock_persona.adaptation = []
 
-    with patch("core.layers.output.get_persona", return_value=mock_persona), \
-         patch("core.layers.output.get_policy_final_instruction", return_value=""), \
-         patch("core.layers.output.get_policy_warnings", return_value=[]):
+    with patch("core.layers.output.prompt.system_prompt.get_persona", return_value=mock_persona), \
+         patch("core.layers.output.prompt.system_prompt.get_policy_final_instruction", return_value=""), \
+         patch("core.layers.output.prompt.system_prompt.get_policy_warnings", return_value=[]):
         prompt = layer.build_system_prompt(
             verified_plan={},
             memory_data="",
@@ -98,9 +98,9 @@ def test_output_prompt_no_anti_hallucination_block_when_flag_false():
     mock_persona.build_system_prompt.return_value = "Du bist TRION."
     mock_persona.adaptation = []
 
-    with patch("core.layers.output.get_persona", return_value=mock_persona), \
-         patch("core.layers.output.get_policy_final_instruction", return_value=""), \
-         patch("core.layers.output.get_policy_warnings", return_value=[]):
+    with patch("core.layers.output.prompt.system_prompt.get_persona", return_value=mock_persona), \
+         patch("core.layers.output.prompt.system_prompt.get_policy_final_instruction", return_value=""), \
+         patch("core.layers.output.prompt.system_prompt.get_policy_warnings", return_value=[]):
         prompt = layer.build_system_prompt(
             verified_plan={},
             memory_data="",

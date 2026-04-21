@@ -81,7 +81,7 @@ def evaluate_stop_conditions(
                 f"max_runtime_s={max_runtime_s}",
             )
 
-    if snapshot.risk_level in {RiskLevel.NEEDS_CONFIRMATION, RiskLevel.RISKY}:
+    if snapshot.risk_level == RiskLevel.RISKY:
         return StopDecision(True, StopReason.RISK_GATE_REQUIRED, snapshot.risk_level.value)
 
     if snapshot.risk_level == RiskLevel.BLOCKED:

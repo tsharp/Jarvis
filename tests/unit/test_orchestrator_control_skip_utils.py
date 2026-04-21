@@ -54,3 +54,31 @@ def test_should_skip_control_layer_blocks_sensitive_tools_and_keywords():
     )
     assert skip2 is False
     assert reason2 == "hard_safety_keywords"
+
+
+def test_should_skip_control_layer_blocks_skip_for_task_loop_candidates():
+    skip, reason = should_skip_control_layer(
+        "pruefe das bitte",
+        {
+            "hallucination_risk": "low",
+            "task_loop_candidate": True,
+        },
+        suggested_tool_names=(),
+        **_base_kwargs(),
+    )
+    assert skip is False
+    assert reason == "task_loop_candidate_requires_control"
+
+
+def test_should_skip_control_layer_blocks_skip_for_task_loop_execution_mode():
+    skip, reason = should_skip_control_layer(
+        "pruefe das bitte",
+        {
+            "hallucination_risk": "low",
+            "execution_mode": "task_loop",
+        },
+        suggested_tool_names=(),
+        **_base_kwargs(),
+    )
+    assert skip is False
+    assert reason == "task_loop_execution_mode_requires_control"

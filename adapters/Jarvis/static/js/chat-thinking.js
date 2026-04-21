@@ -159,6 +159,18 @@ export function finalizeThinking(thinkingId, thinking) {
         if (thinking.loop_trace_reason) {
             metaRows.push(renderMetaRow("Loop Reason", thinking.loop_trace_reason, "text-amber-300"));
         }
+        if (thinking.task_loop_candidate) {
+            metaRows.push(renderMetaRow("Loop Candidate", "yes", "text-cyan-300"));
+        }
+        if (thinking.task_loop_kind) {
+            metaRows.push(renderMetaRow("Loop Kind", thinking.task_loop_kind, "text-cyan-300"));
+        }
+        if (thinking.authoritative_execution_mode) {
+            metaRows.push(renderMetaRow("Exec Mode", thinking.authoritative_execution_mode, "text-sky-300"));
+        }
+        if (thinking.authoritative_turn_mode) {
+            metaRows.push(renderMetaRow("Turn Mode", thinking.authoritative_turn_mode, "text-sky-300"));
+        }
         if (Array.isArray(thinking.loop_trace_corrections) && thinking.loop_trace_corrections.length) {
             metaRows.push(renderMetaRow("Plan Fixes", `${thinking.loop_trace_corrections.length}`, "text-cyan-300"));
         }
@@ -189,8 +201,15 @@ export function finalizeThinking(thinkingId, thinking) {
             suggested_tools: Array.isArray(thinking.suggested_tools) ? thinking.suggested_tools : [],
             final_execution_tools: Array.isArray(thinking.final_execution_tools) ? thinking.final_execution_tools : [],
             needs_sequential_thinking: Boolean(thinking.needs_sequential_thinking),
+            task_loop_candidate: Boolean(thinking.task_loop_candidate),
+            task_loop_kind: thinking.task_loop_kind || null,
+            task_loop_confidence: thinking.task_loop_confidence ?? null,
+            needs_visible_progress: Boolean(thinking.needs_visible_progress),
+            task_loop_reason: thinking.task_loop_reason || null,
             needs_chat_history: Boolean(thinking.needs_chat_history),
             is_fact_query: Boolean(thinking.is_fact_query),
+            authoritative_execution_mode: thinking.authoritative_execution_mode || null,
+            authoritative_turn_mode: thinking.authoritative_turn_mode || null,
             skill_catalog_hints: Array.isArray(thinking.skill_catalog_hints) ? thinking.skill_catalog_hints : [],
             skill_catalog_docs: Array.isArray(thinking.skill_catalog_docs) ? thinking.skill_catalog_docs : [],
             skill_catalog_postcheck: thinking.skill_catalog_postcheck || null,

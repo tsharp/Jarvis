@@ -38,7 +38,7 @@ def test_hardware_resolution_builds_device_overrides_for_stage_only_devices():
 
 def test_hardware_resolution_prefers_dynamic_gateway_before_hardcoded_host_fallbacks():
     src = Path(__file__).resolve().parents[2].joinpath("container_commander/hardware_resolution.py").read_text(encoding="utf-8")
-    helper_src = Path(__file__).resolve().parents[2].joinpath("utils/service_endpoint_resolver.py").read_text(encoding="utf-8")
+    helper_src = Path(__file__).resolve().parents[2].joinpath("utils/routing/service_endpoint.py").read_text(encoding="utf-8")
     assert "candidate_service_endpoints(" in src
     assert 'host.docker.internal' in helper_src
     assert '127.0.0.1' in helper_src

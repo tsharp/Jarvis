@@ -264,7 +264,7 @@ class TestStage5ControlLayer:
         """Control Layer muss verified_plan['suggested_tools'] aus thinking_plan lesen."""
         result = _docker("""
 from pathlib import Path
-src = Path('/app/core/layers/control.py').read_text()
+src = Path('/app/core/layers/control/layer.py').read_text()
 # Control Layer muss suggested_tools aus dem Plan benutzen
 print('READS_SUGGESTED:', 'suggested_tools' in src)
 """)

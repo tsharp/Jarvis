@@ -37,7 +37,9 @@ def _load_config():
     settings_mod.settings.get = lambda _k, default="": default
     with patch.dict(sys.modules, {"utils.settings": settings_mod}):
         spec = importlib.util.spec_from_file_location(
-            "config_c10_discovery", os.path.join(_REPO_ROOT, "config.py")
+            "config_c10_discovery",
+            os.path.join(_REPO_ROOT, "config", "__init__.py"),
+            submodule_search_locations=[os.path.join(_REPO_ROOT, "config")],
         )
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)

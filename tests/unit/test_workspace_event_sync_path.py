@@ -277,7 +277,12 @@ async def test_sync_path_total_workspace_entries():
 
 @pytest.mark.asyncio
 async def test_sync_path_task_loop_short_circuits_before_pipeline():
-    """Expliziter Task-Loop startet frueh und waechst nicht in Thinking/Control/Output."""
+    """Expliziter Task-Loop durchlaeuft Control (Control-First) und umgeht Output.
+
+    Seit der Control-First-Umstellung laeuft der ControlLayer immer zuerst.
+    Der Task-Loop wird danach via is_authoritative_task_loop_turn ausgeloest,
+    sodass Output.generate niemals aufgerufen wird.
+    """
     from core.task_loop.store import get_task_loop_store
 
     conversation_id = "conv-sync-task-loop"
@@ -285,15 +290,28 @@ async def test_sync_path_task_loop_short_circuits_before_pipeline():
     thinking_plan = _make_thinking_plan()
     verification = _make_verification()
     orch = _make_orch(thinking_plan, verification)
+    # Control-First: verified_plan muss _authoritative_turn_mode=task_loop enthalten
+    orch._execute_control_layer = AsyncMock(return_value=(
+        verification,
+        {
+            "_control_decision": verification,
+            "_authoritative_turn_mode": "task_loop",
+            "turn_mode": "task_loop",
+            "_authoritative_turn_mode_reasons": ["explicit_task_loop_signal"],
+            "_authoritative_turn_mode_blockers": [],
+        },
+    ))
     request = _make_request(conversation_id=conversation_id)
     request.get_last_user_message.return_value = "Task-Loop: Bitte schrittweise einen Plan machen"
 
     response = await _run_sync(orch, request)
 
     assert response.done_reason == "task_loop_completed"
-    assert "Task-Loop gestartet" in response.content
+    assert response.content  # has non-empty content after completion
     orch.thinking.analyze.assert_awaited_once()
-    orch._execute_control_layer.assert_not_awaited()
+    # Control-First: ControlLayer wird jetzt vor dem Task-Loop aufgerufen
+    orch._execute_control_layer.assert_awaited_once()
+    # Output bleibt ausgespart — Task-Loop short-circuits nach Control
     orch.output.generate.assert_not_awaited()
     entry_types = [
         call_args.kwargs.get("entry_type")

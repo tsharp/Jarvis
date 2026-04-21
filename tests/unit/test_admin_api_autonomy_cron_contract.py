@@ -8,7 +8,12 @@ def _read_main() -> str:
 
 def _read_config() -> str:
     root = Path(__file__).resolve().parents[2]
-    return (root / "config.py").read_text(encoding="utf-8")
+    parts = [
+        (root / "config" / "autonomy" / "scheduler.py").read_text(encoding="utf-8"),
+        (root / "config" / "autonomy" / "trion_policy.py").read_text(encoding="utf-8"),
+        (root / "config" / "autonomy" / "hardware_guard.py").read_text(encoding="utf-8"),
+    ]
+    return "\n".join(parts)
 
 
 def test_autonomy_cron_endpoints_exist():

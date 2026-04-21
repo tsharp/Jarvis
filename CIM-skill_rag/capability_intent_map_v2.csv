@@ -1,0 +1,81 @@
+intent_pattern,capability_family,confidence,example_phrase,feature_signal,semantic_description
+\b(container|docker|podman)\b,container,0.96,Starte einen Python-Container für den Parser,system,Explicit container runtime request.
+\b(start|launch|run)\b.*\bcontainer\b,container,0.93,Launch a container for the ETL job,system,Start or run a containerized environment.
+\b(neuen?|new)\b.*\bcontainer\b,container,0.92,Erstelle einen neuen Container für Tests,system,Request to create a fresh container.
+\bimage\b.*\b(starten|run|launch)\b,container,0.88,Run this image in an isolated environment,system,Image-based environment execution request.
+\b(shell|terminal)\b.*\b(isoliert|isolated)\b,container,0.84,Open an isolated shell for debugging,system,Need for isolated system execution.
+\b(os|system|prozess|process)\b.*\b(inspect|debug|prüfen)\b,container,0.82,Inspect OS-level behavior inside a container,system,System-level debugging tends toward containers.
+\bgpu\b.*\bcontainer\b,container,0.91,Ich brauche einen GPU-Container für ein Modell,system,Hardware-bound runtime in isolated environment.
+\b(mount|volume|bind)\b,container,0.87,Mount this volume into a container,system,Volume or bind configuration for runtime.
+\b(compose|docker-compose)\b,container,0.90,Use docker compose for the worker stack,integration,Stack orchestration across services.
+\bservice\b.*\bcontainer\b,container,0.86,Create a service container for the API bridge,integration,Service-style deployment in containers.
+\bdeploy\b.*\bcontainer\b,container,0.89,Deploy this as a containerized worker,integration,Deployment request targeting container infra.
+\b(isolierte umgebung|isolated environment)\b,container,0.85,Nutze eine isolierte Umgebung für das Script,system,Need for environment isolation.
+\b(sandbox\b.*\bpython|python\b.*\bsandbox)\b,container,0.88,Run the script in a Python sandbox container,system,Sandboxed Python often maps to containers.
+\b(package(s)? installieren|install packages)\b,container,0.81,Install dependencies in a fresh container,tooling,Dependency setup in an ephemeral runtime.
+\blinux\b.*\b(umgebung|environment)\b,container,0.83,I need a Linux environment for this tool,system,Need for a controlled OS environment.
+\bworker\b.*\bcontainer\b,container,0.86,Starte einen Worker-Container für die Verarbeitung,integration,Dedicated worker execution environment.
+\b(skill|workflow)\b,skill,0.96,Führe den ingest skill aus,tooling,Explicit named skill or workflow request.
+\brun\b.*\bskill\b,skill,0.95,Run the report_generation skill,tooling,Execute a named skill directly.
+\bausführen\b.*\bskill\b,skill,0.95,Bitte den cleanup skill ausführen,tooling,German request to execute a named skill.
+\binstall\b.*\bskill\b,skill,0.91,Install the markdown_export skill,tooling,Install a skill into the runtime.
+\berstelle\b.*\bskill\b,skill,0.89,Erstelle einen Skill für PDF-Zusammenfassungen,tooling,Create a reusable skill or workflow.
+\b(workflow\b.*\bautomatisieren|automate\b.*\bworkflow)\b,skill,0.84,Automate this workflow as a reusable skill,tooling,Turn repeated process into a skill.
+\b(tool call|tool-call)\b,skill,0.83,This should become a structured tool call,tooling,Explicit tool-style execution wording.
+\b(chain\b.*\bsteps|mehrere schritte)\b,skill,0.80,Baue dafür einen Skill mit mehreren Schritten,tooling,Multi-step reusable operation.
+\b(parse\b.*\bpdf|pdf\b.*\bextract)\b,skill,0.76,Create a skill to extract tables from PDFs,document,Document-oriented reusable workflow.
+\bdocx\b.*\bworkflow\b,skill,0.77,I need a DOCX processing workflow,document,Reusable document processing skill.
+\b(spreadsheet\b.*\bskill|excel\b.*\bskill)\b,skill,0.78,Build a spreadsheet validation skill,document,Structured data processing workflow.
+\bapi\b.*\bworkflow\b,skill,0.74,Create a workflow that calls an API and normalizes results,integration,Workflow around external integration.
+\bwebhook\b.*\bskill\b,skill,0.75,Erzeuge einen Skill für Webhook-Verarbeitung,integration,Reusable webhook handling logic.
+\b(benannter skill|named skill)\b,skill,0.94,Use the named skill 'ticket_triage',tooling,Named reusable capability.
+\b(reusable\b.*\bworkflow|wiederverwendbar)\b,skill,0.82,Mach daraus einen wiederverwendbaren Workflow,tooling,Emphasis on reusable task packaging.
+\btrigger\b.*\bskill\b,skill,0.79,Trigger the translation skill on demand,tooling,Event-like call into a named skill.
+\b(jeden tag|täglich|daily|every day)\b,cron,0.96,Erstelle täglich um 8 einen Bericht,temporal,Recurring daily schedule pattern.
+\b(jede stunde|stündlich|hourly|every hour)\b,cron,0.97,Run the sync every hour,temporal,Hourly recurring schedule.
+\b(weekly|wöchentlich|jede woche|every week)\b,cron,0.95,Führe das Backup jede Woche aus,temporal,Weekly recurring schedule.
+\b(monatlich|monthly|every month)\b,cron,0.94,Generate a monthly usage summary,temporal,Monthly recurring schedule.
+\bcron(job)?\b,cron,0.98,Lege einen Cronjob für die Bereinigung an,temporal,Explicit cron or cronjob request.
+\bschedule\b.*\brecurring\b,cron,0.90,Schedule this as a recurring task,temporal,Explicit recurring schedule request.
+"\b(zu einer festen zeit|at \d{1,2}(:\d{2})?)\b",cron,0.88,Run this every day at 06:30,temporal,Fixed-time scheduling signal.
+\b(regelmäßig|regularly)\b,cron,0.84,Prüfe regelmäßig die Logs,temporal,General recurring timing request.
+\bautomatisch jeden\b,cron,0.93,Automatisch jeden Morgen die API prüfen,temporal,Automatic repeated schedule.
+\b(nightly|nachts)\b,cron,0.90,Run the nightly cleanup job,temporal,Nightly scheduled execution.
+\b(remind me every|erinnere mich jeden)\b,cron,0.86,Erinnere mich jeden Freitag an das Review,temporal,Recurring reminder-style schedule.
+\b(periodisch|periodic)\b,cron,0.85,Create a periodic check for stale files,temporal,Periodic execution request.
+\b(recurring task|wiederkehrende aufgabe)\b,cron,0.92,Lege eine wiederkehrende Aufgabe an,temporal,Explicit recurring task phrasing.
+\b(monitor\b.*\bcontinuous|kontinuierlich überwachen)\b,cron,0.81,Kontinuierlich überwache den Service,system,Continuous monitoring can imply scheduled repetition.
+\b(heartbeat|health check)\b,cron,0.82,Set up a heartbeat check every 5 minutes,integration,Scheduled integration health checks.
+\bpoll\b.*\bapi\b,cron,0.80,Poll the API every 10 minutes,integration,Periodic external polling pattern.
+\bmcp\b,mcp,0.98,Nutze das MCP-Tool zum Speichern,integration,Explicit MCP mention.
+\b(mcp tool|mcp-tool)\b,mcp,0.97,Call the MCP tool for memory search,integration,Explicit MCP tool invocation.
+\b(server\b.*\bmcp|mcp\b.*\bserver)\b,mcp,0.94,Verbinde den MCP Server mit dem Agenten,integration,MCP server connection/setup.
+\b(tool registry|tool-registry)\b,mcp,0.83,Query the tool registry through MCP,integration,Registry-style external tool access.
+\b(external tool|externes tool)\b,mcp,0.81,Use an external tool over MCP,integration,Externalized capability via MCP.
+\bwebhook\b.*\bmcp\b,mcp,0.84,Bridge the webhook through an MCP server,integration,Webhook integration over MCP.
+\bremote\b.*\btool\b,mcp,0.79,Invoke a remote tool instead of a local skill,integration,Remote tool access pattern.
+\b(api bridge|bridge\b.*\btool)\b,mcp,0.80,Use an API bridge tool via MCP,integration,Bridge external APIs into the agent.
+\bconnect\b.*\bserver\b,mcp,0.76,Connect to the document server through MCP,integration,Connect to external server resource.
+\bmemory\b.*\bmcp\b,mcp,0.88,Nutze MCP für die Memory-Suche,integration,MCP-backed memory access.
+\bvector\b.*\bsearch\b,mcp,0.74,Run vector search via the MCP endpoint,integration,External semantic retrieval endpoint.
+\b(tool endpoint|endpoint\b.*\btool)\b,mcp,0.78,Call the tool endpoint on the MCP server,integration,Endpoint-oriented tool routing.
+\b(remote procedure|rpc)\b,mcp,0.73,Use an RPC-style MCP call,integration,Protocol-like remote invocation.
+\b(shared server|zentraler server)\b,mcp,0.75,Greife auf den zentralen MCP-Server zu,integration,Shared external service access.
+\b(integration point|integrationspunkt)\b,mcp,0.72,This should go through an integration point,integration,Generic external integration phrase.
+\b(tool host|tool-host)\b,mcp,0.77,Route this to the remote tool host,integration,Hosted remote tool execution.
+\b(erklär(e|en)?|explain)\b,direct,0.95,Erklär mir kurz den Unterschied,simplicity,Simple explanatory answer requested.
+\b(answer directly|direkt antworten)\b,direct,0.97,Just answer directly without tools,simplicity,Explicit direct-answer request.
+\b(kurz|briefly)\b,direct,0.86,Antwort kurz und ohne Ausführung,simplicity,Concise chat answer signal.
+\b(what is|was ist)\b,direct,0.88,Was ist ein MCP-Server?,simplicity,Definition-style request.
+\b(how does|wie funktioniert)\b,direct,0.87,Wie funktioniert ein Cronjob?,simplicity,General explanation request.
+\b(meinung|opinion)\b,direct,0.74,Was ist deine Meinung zu der Struktur?,simplicity,Conversational opinion request.
+\b(compare|vergleiche)\b,direct,0.79,Vergleiche Cron und one-shot kurz,simplicity,Comparison that can be answered directly.
+\b(summarize|zusammenfassen)\b,direct,0.82,Summarize this architecture in 3 sentences,simplicity,Plain summarization request.
+\b(chat\b.*\bantwort|just chat)\b,direct,0.83,Ich will nur eine normale Chat-Antwort,simplicity,Explicit normal chat mode.
+\b(ohne tools|without tools)\b,direct,0.92,Beantworte das ohne Tools,simplicity,No-tool direct response.
+\bpdf\b.*\b(erklären|explain)\b,direct,0.70,"Erklär mir kurz, was in diesem PDF wichtig ist",document,Document discussion without workflow creation.
+\bdocx\b.*\b(summary|zusammenfassung)\b,direct,0.69,Give me a quick summary of this DOCX,document,Simple document summary request.
+\b(spreadsheet\b.*\bexplain|excel\b.*\berklären)\b,direct,0.68,Explain this spreadsheet briefly,document,Direct explanation of a document.
+\bapi\b.*\b(erklären|explain)\b,direct,0.66,Explain this API response in simple terms,integration,Explain integration result directly.
+\b(plain answer|einfache antwort)\b,direct,0.90,Gib mir einfach eine einfache Antwort,simplicity,Preference for plain direct response.
+\b(no workflow|kein workflow)\b,direct,0.89,"Kein Workflow, nur die Antwort",simplicity,Avoid structured execution path.

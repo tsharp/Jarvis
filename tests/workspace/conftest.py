@@ -22,7 +22,7 @@ MEMORY_MCP_PATH = os.path.join(SQL_MEMORY_ROOT, "memory_mcp")
 
 for p in [PROJECT_ROOT, SQL_MEMORY_ROOT, MEMORY_MCP_PATH]:
     if p not in sys.path:
-        # Keep project root precedence so "import config" resolves to repo config.py.
+        # Keep project root precedence so "import config" resolves to the repo config package.
         sys.path.append(p)
 
 # Mock modules that may not be available in test environment

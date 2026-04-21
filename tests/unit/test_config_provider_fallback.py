@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 import config
+import config.models.providers as providers_mod
 
 
 class _SettingsStub:
@@ -18,7 +19,7 @@ class _SettingsStub:
 class TestConfigProviderFallback(unittest.TestCase):
     def test_thinking_and_control_fall_back_to_output_provider_when_unset(self):
         stub = _SettingsStub({"OUTPUT_PROVIDER": "ollama_cloud"})
-        with patch.object(config, "settings", stub):
+        with patch.object(providers_mod, "settings", stub):
             with patch.dict(
                 os.environ,
                 {"THINKING_PROVIDER": "", "CONTROL_PROVIDER": "", "OUTPUT_PROVIDER": ""},
@@ -36,7 +37,7 @@ class TestConfigProviderFallback(unittest.TestCase):
                 "CONTROL_PROVIDER": "anthropic",
             }
         )
-        with patch.object(config, "settings", stub):
+        with patch.object(providers_mod, "settings", stub):
             self.assertEqual(config.get_output_provider(), "ollama_cloud")
             self.assertEqual(config.get_thinking_provider(), "openai")
             self.assertEqual(config.get_control_provider(), "anthropic")

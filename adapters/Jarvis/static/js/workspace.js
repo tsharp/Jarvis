@@ -93,7 +93,7 @@
         };
     }
 
-    function replayPlanningWorkspaceEvents(conversationId, allEntries) {
+    function replayPlanWorkspaceEvents(conversationId, allEntries) {
         const replayKey = conversationId || "__global__";
         if (lastPlanningReplayKey === replayKey) return;
         lastPlanningReplayKey = replayKey;
@@ -104,7 +104,10 @@
                 item &&
                 item._source === "event" &&
                 typeof item.entry_type === "string" &&
-                /^planning_(start|step|done|error)$/.test(item.entry_type)
+                (
+                    /^planning_(start|step|done|error)$/.test(item.entry_type)
+                    || /^task_loop_(started|plan_updated|context_updated|step_started|step_answered|step_completed|reflection|waiting_for_user|blocked|completed|cancelled)$/.test(item.entry_type)
+                )
             )
             .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
@@ -745,7 +748,7 @@
         const convId = window.currentConversationId || null;
         console.log("[Workspace] Loading entries...", convId ? `conv=${convId}` : 'global');
         entries = await fetchEntries(convId);
-        replayPlanningWorkspaceEvents(convId, entries);
+        replayPlanWorkspaceEvents(convId, entries);
         console.log(`[Workspace] Fetched ${entries.length} entries`);
         await refreshAutonomyData(true);
 

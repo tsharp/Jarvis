@@ -8,7 +8,7 @@ def get_repo_root() -> Path:
     env_root = str(os.getenv("JARVIS_PROJECT_ROOT") or "").strip()
     if env_root:
         root = Path(env_root).expanduser().resolve()
-        if (root / "config.py").exists() and (root / "core").is_dir():
+        if (root / "config" / "__init__.py").exists() and (root / "core").is_dir():
             return root
     return Path(__file__).resolve().parents[1]
 

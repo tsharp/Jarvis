@@ -6,7 +6,7 @@ Evidence für den ControlLayer. Die finale Auswahl bleibt damit bei Control.
 
 Routing-Klassen:
 
-  score >= MATCH_THRESHOLD_STRICT (0.85)  → use_blueprint
+  score >= MATCH_THRESHOLD_STRICT (0.80)  → use_blueprint
   score >= MATCH_THRESHOLD_SUGGEST (0.68) → suggest_blueprint
   score <  MATCH_THRESHOLD_SUGGEST        → no_blueprint
 
@@ -23,8 +23,8 @@ from core.graph_hygiene import apply_graph_hygiene, GraphCandidate
 # SCHWELLWERTE
 # ═══════════════════════════════════════════════════════
 
-MATCH_THRESHOLD_STRICT  = 0.85  # Auto-route: hohe Konfidenz, kein User-Input nötig
-MATCH_THRESHOLD_SUGGEST = 0.68  # Suggest-Zone: TRION fragt nach (kein blindes Starten!)
+MATCH_THRESHOLD_STRICT  = 0.80  # Auto-route: hohe Konfidenz, kein weiterer Recheck nötig
+MATCH_THRESHOLD_SUGGEST = 0.68  # Recheck-Zone: Discovery vertiefen, noch nicht starten
 PARTIAL_THRESHOLD       = 0.52  # Unter diesem Wert: kein Blueprint erkennbar
 
 MAX_QUERY_LEN = 200
@@ -67,7 +67,7 @@ class BlueprintSemanticRouter:
          parse → trust_level-Filter → dedupe(latest) → sqlite-crosscheck (fail-closed)
     4. Entscheide basierend auf bestem Score:
        - >= STRICT   → use_blueprint    (auto-route)
-       - >= SUGGEST  → suggest_blueprint (Rückfrage mit Top-2)
+       - >= SUGGEST  → suggest_blueprint (Discovery/Recheck mit Top-Kandidaten)
        - sonst       → no_blueprint     (kein Freestyle-Fallback!)
     """
 
@@ -200,7 +200,7 @@ class BlueprintSemanticRouter:
                     decision="suggest_blueprint",
                     blueprint_id=best_id,
                     score=best_score,
-                    reason=f"Nicht sicher genug für auto-route ({best_score:.2f}) — Rückfrage nötig",
+                    reason=f"Nicht sicher genug für auto-route ({best_score:.2f}) — erst Discovery/Recheck nötig",
                     candidates=ranked,
                 )
 

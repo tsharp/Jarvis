@@ -50,7 +50,7 @@ def _detect_project_root() -> str:
         if not root or root in seen:
             continue
         seen.add(root)
-        if os.path.exists(os.path.join(root, "config.py")) and os.path.exists(
+        if os.path.exists(os.path.join(root, "config", "__init__.py")) and os.path.exists(
             os.path.join(root, "core")
         ):
             return root

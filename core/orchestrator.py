@@ -2023,10 +2023,15 @@ class PipelineOrchestrator:
 
     @staticmethod
     def _build_cron_objective(user_text: str) -> str:
-        return util_build_cron_objective(
+        from core.orchestrator_modules.policy.cron_mode_guard import assess_cron_mode
+        mode = assess_cron_mode(user_text)
+        objective = util_build_cron_objective(
             user_text,
             looks_like_self_state_request_fn=PipelineOrchestrator._looks_like_self_state_request,
         )
+        if not mode.is_persistent and mode.confidence >= 0.3:
+            return f"one_shot_intent::{objective}"
+        return objective
 
     @staticmethod
     def _extract_direct_cron_reminder_text(objective: str) -> str:

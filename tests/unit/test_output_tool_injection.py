@@ -11,9 +11,9 @@ _TOOLS = [
 
 
 class TestOutputToolInjection(unittest.TestCase):
-    @patch("core.layers.output.get_enabled_tools", return_value=_TOOLS)
-    @patch("core.layers.output.get_output_tool_prompt_limit", return_value=10)
-    @patch("core.layers.output.get_output_tool_injection_mode", return_value="selected")
+    @patch("core.layers.output.prompt.tool_injection.list_live_tools", return_value=_TOOLS)
+    @patch("core.layers.output.prompt.tool_injection.get_output_tool_prompt_limit", return_value=10)
+    @patch("core.layers.output.prompt.tool_injection.get_output_tool_injection_mode", return_value="selected")
     def test_selected_mode_injects_only_selected_tools(self, *_mocks):
         layer = OutputLayer()
         plan = {"_selected_tools_for_prompt": ["list_skills"]}
@@ -21,35 +21,35 @@ class TestOutputToolInjection(unittest.TestCase):
         self.assertIn("list_skills", prompt)
         self.assertNotIn("memory_graph_search", prompt)
 
-    @patch("core.layers.output.get_enabled_tools", return_value=_TOOLS)
-    @patch("core.layers.output.get_output_tool_prompt_limit", return_value=10)
-    @patch("core.layers.output.get_output_tool_injection_mode", return_value="none")
+    @patch("core.layers.output.prompt.tool_injection.list_live_tools", return_value=_TOOLS)
+    @patch("core.layers.output.prompt.tool_injection.get_output_tool_prompt_limit", return_value=10)
+    @patch("core.layers.output.prompt.tool_injection.get_output_tool_injection_mode", return_value="none")
     def test_none_mode_disables_tool_injection(self, *_mocks):
         layer = OutputLayer()
         prompt = layer.build_system_prompt({}, memory_data="")
         self.assertNotIn("VERFÜGBARE TOOLS", prompt)
         self.assertNotIn("list_skills", prompt)
 
-    @patch("core.layers.output.get_enabled_tools", return_value=_TOOLS)
-    @patch("core.layers.output.get_output_tool_prompt_limit", return_value=10)
-    @patch("core.layers.output.get_output_tool_injection_mode", return_value="selected")
+    @patch("core.layers.output.prompt.tool_injection.list_live_tools", return_value=_TOOLS)
+    @patch("core.layers.output.prompt.tool_injection.get_output_tool_prompt_limit", return_value=10)
+    @patch("core.layers.output.prompt.tool_injection.get_output_tool_injection_mode", return_value="selected")
     def test_interactive_mode_adds_output_budget_hint(self, *_mocks):
         layer = OutputLayer()
         prompt = layer.build_system_prompt({"_response_mode": "interactive"}, memory_data="")
         self.assertIn("ANTWORT-BUDGET", prompt)
 
-    @patch("core.layers.output.get_enabled_tools", return_value=_TOOLS)
-    @patch("core.layers.output.get_output_tool_prompt_limit", return_value=10)
-    @patch("core.layers.output.get_output_tool_injection_mode", return_value="selected")
+    @patch("core.layers.output.prompt.tool_injection.list_live_tools", return_value=_TOOLS)
+    @patch("core.layers.output.prompt.tool_injection.get_output_tool_prompt_limit", return_value=10)
+    @patch("core.layers.output.prompt.tool_injection.get_output_tool_injection_mode", return_value="selected")
     def test_deep_mode_includes_output_budget_hint(self, *_mocks):
         layer = OutputLayer()
         prompt = layer.build_system_prompt({"_response_mode": "deep"}, memory_data="")
         self.assertIn("ANTWORT-BUDGET", prompt)
         self.assertIn("Deep-Modus", prompt)
 
-    @patch("core.layers.output.get_enabled_tools", return_value=_TOOLS)
-    @patch("core.layers.output.get_output_tool_prompt_limit", return_value=10)
-    @patch("core.layers.output.get_output_tool_injection_mode", return_value="selected")
+    @patch("core.layers.output.prompt.tool_injection.list_live_tools", return_value=_TOOLS)
+    @patch("core.layers.output.prompt.tool_injection.get_output_tool_prompt_limit", return_value=10)
+    @patch("core.layers.output.prompt.tool_injection.get_output_tool_injection_mode", return_value="selected")
     def test_dialog_guidance_for_feedback_turn(self, *_mocks):
         layer = OutputLayer()
         prompt = layer.build_system_prompt(
@@ -66,9 +66,9 @@ class TestOutputToolInjection(unittest.TestCase):
         self.assertIn("1-3 Sätze", prompt)
         self.assertIn("Spiegle Ton", prompt)
 
-    @patch("core.layers.output.get_enabled_tools", return_value=_TOOLS)
-    @patch("core.layers.output.get_output_tool_prompt_limit", return_value=10)
-    @patch("core.layers.output.get_output_tool_injection_mode", return_value="selected")
+    @patch("core.layers.output.prompt.tool_injection.list_live_tools", return_value=_TOOLS)
+    @patch("core.layers.output.prompt.tool_injection.get_output_tool_prompt_limit", return_value=10)
+    @patch("core.layers.output.prompt.tool_injection.get_output_tool_injection_mode", return_value="selected")
     def test_smalltalk_prompt_adds_no_fabricated_experience_guard(self, *_mocks):
         layer = OutputLayer()
         prompt = layer.build_system_prompt(
@@ -83,9 +83,9 @@ class TestOutputToolInjection(unittest.TestCase):
         self.assertIn("keine erfundenen persönlichen Erlebnisse", prompt)
         self.assertIn("ohne menschlichen Alltag", prompt)
 
-    @patch("core.layers.output.get_enabled_tools", return_value=_TOOLS)
-    @patch("core.layers.output.get_output_tool_prompt_limit", return_value=10)
-    @patch("core.layers.output.get_output_tool_injection_mode", return_value="selected")
+    @patch("core.layers.output.prompt.tool_injection.list_live_tools", return_value=_TOOLS)
+    @patch("core.layers.output.prompt.tool_injection.get_output_tool_prompt_limit", return_value=10)
+    @patch("core.layers.output.prompt.tool_injection.get_output_tool_injection_mode", return_value="selected")
     def test_skill_catalog_context_prompt_adds_skill_semantics_rules(self, *_mocks):
         layer = OutputLayer()
         prompt = layer.build_system_prompt(
@@ -117,9 +117,9 @@ class TestOutputToolInjection(unittest.TestCase):
         self.assertIn("Runtime-Skills: <verifizierter Runtime-Befund", prompt)
         self.assertIn("Einordnung: <klare Trennung", prompt)
 
-    @patch("core.layers.output.get_enabled_tools", return_value=_TOOLS)
-    @patch("core.layers.output.get_output_tool_prompt_limit", return_value=10)
-    @patch("core.layers.output.get_output_tool_injection_mode", return_value="selected")
+    @patch("core.layers.output.prompt.tool_injection.list_live_tools", return_value=_TOOLS)
+    @patch("core.layers.output.prompt.tool_injection.get_output_tool_prompt_limit", return_value=10)
+    @patch("core.layers.output.prompt.tool_injection.get_output_tool_injection_mode", return_value="selected")
     def test_skill_catalog_context_prompt_zero_inventory_demands_explicit_runtime_finding(self, *_mocks):
         layer = OutputLayer()
         prompt = layer.build_system_prompt(
@@ -136,9 +136,9 @@ class TestOutputToolInjection(unittest.TestCase):
         self.assertIn("Wenn die Frage nach Draft-Skills fragt, antworte trotzdem zuerst", prompt)
         self.assertIn("warum `list_skills` sie nicht anzeigt", prompt)
 
-    @patch("core.layers.output.get_enabled_tools", return_value=_TOOLS)
-    @patch("core.layers.output.get_output_tool_prompt_limit", return_value=10)
-    @patch("core.layers.output.get_output_tool_injection_mode", return_value="selected")
+    @patch("core.layers.output.prompt.tool_injection.list_live_tools", return_value=_TOOLS)
+    @patch("core.layers.output.prompt.tool_injection.get_output_tool_prompt_limit", return_value=10)
+    @patch("core.layers.output.prompt.tool_injection.get_output_tool_injection_mode", return_value="selected")
     def test_skill_catalog_context_prompt_requires_split_for_inventory_plus_followup(self, *_mocks):
         layer = OutputLayer()
         prompt = layer.build_system_prompt(
@@ -162,9 +162,9 @@ class TestOutputToolInjection(unittest.TestCase):
         self.assertIn("Wunsch-Skills: <optional; Wunsch-Skills oder Vorschläge klar getrennt von Inventarfakten>.", prompt)
         self.assertNotIn("Nächster Schritt: <optional; Wunsch-Skills oder Vorschläge klar getrennt von Inventarfakten>.", prompt)
 
-    @patch("core.layers.output.get_enabled_tools", return_value=_TOOLS)
-    @patch("core.layers.output.get_output_tool_prompt_limit", return_value=10)
-    @patch("core.layers.output.get_output_tool_injection_mode", return_value="selected")
+    @patch("core.layers.output.prompt.tool_injection.list_live_tools", return_value=_TOOLS)
+    @patch("core.layers.output.prompt.tool_injection.get_output_tool_prompt_limit", return_value=10)
+    @patch("core.layers.output.prompt.tool_injection.get_output_tool_injection_mode", return_value="selected")
     def test_container_inventory_prompt_adds_runtime_inventory_contract(self, *_mocks):
         layer = OutputLayer()
         prompt = layer.build_system_prompt(
@@ -188,9 +188,9 @@ class TestOutputToolInjection(unittest.TestCase):
         self.assertIn("Laufende Container: <verifizierter Runtime-Befund", prompt)
         self.assertIn("Gestoppte Container: <verifizierter Runtime-Befund", prompt)
 
-    @patch("core.layers.output.get_enabled_tools", return_value=_TOOLS)
-    @patch("core.layers.output.get_output_tool_prompt_limit", return_value=10)
-    @patch("core.layers.output.get_output_tool_injection_mode", return_value="selected")
+    @patch("core.layers.output.prompt.tool_injection.list_live_tools", return_value=_TOOLS)
+    @patch("core.layers.output.prompt.tool_injection.get_output_tool_prompt_limit", return_value=10)
+    @patch("core.layers.output.prompt.tool_injection.get_output_tool_injection_mode", return_value="selected")
     def test_container_blueprint_prompt_adds_catalog_contract(self, *_mocks):
         layer = OutputLayer()
         prompt = layer.build_system_prompt(
@@ -211,9 +211,9 @@ class TestOutputToolInjection(unittest.TestCase):
         self.assertIn("Verfuegbare Blueprints: <verifizierter Katalog-Befund", prompt)
         self.assertIn("truth_mode fuer diesen Turn: `blueprint_catalog`.", prompt)
 
-    @patch("core.layers.output.get_enabled_tools", return_value=_TOOLS)
-    @patch("core.layers.output.get_output_tool_prompt_limit", return_value=10)
-    @patch("core.layers.output.get_output_tool_injection_mode", return_value="selected")
+    @patch("core.layers.output.prompt.tool_injection.list_live_tools", return_value=_TOOLS)
+    @patch("core.layers.output.prompt.tool_injection.get_output_tool_prompt_limit", return_value=10)
+    @patch("core.layers.output.prompt.tool_injection.get_output_tool_injection_mode", return_value="selected")
     def test_container_binding_prompt_adds_binding_contract(self, *_mocks):
         layer = OutputLayer()
         prompt = layer.build_system_prompt(

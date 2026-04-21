@@ -10,7 +10,7 @@ import ast
 import os
 
 def _get_enforcement_mode() -> str:
-    """Robust fallback if config.py isn't fully synchronized."""
+    """Robust fallback if the shared config package is unavailable."""
     try:
         from config import get_skill_secret_enforcement
         return get_skill_secret_enforcement()

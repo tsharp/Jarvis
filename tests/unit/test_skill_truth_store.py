@@ -576,7 +576,8 @@ class TestSkillGraphReconcileFlag(unittest.TestCase):
     def _get_fn(self):
         spec = importlib.util.spec_from_file_location(
             "config_c3_test",
-            os.path.join(_REPO_ROOT, "config.py"),
+            os.path.join(_REPO_ROOT, "config", "__init__.py"),
+            submodule_search_locations=[os.path.join(_REPO_ROOT, "config")],
         )
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)

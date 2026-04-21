@@ -12,6 +12,7 @@ def test_task_loop_event_names_match_contract():
     assert {
         "task_loop_started",
         "task_loop_plan_updated",
+        "task_loop_context_updated",
         "task_loop_step_started",
         "task_loop_step_answered",
         "task_loop_step_completed",

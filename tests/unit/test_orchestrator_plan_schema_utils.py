@@ -184,6 +184,52 @@ def test_coerce_thinking_plan_schema_does_not_relabel_skill_execution_as_catalog
     assert out["resolution_strategy"] is None
 
 
+def test_coerce_thinking_plan_schema_marks_explicit_task_loop_signal():
+    raw = {
+        "needs_memory": False,
+        "is_fact_query": False,
+        "needs_chat_history": False,
+        "memory_keys": [],
+        "suggested_tools": [],
+    }
+    out = coerce_thinking_plan_schema(
+        raw,
+        user_text="Task-Loop: Bitte pruefe das Schritt fuer Schritt",
+        max_memory_keys_per_request=5,
+        contains_explicit_tool_intent_fn=lambda text: False,
+        has_memory_recall_signal_fn=lambda text: False,
+    )
+    assert out["task_loop_candidate"] is True
+    assert out["task_loop_kind"] == "visible_multistep"
+    assert out["needs_visible_progress"] is True
+    assert out["estimated_steps"] >= 3
+    assert out["task_loop_reason"] == "explicit_task_loop_signal"
+
+
+def test_coerce_thinking_plan_schema_infers_complex_multistep_task_loop_candidate():
+    raw = {
+        "dialogue_act": "analysis",
+        "needs_memory": False,
+        "is_fact_query": False,
+        "needs_chat_history": False,
+        "memory_keys": [],
+        "suggested_tools": ["container_stats"],
+        "needs_sequential_thinking": True,
+        "sequential_complexity": 8,
+    }
+    out = coerce_thinking_plan_schema(
+        raw,
+        user_text="Analysiere bitte die neue Multistep-Ausfuehrung mit sichtbaren Zwischenstaenden",
+        max_memory_keys_per_request=5,
+        contains_explicit_tool_intent_fn=lambda text: False,
+        has_memory_recall_signal_fn=lambda text: False,
+    )
+    assert out["task_loop_candidate"] is True
+    assert out["task_loop_kind"] == "visible_multistep"
+    assert out["needs_visible_progress"] is True
+    assert out["task_loop_reason"] == "sequential_complexity_multistep_candidate"
+
+
 def test_coerce_thinking_plan_schema_sharpens_live_skill_inventory_hints():
     raw = {
         "needs_memory": False,

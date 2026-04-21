@@ -168,7 +168,7 @@ def test_stabilize_container_resolution_auto_selects_clear_winner():
     assert out["corrections"]["_blueprint_gate_blocked"] is False
 
 
-def test_stabilize_container_resolution_keeps_ambiguous_candidates_gated():
+def test_stabilize_container_resolution_downgrades_ambiguous_candidates_to_recheck():
     layer = ControlLayer()
     verification = {
         "approved": True,
@@ -200,10 +200,11 @@ def test_stabilize_container_resolution_keeps_ambiguous_candidates_gated():
 
     assert out["approved"] is True
     assert out["decision_class"] == "warn"
-    assert out["reason"] == "container_blueprint_clarification_required"
+    assert out["reason"] == "container_blueprint_recheck_required"
     assert out["suggested_tools"] == ["blueprint_list"]
-    assert out["corrections"]["_blueprint_gate_blocked"] is True
-    assert out["corrections"]["_container_resolution"]["decision"] == "clarification_required"
+    assert out["corrections"]["_blueprint_gate_blocked"] is False
+    assert out["corrections"]["_blueprint_recheck_required"] is True
+    assert out["corrections"]["_container_resolution"]["decision"] == "recheck_required"
 
 
 def test_stabilize_keeps_query_budget_fast_path_block_for_dangerous_prompt():

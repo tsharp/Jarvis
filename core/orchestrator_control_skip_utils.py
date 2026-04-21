@@ -26,6 +26,15 @@ def should_skip_control_layer(
         return False, "fact_query_requires_control"
     if bool((thinking_plan or {}).get("_hardware_gate_triggered")):
         return False, "hardware_gate_requires_control"
+    execution_mode = str(
+        (thinking_plan or {}).get("_authoritative_execution_mode")
+        or (thinking_plan or {}).get("execution_mode")
+        or ""
+    ).strip().lower()
+    if execution_mode == "task_loop":
+        return False, "task_loop_execution_mode_requires_control"
+    if bool((thinking_plan or {}).get("task_loop_candidate")) or bool((thinking_plan or {}).get("_task_loop_explicit_signal")):
+        return False, "task_loop_candidate_requires_control"
 
     hallucination_risk = (thinking_plan or {}).get("hallucination_risk", "medium")
     if not (skip_control_on_low_risk and hallucination_risk == "low"):

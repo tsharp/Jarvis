@@ -29,11 +29,11 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 # ── Project root path setup ───────────────────────────────────────────────────
-# Walk up from __file__ until we find a directory containing config.py
+# Walk up from __file__ until we find a directory containing the config package
 def _find_root() -> str:
     candidate = os.path.dirname(os.path.abspath(__file__))
     for _ in range(8):
-        if os.path.isfile(os.path.join(candidate, "config.py")):
+        if os.path.isfile(os.path.join(candidate, "config", "__init__.py")):
             return candidate
         parent = os.path.dirname(candidate)
         if parent == candidate:

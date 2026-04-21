@@ -7,6 +7,7 @@ from .definitions import (
     HomeReadTool, HomeWriteTool, HomeListTool,
     MemorySaveTool, MemorySearchTool,
     WorkspaceEventSaveTool, WorkspaceEventListTool,
+    ListSecretNamesTool,
 )
 from .security import SecurePathValidator
 from .resource_lock import ResourceLockManager
@@ -39,6 +40,7 @@ class FastLaneExecutor:
             "memory_search": MemorySearchTool,
             "workspace_event_save": WorkspaceEventSaveTool,
             "workspace_event_list": WorkspaceEventListTool,
+            "list_secret_names": ListSecretNamesTool,
         }
         
         log_info("[FastLaneExecutor] Initialized with tools: " + ", ".join(self.tools.keys()))

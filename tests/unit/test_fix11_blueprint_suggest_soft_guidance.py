@@ -94,7 +94,7 @@ def test_sync_suggest_conditioned_on_blueprint_suggest_msg():
 
 def test_output_layer_blocking_set_excludes_needs_clarification():
     """Output-Layer darf needs_clarification nicht als Blocking-Status behandeln."""
-    src = _src("core/layers/output.py")
+    src = _src("core/layers/output/layer.py")
     # Find the set that determines grounding failures
     blocking_set_idx = src.find('"unavailable"')
     assert blocking_set_idx != -1

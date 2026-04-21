@@ -795,6 +795,32 @@ def apply_container_query_policy(
     if not isinstance(verified_plan, dict):
         return suggested_tools
 
+    suggested_tool_names = tool_name_list_fn(suggested_tools)
+    if bool(verified_plan.get("_task_loop_step_runtime")) and suggested_tool_names:
+        discovery_tools = {"blueprint_list", "container_list", "container_inspect"}
+        action_tools = {"request_container", "home_start", "exec_in_container"}
+        if any(name in discovery_tools for name in suggested_tool_names) and not any(
+            name in action_tools for name in suggested_tool_names
+        ):
+            strategy_map = {
+                "blueprint_list": "container_blueprint_catalog",
+                "container_list": "container_inventory",
+                "container_inspect": "container_state_binding",
+            }
+            strategy = next(
+                (strategy_map[name] for name in suggested_tool_names if name in strategy_map),
+                "",
+            )
+            if strategy:
+                policy = materialize_container_query_policy_fn(verified_plan, strategy)
+                if policy:
+                    policy["selected_tools"] = list(suggested_tool_names)
+                log_info_fn(
+                    f"{prefix} Task-loop container discovery preserved: strategy={strategy} "
+                    f"tools={suggested_tool_names}"
+                )
+            return suggested_tools
+
     strategy = get_effective_resolution_strategy_fn(verified_plan)
     if not strategy:
         if is_active_container_capability_query_fn(user_text):

@@ -1,0 +1,31 @@
+capability_family,feature_name,weight,rationale
+container,temporal,0.30,Temporal hints are secondary; container routing is driven more by runtime and OS needs.
+container,system,0.95,Container requests often involve OS/system-level operations and native dependencies.
+container,tooling,0.58,Container workflows frequently execute CLI tools but are not necessarily skill-specific.
+container,document,0.22,Document affinity is low unless the task also requires local binaries for conversion.
+container,integration,0.40,"Containers may touch integrations, but protocol/server access is not the main signal."
+container,simplicity,0.20,Direct/simple phrasing usually lowers the need for a container runtime.
+skill,temporal,0.28,Time language matters less than artifact type for skill selection.
+skill,system,0.25,Most skills do not require raw OS access; they operate at workflow level.
+skill,tooling,0.86,Skill routing strongly correlates with specialized workflow/tool language.
+skill,document,0.92,"Skills are highly aligned with document, slide, and spreadsheet deliverables."
+skill,integration,0.48,"Some skills call integrations, but integration is not their primary discriminator."
+skill,simplicity,0.35,Very simple requests may bypass skills unless a deliverable format is explicit.
+cron,temporal,0.98,Cron routing is dominated by recurring temporal patterns and schedules.
+cron,system,0.34,"System execution details matter, but only after schedule intent is detected."
+cron,tooling,0.44,"Scheduler/tool hints support routing, but temporal recurrence is still primary."
+cron,document,0.16,Cron jobs rarely hinge on document-centric features.
+cron,integration,0.38,"Integrations can be scheduled, but they do not define cron intent on their own."
+cron,simplicity,0.18,Simple phrasing usually implies one-shot behavior rather than scheduled persistence.
+mcp,temporal,0.24,Scheduling language is mostly irrelevant to MCP routing.
+mcp,system,0.42,"Some MCP use cases touch systems, but protocol/server language is stronger."
+mcp,tooling,0.88,MCP requests often include explicit tool-call semantics and capability discovery.
+mcp,document,0.20,Document signals have low value unless the MCP server specifically handles documents.
+mcp,integration,0.97,MCP is fundamentally about external server-backed integrations and remote capabilities.
+mcp,simplicity,0.14,Plain direct wording rarely implies protocol-mediated tool use.
+direct,temporal,0.18,Temporal language usually points away from direct one-shot chat responses.
+direct,system,0.10,System-level signals generally indicate container or external execution instead.
+direct,tooling,0.22,Named tools reduce the likelihood of purely direct handling.
+direct,document,0.46,"Some direct requests involve short document-like transformations, so affinity is moderate."
+direct,integration,0.12,External-server language is typically absent in direct-chat requests.
+direct,simplicity,0.96,"Direct responses are strongly associated with plain-language, in-chat handling."

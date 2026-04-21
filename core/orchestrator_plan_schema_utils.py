@@ -24,6 +24,11 @@ _ALLOWED_SKILL_CATALOG_HINTS = {
     "skill_taxonomy",
 }
 
+_ALLOWED_TASK_LOOP_KINDS = {
+    "visible_multistep",
+    "none",
+}
+
 
 def _contains_any(text: str, markers: List[str]) -> bool:
     return any(marker in text for marker in markers)
@@ -145,6 +150,25 @@ def _has_container_inventory_signal(normalized_user_text: str) -> bool:
             "installed containers",
             "container liste",
             "container list",
+        ],
+    )
+
+
+def _has_explicit_task_loop_signal(normalized_user_text: str) -> bool:
+    return _contains_any(
+        normalized_user_text,
+        [
+            "task-loop",
+            "task loop",
+            "taskloop",
+            "im task-loop modus",
+            "im task loop modus",
+            "mit task-loop",
+            "mit task loop",
+            "im multistep modus",
+            "multistep modus",
+            "multi-step modus",
+            "planungsmodus",
         ],
     )
 
@@ -301,6 +325,20 @@ def coerce_thinking_plan_schema(
             return False
         return default
 
+    def _coerce_int(value: Any, default: int = 0, *, min_value: int = 0, max_value: int = 10) -> int:
+        try:
+            out = int(value)
+        except Exception:
+            return default
+        return max(min_value, min(max_value, out))
+
+    def _coerce_float(value: Any, default: float = 0.0, *, min_value: float = 0.0, max_value: float = 1.0) -> float:
+        try:
+            out = float(value)
+        except Exception:
+            return default
+        return max(min_value, min(max_value, out))
+
     bool_keys = (
         "needs_memory",
         "is_fact_query",
@@ -318,6 +356,53 @@ def coerce_thinking_plan_schema(
             if old != new:
                 fixes.append(f"coerce_bool:{key}")
             plan[key] = new
+
+    old_complexity = plan.get("sequential_complexity")
+    new_complexity = _coerce_int(old_complexity, default=3, min_value=0, max_value=10)
+    if old_complexity != new_complexity:
+        fixes.append("coerce_int:sequential_complexity")
+    plan["sequential_complexity"] = new_complexity
+
+    old_candidate = plan.get("task_loop_candidate")
+    new_candidate = _coerce_bool(old_candidate, default=False)
+    if old_candidate != new_candidate:
+        fixes.append("coerce_bool:task_loop_candidate")
+    plan["task_loop_candidate"] = new_candidate
+
+    raw_task_loop_kind = str(plan.get("task_loop_kind") or "").strip().lower()
+    if raw_task_loop_kind in {"", "null", "false"}:
+        plan["task_loop_kind"] = "none"
+    elif raw_task_loop_kind in _ALLOWED_TASK_LOOP_KINDS:
+        plan["task_loop_kind"] = raw_task_loop_kind
+        if raw_task_loop_kind != str(plan.get("task_loop_kind")):
+            fixes.append("normalize:task_loop_kind")
+    else:
+        plan["task_loop_kind"] = "none"
+        fixes.append("enum:task_loop_kind")
+
+    old_task_loop_confidence = plan.get("task_loop_confidence")
+    new_task_loop_confidence = _coerce_float(old_task_loop_confidence, default=0.0, min_value=0.0, max_value=1.0)
+    if old_task_loop_confidence != new_task_loop_confidence:
+        fixes.append("coerce_float:task_loop_confidence")
+    plan["task_loop_confidence"] = new_task_loop_confidence
+
+    old_estimated_steps = plan.get("estimated_steps")
+    new_estimated_steps = _coerce_int(old_estimated_steps, default=0, min_value=0, max_value=12)
+    if old_estimated_steps != new_estimated_steps:
+        fixes.append("coerce_int:estimated_steps")
+    plan["estimated_steps"] = new_estimated_steps
+
+    old_visible_progress = plan.get("needs_visible_progress")
+    new_visible_progress = _coerce_bool(old_visible_progress, default=False)
+    if old_visible_progress != new_visible_progress:
+        fixes.append("coerce_bool:needs_visible_progress")
+    plan["needs_visible_progress"] = new_visible_progress
+
+    raw_task_loop_reason = plan.get("task_loop_reason")
+    if raw_task_loop_reason in {None, ""}:
+        plan["task_loop_reason"] = None
+    else:
+        plan["task_loop_reason"] = str(raw_task_loop_reason).strip()[:240] or None
 
     risk = str(plan.get("hallucination_risk") or "").strip().lower()
     if risk not in {"low", "medium", "high"}:
@@ -603,12 +688,53 @@ def coerce_thinking_plan_schema(
     domain_locked = bool(route.get("domain_locked"))
     explicit_tool_intent = contains_explicit_tool_intent_fn(user_text)
     recall_signal = has_memory_recall_signal_fn(user_text)
+    explicit_task_loop_signal = _has_explicit_task_loop_signal(normalized_user_text)
+    plan["_task_loop_explicit_signal"] = explicit_task_loop_signal
     if plan.get("needs_memory") and not plan.get("memory_keys"):
         if (domain_locked and domain_tag in {"CONTAINER", "SKILL", "CRONJOB"}) or explicit_tool_intent:
             if not recall_signal:
                 plan["needs_memory"] = False
                 plan["is_fact_query"] = False
                 fixes.append("guard:drop_empty_memory_for_domain_or_tool_intent")
+
+    if explicit_task_loop_signal:
+        if not plan.get("task_loop_candidate"):
+            plan["task_loop_candidate"] = True
+            fixes.append("infer:task_loop_candidate")
+        if plan.get("task_loop_kind") != "visible_multistep":
+            plan["task_loop_kind"] = "visible_multistep"
+            fixes.append("infer:task_loop_kind")
+        if not plan.get("needs_visible_progress"):
+            plan["needs_visible_progress"] = True
+            fixes.append("infer:needs_visible_progress")
+        if int(plan.get("estimated_steps") or 0) < 3:
+            plan["estimated_steps"] = 3
+            fixes.append("infer:estimated_steps")
+        if float(plan.get("task_loop_confidence") or 0.0) < 0.95:
+            plan["task_loop_confidence"] = 0.95
+            fixes.append("infer:task_loop_confidence")
+        if not plan.get("task_loop_reason"):
+            plan["task_loop_reason"] = "explicit_task_loop_signal"
+            fixes.append("infer:task_loop_reason")
+
+    if (
+        not plan.get("task_loop_candidate")
+        and bool(plan.get("needs_sequential_thinking"))
+        and int(plan.get("sequential_complexity", 0) or 0) >= 7
+        and str(plan.get("dialogue_act") or "").strip().lower() in {"request", "analysis"}
+        and not bool(plan.get("is_fact_query"))
+    ):
+        plan["task_loop_candidate"] = True
+        plan["task_loop_kind"] = "visible_multistep"
+        plan["needs_visible_progress"] = True
+        if int(plan.get("estimated_steps") or 0) < 3:
+            plan["estimated_steps"] = min(6, max(3, int(plan.get("sequential_complexity", 0) or 0) // 2))
+        plan["task_loop_confidence"] = max(float(plan.get("task_loop_confidence") or 0.0), 0.72)
+        if not plan.get("task_loop_reason"):
+            plan["task_loop_reason"] = "sequential_complexity_multistep_candidate"
+        fixes.append("infer:task_loop_candidate")
+        fixes.append("infer:task_loop_kind")
+        fixes.append("infer:needs_visible_progress")
 
     pre_trace_fixes = list(plan.get("_schema_coercion") or [])
     plan = normalize_internal_loop_analysis_plan(

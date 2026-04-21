@@ -4,9 +4,13 @@ from dataclasses import dataclass, replace
 from typing import Any, Callable, Dict, List, Optional
 
 from core.task_loop.contracts import (
+    TERMINAL_STATES,
     StopReason,
     TaskLoopSnapshot,
     TaskLoopState,
+    TaskLoopStepExecutionSource,
+    TaskLoopStepStatus,
+    TaskLoopStepType,
     transition_task_loop,
 )
 from core.task_loop.events import (
@@ -51,6 +55,27 @@ _EXPLICIT_TEXT_PHRASES = (
     "planungsmodus",
 )
 
+# Two-part semantic detector: any verb × any noun → tool call required
+_TOOL_INSPECTION_VERBS = (
+    # German
+    "siehst du", "hast du", "kannst du", "zeig mir", "zeige mir",
+    "zeigst du", "liste", "listet", "schau", "check",
+    "was für", "welche", "welches", "welchen", "welchem",
+    "gibt es", "sind da", "laufen",
+    # English
+    "show me", "list", "what are your", "do you have", "can you see",
+    "which", "what",
+)
+
+_TOOL_DOMAIN_NOUNS = (
+    "api key", "api keys",
+    "secret", "secrets",
+    "skill", "skills",
+    "container",
+    "cron", "cron job", "cron jobs",
+    "blueprint", "blueprints",
+)
+
 _CONTINUE_MARKERS = {
     "weiter",
     "weiter machen",
@@ -62,6 +87,12 @@ _CONTINUE_MARKERS = {
     "ja bitte",
     "ok weiter",
     "okay weiter",
+    "freigeben",
+    "freigabe",
+    "genehmigen",
+    "approve",
+    "ok",
+    "okay",
 }
 
 _CANCEL_MARKERS = {
@@ -89,7 +120,13 @@ def is_task_loop_candidate(user_text: str, raw_request: Optional[Dict[str, Any]]
     for starter in _EXPLICIT_TEXT_STARTERS:
         if command == starter or command.startswith(starter + ":") or command.startswith(starter + " "):
             return True
-    return any(phrase in lower for phrase in _EXPLICIT_TEXT_PHRASES)
+    if any(phrase in lower for phrase in _EXPLICIT_TEXT_PHRASES):
+        return True
+
+    # Semantic: interrogative/inspection verb + tool-domain noun → tool call needed
+    has_verb = any(v in lower for v in _TOOL_INSPECTION_VERBS)
+    has_noun = any(n in lower for n in _TOOL_DOMAIN_NOUNS)
+    return has_verb and has_noun
 
 
 def is_task_loop_continue(user_text: str) -> bool:
@@ -120,7 +157,7 @@ def create_task_loop_snapshot(
     conversation_id: str,
     *,
     thinking_plan: Optional[Dict[str, Any]] = None,
-    max_steps: int = 4,
+    max_steps: int = 5,
 ) -> TaskLoopSnapshot:
     return create_task_loop_snapshot_from_plan(
         user_text,
@@ -163,13 +200,40 @@ def _persist_events(
     return event_ids, workspace_updates
 
 
+def _needs_concrete_input(snapshot: TaskLoopSnapshot) -> bool:
+    """True wenn der aktuelle Step auf konkrete User-Parameter wartet.
+
+    Ein einfaches "weiter" reicht in diesem Fall nicht — der User muss
+    die offene Frage inhaltlich beantworten.
+    """
+    if isinstance(snapshot.last_step_result, dict):
+        status = str(snapshot.last_step_result.get("status") or "").strip().lower()
+        source = str(snapshot.last_step_result.get("step_execution_source") or "").strip().lower()
+        step_type = str(snapshot.last_step_result.get("step_type") or "").strip().lower()
+    else:
+        status = snapshot.current_step_status.value
+        source = snapshot.step_execution_source.value
+        step_type = snapshot.current_step_type.value
+
+    if status != TaskLoopStepStatus.WAITING_FOR_USER.value:
+        return False
+    return step_type in {
+        TaskLoopStepType.TOOL_REQUEST.value,
+        TaskLoopStepType.TOOL_EXECUTION.value,
+    } or source in {
+        TaskLoopStepExecutionSource.ORCHESTRATOR.value,
+        TaskLoopStepExecutionSource.APPROVAL.value,
+    }
+
+
+
 def start_chat_task_loop(
     user_text: str,
     conversation_id: str,
     *,
     store: Optional[TaskLoopStore] = None,
     save_workspace_entry_fn: Optional[Callable[..., Optional[Dict[str, Any]]]] = None,
-    max_steps: int = 4,
+    plan_steps: int = 5,
     auto_continue: bool = True,
     thinking_plan: Optional[Dict[str, Any]] = None,
 ) -> TaskLoopChatTurn:
@@ -178,7 +242,7 @@ def start_chat_task_loop(
         user_text,
         conversation_id,
         thinking_plan=thinking_plan,
-        max_steps=max_steps,
+        max_steps=plan_steps,
     )
     events: List[Dict[str, Any]] = [
         make_task_loop_event(TaskLoopEventType.STARTED, snapshot),
@@ -186,7 +250,7 @@ def start_chat_task_loop(
     ]
 
     if auto_continue:
-        run = run_chat_auto_loop(snapshot, initial_events=events, max_steps=max_steps)
+        run = run_chat_auto_loop(snapshot, initial_events=events)
         event_ids, workspace_updates = _persist_events(
             run.events,
             conversation_id=conversation_id,
@@ -267,6 +331,20 @@ def continue_chat_task_loop(
     store = store or get_task_loop_store()
     conversation_id = snapshot.conversation_id
 
+    # Terminal-Guard: bereits abgeschlossene oder abgebrochene Loops unveraendert zurueckgeben
+    if snapshot.state in TERMINAL_STATES:
+        return TaskLoopChatTurn(
+            content=snapshot.last_user_visible_answer,
+            done_reason=(
+                "task_loop_completed"
+                if snapshot.state == TaskLoopState.COMPLETED
+                else "task_loop_cancelled"
+            ),
+            snapshot=snapshot,
+            events=[],
+            workspace_updates=[],
+        )
+
     if is_task_loop_cancel(user_text):
         cancelled = transition_task_loop(
             snapshot,
@@ -289,13 +367,17 @@ def continue_chat_task_loop(
             workspace_updates=workspace_updates,
         )
 
-    if not is_task_loop_continue(user_text):
+    # Wenn der aktuelle Step auf konkrete Parameter wartet (z.B. Blueprintauswahl,
+    # Container-Parameter) und der User nur "weiter" schreibt: nicht weiter —
+    # der User muss die Frage inhaltlich beantworten.
+    # Schreibt der User eine echte Antwort, wird sie als resume_user_text verwendet.
+    resume_text = "" if is_task_loop_continue(user_text) else user_text
+    if not resume_text and _needs_concrete_input(snapshot):
         waiting = replace(
             snapshot,
-            stop_reason=StopReason.USER_DECISION_REQUIRED,
             last_user_visible_answer=(
-                "Der Task-Loop wartet weiter.\n\n"
-                "Sag `weiter`, `stoppen` oder beschreibe, wie der Plan geaendert werden soll."
+                "Fuer diesen Schritt brauche ich eine konkrete Antwort — "
+                "bitte beantworte die offene Frage direkt."
             ),
         )
         events = [make_task_loop_event(TaskLoopEventType.WAITING_FOR_USER, waiting)]
@@ -313,64 +395,29 @@ def continue_chat_task_loop(
             workspace_updates=workspace_updates,
         )
 
-    executing = transition_task_loop(snapshot, TaskLoopState.EXECUTING, stop_reason=None)
-    events = [make_task_loop_event(TaskLoopEventType.STEP_STARTED, executing)]
-    completed_step = executing.pending_step or "Naechsten sicheren Schritt ausfuehren"
-    completed_steps = list(executing.completed_steps)
-    if completed_step not in completed_steps:
-        completed_steps.append(completed_step)
-    next_index = len(completed_steps)
-    next_step = (
-        executing.current_plan[next_index]
-        if next_index < len(executing.current_plan)
-        else ""
-    )
-    content = (
-        "Zwischenstand:\n"
-        f"Schritt {next_index} abgeschlossen: {completed_step}\n\n"
-    )
-    advanced = replace(
+    # Alles andere: Loop mit User-Text als Kontext fortsetzen.
+    # "weiter"/"ja"/"ok" → leerer resume_text (kein spezifischer Kontext noetig)
+    # Echte Antwort → wird als resume_user_text in den naechsten Step eingespeist
+    executing = transition_task_loop(snapshot, TaskLoopState.EXECUTING)
+    run = run_chat_auto_loop(
         executing,
-        step_index=next_index,
-        completed_steps=completed_steps,
-        pending_step=next_step,
-        last_user_visible_answer=content,
+        resume_user_text=resume_text,
     )
-    events.append(make_task_loop_event(TaskLoopEventType.STEP_COMPLETED, advanced))
-
-    if next_step:
-        waiting = transition_task_loop(
-            advanced,
-            TaskLoopState.WAITING_FOR_USER,
-            stop_reason=StopReason.USER_DECISION_REQUIRED,
-        )
-        content += "Plan:\n" + _format_plan(waiting) + "\n\n"
-        content += f"Naechster Schritt: {next_step}\n\nIch warte auf `weiter`, `stoppen` oder eine Planaenderung."
-        final_snapshot = replace(waiting, last_user_visible_answer=content)
-        events.append(make_task_loop_event(TaskLoopEventType.WAITING_FOR_USER, final_snapshot))
-        done_reason = "task_loop_waiting_for_user"
-    else:
-        completed = transition_task_loop(advanced, TaskLoopState.COMPLETED)
-        content += "Task-Loop abgeschlossen."
-        final_snapshot = replace(completed, last_user_visible_answer=content)
-        events.append(make_task_loop_event(TaskLoopEventType.COMPLETED, final_snapshot))
-        done_reason = "task_loop_completed"
-
     event_ids, workspace_updates = _persist_events(
-        events,
+        run.events,
         conversation_id=conversation_id,
         save_workspace_entry_fn=save_workspace_entry_fn,
     )
     final_snapshot = replace(
-        final_snapshot,
+        run.snapshot,
         workspace_event_ids=list(snapshot.workspace_event_ids) + event_ids,
     )
     store.put(final_snapshot)
     return TaskLoopChatTurn(
-        content=content,
-        done_reason=done_reason,
+        content=run.content,
+        done_reason=run.done_reason,
         snapshot=final_snapshot,
-        events=events,
+        events=run.events,
         workspace_updates=workspace_updates,
     )
 
@@ -383,11 +430,12 @@ def maybe_handle_chat_task_loop_turn(
     store: Optional[TaskLoopStore] = None,
     save_workspace_entry_fn: Optional[Callable[..., Optional[Dict[str, Any]]]] = None,
     thinking_plan: Optional[Dict[str, Any]] = None,
+    force_start: bool = False,
 ) -> Optional[TaskLoopChatTurn]:
     store = store or get_task_loop_store()
     active = store.get_active(conversation_id)
     if active is not None:
-        if should_restart_task_loop(user_text, raw_request):
+        if force_start or should_restart_task_loop(user_text, raw_request):
             raw = raw_request if isinstance(raw_request, dict) else {}
             mode = str(raw.get("task_loop_mode") or "").strip().lower()
             return start_chat_task_loop(
@@ -405,7 +453,7 @@ def maybe_handle_chat_task_loop_turn(
             save_workspace_entry_fn=save_workspace_entry_fn,
         )
 
-    if not is_task_loop_candidate(user_text, raw_request):
+    if not force_start and not is_task_loop_candidate(user_text, raw_request):
         return None
 
     raw = raw_request if isinstance(raw_request, dict) else {}

@@ -20,6 +20,7 @@ const PLAN_EVENT_TYPES = new Set([
     "sequential_start", "sequential_step", "sequential_done", "sequential_error",
     "loop_trace_started", "loop_trace_plan_normalized", "loop_trace_step_started",
     "loop_trace_correction", "loop_trace_completed",
+    "task_loop_routing",
     "task_loop_update",
 ]);
 const CRON_FEEDBACK_POLL_MS = 3000;
@@ -429,6 +430,9 @@ export async function handleUserMessage(text, options = {}) {
 
             if (chunk.type === "thinking_done") {
                 touchActivity("I'm preparing execution...");
+                if (!controlThinkingId) {
+                    controlThinkingId = Thinking.createThinkingBox(baseMsgId, "Thinking", "brain");
+                }
                 if (controlThinkingId) {
                     Thinking.finalizeThinking(controlThinkingId, chunk.thinking);
                 }
@@ -502,7 +506,18 @@ export async function handleUserMessage(text, options = {}) {
             if (chunk.type === "workspace_update") {
                 const entryType = String(chunk.entry_type || "");
                 const isPlanningReplay = /^planning_(start|step|done|error)$/.test(entryType);
+                const isTaskLoopReplay = /^task_loop_(started|plan_updated|context_updated|step_started|step_answered|step_completed|reflection|waiting_for_user|blocked|completed|cancelled)$/.test(entryType);
                 if (isPlanningReplay && !sawDirectPlanEvent) {
+                    if (!planBoxId) {
+                        planBoxId = Plan.createPlanBox(baseMsgId);
+                    }
+                    Plan.appendPlanEvent(planBoxId, entryType, {
+                        summary: chunk.content || "",
+                        source_layer: chunk.source_layer,
+                        replay: Boolean(chunk.replay),
+                    });
+                    Pending.updatePendingState("planning");
+                } else if (isTaskLoopReplay && !sawTaskLoopEvent) {
                     if (!planBoxId) {
                         planBoxId = Plan.createPlanBox(baseMsgId);
                     }

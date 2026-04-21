@@ -1,0 +1,51 @@
+signal_phrase,language,mode,confidence,category,example_context
+jede stunde,de,persistent,0.97,temporal,Führe das Script jede Stunde aus
+daily,en,persistent,0.96,temporal,Run the report daily at 6 AM
+täglich,de,persistent,0.95,temporal,Erstelle täglich einen Datenexport
+weekly,en,persistent,0.95,temporal,Trigger the cleanup weekly
+wöchentlich,de,persistent,0.94,temporal,Starte den Check wöchentlich am Montag
+every morning,en,persistent,0.93,temporal,Send me a summary every morning
+jeden morgen,de,persistent,0.93,temporal,Schick mir jeden Morgen den Status
+cronjob,de,persistent,0.98,background,Lege dafür einen Cronjob an
+crontab,en,persistent,0.98,background,Add this as a crontab entry
+scheduled task,en,persistent,0.92,background,Create a scheduled task for the importer
+regelmäßig,de,persistent,0.86,temporal,Führe die Bereinigung regelmäßig aus
+recurring,en,persistent,0.91,temporal,Make this a recurring job
+alle 5 minuten,de,persistent,0.97,interval,Prüfe alle 5 Minuten den Queue-Status
+every 15 minutes,en,persistent,0.96,interval,Poll the endpoint every 15 minutes
+monatlich,de,persistent,0.94,temporal,Erzeuge monatlich eine Abrechnung
+monthly,en,persistent,0.94,temporal,Export the billing data monthly
+nachts,de,persistent,0.91,temporal,Lass den Sync nachts laufen
+every night,en,persistent,0.91,temporal,Run the backup every night
+dauerhaft,de,persistent,0.84,duration,Das soll dauerhaft im Hintergrund laufen
+continuously,en,persistent,0.88,duration,Keep the watcher running continuously
+immer wenn,de,persistent,0.83,event,"Immer wenn eine Datei reinkommt, starte den Import"
+whenever,en,persistent,0.83,event,"Whenever a new file appears, trigger processing"
+repeat automatically,en,persistent,0.90,background,Repeat automatically every Friday
+wiederkehrend,de,persistent,0.90,background,Plane das als wiederkehrenden Task
+im hintergrund weiterlaufen,de,persistent,0.87,background,Lass den Dienst im Hintergrund weiterlaufen
+einmal,de,one_shot,0.96,count,Führe das einmal aus und gib mir das Ergebnis
+once,en,one_shot,0.96,count,Run it once and return the output
+jetzt,de,one_shot,0.90,immediacy,Mach das jetzt sofort
+right now,en,one_shot,0.90,immediacy,Do it right now and show me the result
+kurz testen,de,one_shot,0.85,trial,Teste das kurz gegen eine Datei
+quick test,en,one_shot,0.85,trial,Run a quick test with the sample
+nur für diesen fall,de,one_shot,0.88,scope,Mach das nur für diesen Fall
+just this once,en,one_shot,0.92,scope,"Just this once, process the backlog"
+ad hoc,de,one_shot,0.84,scope,Starte einen ad hoc Export
+one-time,en,one_shot,0.94,count,Create a one-time export
+temporär,de,one_shot,0.80,duration,Starte das temporär für den Debuglauf
+for this request,en,one_shot,0.82,scope,"For this request, just generate the file"
+heute,de,one_shot,0.76,timebox,Mach das heute einmal zum Vergleich
+today only,en,one_shot,0.84,timebox,Run it today only
+einzelner lauf,de,one_shot,0.89,count,Ich brauche nur einen einzelnen Lauf
+single run,en,one_shot,0.93,count,Execute it as a single run
+on demand,en,one_shot,0.87,trigger,Run it on demand when I ask
+auf abruf,de,one_shot,0.87,trigger,Führe es auf Abruf aus
+probeweise,de,one_shot,0.81,trial,Lass es probeweise einmal laufen
+trial run,en,one_shot,0.86,trial,Do a trial run with the new config
+nur anzeigen,de,one_shot,0.79,preview,Zeig mir das nur einmal an
+preview only,en,one_shot,0.79,preview,"Preview only, don't schedule it"
+sofortiger lauf,de,one_shot,0.83,immediacy,Ich brauche einen sofortigen Lauf
+run once and stop,en,one_shot,0.95,count,Run once and stop
+kein scheduler,de,one_shot,0.91,background,"Kein Scheduler, einfach einmal ausführen"

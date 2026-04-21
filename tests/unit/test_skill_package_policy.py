@@ -52,13 +52,15 @@ for p in [_REPO_ROOT, _SKILL_SERVER]:
 # ── Shared helpers ──────────────────────────────────────────────────────────
 
 def _load_config():
-    """Load config.py with stubbed utils.settings."""
+    """Load the config package entrypoint with stubbed utils.settings."""
     _settings_mod = MagicMock()
     _settings_mod.settings = MagicMock()
     _settings_mod.settings.get = lambda key, default="": default
     with patch.dict(sys.modules, {"utils.settings": _settings_mod}):
         spec = importlib.util.spec_from_file_location(
-            "config_c7", os.path.join(_REPO_ROOT, "config.py")
+            "config_c7",
+            os.path.join(_REPO_ROOT, "config", "__init__.py"),
+            submodule_search_locations=[os.path.join(_REPO_ROOT, "config")],
         )
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)

@@ -1,0 +1,31 @@
+capability_family,feature_name,weight,rationale
+container,temporal,0.48,"Containers can be scheduled, but timing is usually secondary."
+container,system,0.97,"Container requests strongly correlate with OS, runtime, and process isolation."
+container,tooling,0.61,Some container asks include setup or package tooling steps.
+container,document,0.28,Documents are not the primary signal for container routing.
+container,integration,0.72,Containers often appear in service and deployment integrations.
+container,simplicity,0.18,Plain chat is usually not a container request.
+skill,temporal,0.42,"Skills may run on schedules, but are primarily reusable workflows."
+skill,system,0.33,"Some skills touch system tasks, but that is not the main cue."
+skill,tooling,0.96,Named skills and reusable workflows map strongly to tooling.
+skill,document,0.67,Document handling often benefits from reusable skill execution.
+skill,integration,0.58,Skills sometimes orchestrate external APIs or services.
+skill,simplicity,0.22,Simple chat requests usually do not imply a skill.
+cron,temporal,0.98,Recurring timing is the strongest signal for cron-style execution.
+cron,system,0.41,Cron can monitor system tasks but timing remains dominant.
+cron,tooling,0.36,"Cron may trigger tools, though tooling is not the primary signal."
+cron,document,0.24,Document requests alone do not strongly indicate cron.
+cron,integration,0.63,Scheduled polling and health checks often target integrations.
+cron,simplicity,0.12,Direct chat answers rarely imply persistent scheduling.
+mcp,temporal,0.21,"MCP can be scheduled indirectly, but timing is usually weak."
+mcp,system,0.29,MCP is not mainly about local OS-level execution.
+mcp,tooling,0.54,"MCP can expose tools, but the strongest cue is external integration."
+mcp,document,0.31,"Documents may be accessed over MCP, though not as the main signal."
+mcp,integration,0.99,"External servers, APIs, and remote tool hosts strongly indicate MCP."
+mcp,simplicity,0.10,Simple direct answers are usually not MCP calls.
+direct,temporal,0.14,Direct answers usually avoid recurring timing or persistence.
+direct,system,0.12,Simple responses rarely require system-level execution.
+direct,tooling,0.18,Direct chat generally does not imply reusable tooling.
+direct,document,0.46,Some direct requests are simple document explanations or summaries.
+direct,integration,0.27,An integration may be discussed directly without execution.
+direct,simplicity,0.98,Plain explanatory chat strongly maps to direct answering.

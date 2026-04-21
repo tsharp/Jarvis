@@ -41,9 +41,9 @@ REGISTRY_URL = os.getenv("REGISTRY_URL", "https://raw.githubusercontent.com/trio
 
 def _get_skill_package_install_mode() -> str:
     """
-    Resolve package-install policy without hard dependency on top-level config.py.
+    Resolve package-install policy without hard dependency on the shared config package.
 
-    In isolated skill-server containers /app/config.py may not exist.
+    In isolated skill-server containers the TRION config package may not exist.
     Fail-safe behavior: env fallback with strict enum normalization.
     """
     mode = ""

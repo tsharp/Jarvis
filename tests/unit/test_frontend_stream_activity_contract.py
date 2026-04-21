@@ -66,6 +66,8 @@ def test_chat_reads_both_thinking_chunk_field_variants_and_uses_thinking_label()
     assert 'Thinking.createThinkingBox(baseMsgId, "Thinking", "brain")' in src
     assert 'chunk.chunk || chunk.thinking_chunk || ""' in src
     assert 'if (chunk.type === "thinking_trace") {' in src
+    assert 'if (chunk.type === "thinking_done") {' in src
+    assert 'if (!controlThinkingId) {' in src
     assert "Thinking.finalizeThinking(controlThinkingId, chunk.thinking);" in src
 
 
@@ -77,6 +79,7 @@ def test_loop_trace_events_are_routed_into_plan_box():
         '"loop_trace_step_started"',
         '"loop_trace_correction"',
         '"loop_trace_completed"',
+        '"task_loop_routing"',
         '"task_loop_update"',
         "I'm tracing and correcting the loop...",
         "I'm working on the next step...",
@@ -134,12 +137,18 @@ def test_thinking_box_renders_compact_strategy_and_trace_metadata():
         'renderMetaRow("Route Reason"',
         'renderMetaRow("Loop Mode"',
         'renderMetaRow("Loop Reason"',
+        'renderMetaRow("Loop Candidate"',
+        'renderMetaRow("Loop Kind"',
+        'renderMetaRow("Exec Mode"',
+        'renderMetaRow("Turn Mode"',
         'renderMetaRow("Plan Fixes"',
         'renderMetaRow("Fact Query"',
         'renderMetaRow("Uses History"',
         'renderMetaRow("Source"',
         'renderMetaRow("Reason"',
         'thinking.source === "trace_final"',
+        "authoritative_execution_mode",
+        "authoritative_turn_mode",
         "JSON.stringify(finalTrace, null, 2)",
     ]
     for marker in required_markers:
@@ -154,8 +163,10 @@ def test_plan_box_renders_loop_trace_event_variants():
         'eventType === "loop_trace_step_started"',
         'eventType === "loop_trace_correction"',
         'eventType === "loop_trace_completed"',
+        'eventType === "task_loop_routing"',
         'eventType === "task_loop_update"',
         'title: "Loop-Trace gestartet"',
+        'title: "Task-Loop Routing"',
         'title: "Korrektur angewendet"',
         '"Task-Loop abgeschlossen"',
         '"Task-Loop läuft"',
@@ -195,7 +206,22 @@ def test_activity_mappings_cover_core_runtime_events():
 def test_workspace_replay_contract_for_planning_events():
     src = _read("adapters/Jarvis/static/js/workspace.js")
     assert "/^planning_(start|step|done|error)$/.test(item.entry_type)" in src
+    assert '/^task_loop_(started|plan_updated|context_updated|step_started|step_answered|step_completed|reflection|waiting_for_user|blocked|completed|cancelled)$/.test(item.entry_type)' in src
     assert "replay: true" in src
+
+
+def test_chat_replays_task_loop_workspace_events_into_plan_box():
+    src = _read("adapters/Jarvis/static/js/chat.js")
+    assert 'const isTaskLoopReplay = /^task_loop_(started|plan_updated|context_updated|step_started|step_answered|step_completed|reflection|waiting_for_user|blocked|completed|cancelled)$/.test(entryType);' in src
+    assert "} else if (isTaskLoopReplay && !sawTaskLoopEvent) {" in src
+
+
+def test_plan_box_renders_persisted_task_loop_workspace_events():
+    src = _read("adapters/Jarvis/static/js/chat-plan.js")
+    assert "if (/^task_loop_/.test(eventType)) {" in src
+    assert 'task_loop_started: "Task-Loop gestartet"' in src
+    assert 'task_loop_step_started: "Task-Loop Schritt gestartet"' in src
+    assert 'task_loop_completed: "Task-Loop abgeschlossen"' in src
 
 
 def test_sequential_plugin_handles_planning_workspace_events():

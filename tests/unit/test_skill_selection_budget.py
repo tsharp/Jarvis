@@ -42,7 +42,7 @@ def _detect_project_root() -> str:
         if not root or root in seen:
             continue
         seen.add(root)
-        if os.path.exists(os.path.join(root, "config.py")) and os.path.exists(
+        if os.path.exists(os.path.join(root, "config", "__init__.py")) and os.path.exists(
             os.path.join(root, "core")
         ):
             return root
@@ -50,7 +50,7 @@ def _detect_project_root() -> str:
 
 
 _PROJECT_ROOT = _detect_project_root()
-_CONFIG_PATH = os.path.join(_PROJECT_ROOT, "config.py")
+_CONFIG_PATH = os.path.join(_PROJECT_ROOT, "config", "__init__.py")
 _CM_PATH = os.path.join(_PROJECT_ROOT, "core", "context_manager.py")
 
 if _PROJECT_ROOT not in sys.path:
@@ -59,19 +59,33 @@ if _PROJECT_ROOT not in sys.path:
 
 def _load_config_fresh():
     for k in list(sys.modules):
-        if k == "config":
+        if k == "config" or k.startswith("config."):
             del sys.modules[k]
     _utils_pkg = types.ModuleType("utils")
+    _utils_pkg.__path__ = []
     _settings_mod = types.ModuleType("utils.settings")
     _settings_obj = MagicMock()
     _settings_obj.get = MagicMock(side_effect=lambda key, default=None: default)
     _settings_mod.settings = _settings_obj
+    _service_endpoint_mod = types.ModuleType("utils.service_endpoint_resolver")
+    _service_endpoint_mod.default_service_endpoint = (
+        lambda _service, port: f"http://localhost:{port}"
+    )
     _utils_pkg.settings = _settings_mod
-    orig = {k: sys.modules.get(k) for k in ("utils", "utils.settings")}
+    _utils_pkg.service_endpoint_resolver = _service_endpoint_mod
+    orig = {
+        k: sys.modules.get(k)
+        for k in ("utils", "utils.settings", "utils.service_endpoint_resolver")
+    }
     sys.modules["utils"] = _utils_pkg
     sys.modules["utils.settings"] = _settings_mod
+    sys.modules["utils.service_endpoint_resolver"] = _service_endpoint_mod
     try:
-        spec = importlib.util.spec_from_file_location("config", _CONFIG_PATH)
+        spec = importlib.util.spec_from_file_location(
+            "config",
+            _CONFIG_PATH,
+            submodule_search_locations=[os.path.dirname(_CONFIG_PATH)],
+        )
         mod = importlib.util.module_from_spec(spec)
         sys.modules["config"] = mod
         spec.loader.exec_module(mod)
@@ -85,6 +99,10 @@ def _load_config_fresh():
 
 
 def _load_cm_class():
+    """
+    Load real ContextManager with light stubs while keeping `core` importable as a package.
+    This avoids executing `core/__init__.py` and keeps lazy imports intact.
+    """
     _mcp_pkg = types.ModuleType("mcp")
     _mcp_client = types.ModuleType("mcp.client")
     _mcp_client.get_fact_for_query = MagicMock(return_value="")
@@ -97,20 +115,44 @@ def _load_cm_class():
     _utils_logger.log_info = lambda *a, **k: None
     _utils_logger.log_warn = lambda *a, **k: None
     _utils_logger.log_error = lambda *a, **k: None
+    _utils_logger.log_debug = lambda *a, **k: None
+    _settings_mod = types.ModuleType("utils.settings")
+    _settings_obj = MagicMock()
+    _settings_obj.get = MagicMock(side_effect=lambda key, default=None: default)
+    _settings_mod.settings = _settings_obj
+    _service_endpoint_mod = types.ModuleType("utils.service_endpoint_resolver")
+    _service_endpoint_mod.default_service_endpoint = (
+        lambda _service, port: f"http://localhost:{port}"
+    )
+    _core_pkg = types.ModuleType("core")
+    _core_pkg.__path__ = [os.path.join(_PROJECT_ROOT, "core")]
+    _trion_laws_mod = types.ModuleType("core.trion_laws_policy")
+    _trion_laws_mod.load_trion_laws_policy = MagicMock(return_value={})
 
-    _stub_keys = ("mcp", "mcp.client", "utils.logger")
+    _stub_keys = (
+        "mcp",
+        "mcp.client",
+        "utils",
+        "utils.logger",
+        "utils.settings",
+        "utils.service_endpoint_resolver",
+        "core",
+        "core.trion_laws_policy",
+    )
     saved = {k: sys.modules.get(k) for k in _stub_keys}
-
-    _utils_existed = "utils" in sys.modules
-    saved_utils = sys.modules.get("utils")
-    if not _utils_existed:
-        _mini_utils = types.ModuleType("utils")
-        _mini_utils.logger = _utils_logger
-        sys.modules["utils"] = _mini_utils
-
+    _mini_utils = types.ModuleType("utils")
+    _mini_utils.__path__ = []
+    _mini_utils.logger = _utils_logger
+    _mini_utils.settings = _settings_mod
+    _mini_utils.service_endpoint_resolver = _service_endpoint_mod
     sys.modules["mcp"] = _mcp_pkg
     sys.modules["mcp.client"] = _mcp_client
+    sys.modules["utils"] = _mini_utils
     sys.modules["utils.logger"] = _utils_logger
+    sys.modules["utils.settings"] = _settings_mod
+    sys.modules["utils.service_endpoint_resolver"] = _service_endpoint_mod
+    sys.modules["core"] = _core_pkg
+    sys.modules["core.trion_laws_policy"] = _trion_laws_mod
 
     try:
         sys.modules.pop("_cm_c10_test", None)
@@ -125,10 +167,6 @@ def _load_cm_class():
                 sys.modules.pop(k, None)
             else:
                 sys.modules[k] = v
-        if not _utils_existed:
-            sys.modules.pop("utils", None)
-        else:
-            sys.modules["utils"] = saved_utils
 
 
 def _resp(data):

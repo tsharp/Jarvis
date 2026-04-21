@@ -9,7 +9,7 @@ def _read_main() -> str:
 
 def _read_config() -> str:
     root = Path(__file__).resolve().parents[2]
-    path = root / "config.py"
+    path = root / "config" / "output" / "jobs.py"
     return path.read_text(encoding="utf-8")
 
 

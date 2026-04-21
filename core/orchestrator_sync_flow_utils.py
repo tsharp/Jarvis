@@ -39,6 +39,7 @@ from core.control_contract import (
     control_decision_from_plan,
     persist_control_decision,
 )
+from core.task_loop.context_writeback import persist_context_only_turn
 from core.plan_runtime_bridge import (
     append_runtime_tool_results,
     set_runtime_tool_confidence,
@@ -97,21 +98,14 @@ async def process_request(
             log_info_fn("[Orchestrator] Returning confirmation result")
             return confirmation_result
 
-    from core.orchestrator_modules.task_loop import maybe_handle_task_loop_sync
-    task_loop_response = await maybe_handle_task_loop_sync(
-        orch,
-        request,
-        user_text,
-        conversation_id,
-        core_chat_response_cls=core_chat_response_cls,
-        log_info_fn=log_info_fn,
-        log_warn_fn=log_warn_fn,
-        tone_signal=tone_signal,
+    from core.orchestrator_modules.task_loop import (
+        clear_active_task_loop,
+        get_active_task_loop_snapshot,
+        inject_active_task_loop_context,
+        maybe_handle_task_loop_sync,
     )
-    if task_loop_response is not None:
-        orch.lifecycle.finish_task(req_id, {"task_loop": True})
-        orch._post_task_processing()
-        return task_loop_response
+    from core.orchestrator_modules.task_loop_routing import decide_task_loop_routing
+    active_task_loop_snapshot = get_active_task_loop_snapshot(conversation_id)
 
     # ===============================================================
     # STEP 1.1: CONTEXT COMPRESSION (non-stream, deep-aware)
@@ -213,11 +207,21 @@ async def process_request(
                 _thinking_user_text = f"{user_text}. [Kontext: {_ctx_snippet}]"
                 log_info_fn("[Orchestrator] A-Enrichment: ThinkingLayer user_text angereichert [sync]")
 
+            from core.tool_exposure import build_available_tools_snapshot, build_detection_hints
+
+            _hub_ref = getattr(orch, "mcp_hub", None)
+            available_tools_snapshot = build_available_tools_snapshot(
+                selected_tools,
+                hub=_hub_ref,
+            )
+            tool_hints = build_detection_hints(hub=_hub_ref)
+
             thinking_plan = await orch.thinking.analyze(
                 _thinking_user_text,
                 memory_context=_sync_skill_ctx,
-                available_tools=selected_tools,
+                available_tools=available_tools_snapshot,
                 tone_signal=tone_signal,
+                tool_hints=tool_hints,
             )
             thinking_plan = orch._ensure_dialogue_controls(
                 thinking_plan,
@@ -237,6 +241,12 @@ async def process_request(
         orch, user_text, request, thinking_plan, selected_tools,
         query_budget_signal, domain_route_signal, forced_response_mode,
         conversation_id, log_info_fn,
+    )
+    thinking_plan = inject_active_task_loop_context(
+        thinking_plan,
+        active_task_loop_snapshot,
+        user_text=user_text,
+        raw_request=getattr(request, "raw_request", None),
     )
     log_info_fn(f"[Orchestrator] response_mode={response_mode} (sync)")
 
@@ -350,6 +360,70 @@ async def process_request(
         )
         persist_control_decision(verified_plan, control_decision)
         log_warning_fn("[Orchestrator] Soft control deny converted to warning (sync path)")
+
+    routing_decision = decide_task_loop_routing(
+        user_text,
+        active_task_loop_snapshot,
+        verified_plan,
+        raw_request=getattr(request, "raw_request", None),
+    )
+
+    if routing_decision.use_task_loop and active_task_loop_snapshot is not None:
+        task_loop_response = await maybe_handle_task_loop_sync(
+            orch,
+            request,
+            user_text,
+            conversation_id,
+            core_chat_response_cls=core_chat_response_cls,
+            log_info_fn=log_info_fn,
+            log_warn_fn=log_warn_fn,
+            tone_signal=tone_signal,
+            thinking_plan=verified_plan,
+            force_start=routing_decision.force_start,
+        )
+        if task_loop_response is not None:
+            orch.lifecycle.finish_task(
+                req_id,
+                {
+                    "task_loop": True,
+                    "turn_mode": routing_decision.turn_mode or "task_loop",
+                    "active_loop_reason": routing_decision.active_task_loop_reason,
+                },
+            )
+            orch._post_task_processing()
+            return task_loop_response
+    elif routing_decision.clear_active_loop:
+        clear_active_task_loop(conversation_id)
+        verified_plan["_active_task_loop_reason"] = routing_decision.active_task_loop_reason
+        log_info_fn(f"[TaskLoop] active loop cleared reason={routing_decision.active_task_loop_reason}")
+    elif routing_decision.context_only:
+        verified_plan["_active_task_loop_reason"] = routing_decision.active_task_loop_reason
+        log_info_fn("[TaskLoop] active loop kept as context-only turn")
+
+    if routing_decision.use_task_loop and active_task_loop_snapshot is None:
+        task_loop_response = await maybe_handle_task_loop_sync(
+            orch,
+            request,
+            user_text,
+            conversation_id,
+            core_chat_response_cls=core_chat_response_cls,
+            log_info_fn=log_info_fn,
+            log_warn_fn=log_warn_fn,
+            tone_signal=tone_signal,
+            thinking_plan=verified_plan,
+            force_start=routing_decision.force_start,
+        )
+        if task_loop_response is not None:
+            orch.lifecycle.finish_task(
+                req_id,
+                {
+                    "task_loop": True,
+                    "turn_mode": routing_decision.turn_mode or "task_loop",
+                    "active_loop_reason": routing_decision.active_task_loop_reason,
+                },
+            )
+            orch._post_task_processing()
+            return task_loop_response
     
     # Extra memory lookup if Control corrected — gated by retrieval budget (Commit 4)
     if verification.get("corrections", {}).get("memory_keys"):
@@ -668,6 +742,17 @@ async def process_request(
         "chat_done",
         "orchestrator",
     )
+
+    if routing_decision.context_only and active_task_loop_snapshot is not None:
+        updated_snapshot, _event, _workspace_updates, _event_ids = persist_context_only_turn(
+            active_task_loop_snapshot,
+            answer,
+            done_reason=_done_reason_sync,
+            save_workspace_entry_fn=getattr(orch, "_save_workspace_entry", None),
+        )
+        from core.task_loop.store import get_task_loop_store
+        get_task_loop_store().put(updated_snapshot)
+        log_info_fn("[TaskLoop] context-only sync turn written back to active loop")
 
     return core_chat_response_cls(
         model=resolved_output_model,

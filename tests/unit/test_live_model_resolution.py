@@ -28,7 +28,7 @@ from unittest.mock import patch, MagicMock, call
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO_ROOT = os.path.abspath(os.path.join(_HERE, "..", ".."))
 # Fallback when running from /tmp (dev/CI)
-if not os.path.isfile(os.path.join(_REPO_ROOT, "config.py")):
+if not os.path.isfile(os.path.join(_REPO_ROOT, "config", "__init__.py")):
     _REPO_ROOT = "/DATA/AppData/MCP/Jarvis/Jarvis"
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
@@ -236,7 +236,7 @@ class TestOutputLayerResolution(unittest.TestCase):
         Call generate_stream_sync with mocked httpx; return the model
         that was passed to the Ollama payload.
         """
-        import core.layers.output as out_mod
+        import core.layers.output.layer as out_mod
 
         with patch.object(layer, "_build_full_prompt", return_value="test-prompt"), \
              patch.object(out_mod, "httpx") as mock_httpx:
@@ -258,7 +258,7 @@ class TestOutputLayerResolution(unittest.TestCase):
     def test_lr9_explicit_model_beats_getter(self):
         """LR-9: generate_stream_sync(model='x:7b') → getter NOT called, arg value used."""
         from core.layers.output import OutputLayer
-        import core.layers.output as out_mod
+        import core.layers.output.layer as out_mod
         layer = OutputLayer()
 
         with patch("config.get_output_model") as mock_getter, \
@@ -345,21 +345,21 @@ class TestSourceInspection(unittest.TestCase):
         self.assertIn("_resolve_model()", src)
 
     def test_control_import_uses_getters(self):
-        src = _read_source("core/layers/control.py")
+        src = _read_source("core/layers/control/layer.py")
         self.assertIn("get_control_model", src)
         self.assertNotIn("from config import OLLAMA_BASE, CONTROL_MODEL, THINKING_MODEL", src)
 
     def test_control_call_sites_use_resolve(self):
-        src = _read_source("core/layers/control.py")
+        src = _read_source("core/layers/control/layer.py")
         self.assertIn("_resolve_model(", src)
         self.assertIn("_resolve_sequential_model(", src)
 
     def test_output_import_uses_getter(self):
-        src = _read_source("core/layers/output.py")
+        src = _read_source("core/layers/output/layer.py")
         self.assertIn("get_output_model", src)
 
     def test_output_no_frozen_fallback(self):
-        src = _read_source("core/layers/output.py")
+        src = _read_source("core/layers/output/layer.py")
         self.assertNotIn("model or OUTPUT_MODEL", src)
 
 

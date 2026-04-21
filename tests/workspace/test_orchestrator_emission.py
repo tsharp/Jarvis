@@ -21,7 +21,7 @@ from pathlib import Path
 
 PROJECT_ROOT = str(Path(__file__).parent.parent.parent)
 
-# We need to ensure PROJECT_ROOT config.py is importable (not sql-memory's)
+# We need to ensure PROJECT_ROOT's config package is importable (not sql-memory's)
 # Save and restore to avoid polluting other tests
 _original_modules = {}
 

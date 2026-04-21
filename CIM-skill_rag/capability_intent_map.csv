@@ -1,0 +1,81 @@
+intent_pattern,capability_family,confidence,example_phrase,feature_signal,semantic_description
+(installier|install|apt-get|apk add|pip install|npm install),container,0.95,Installiere curl und jq im Container,system,Package installation and environment provisioning
+(dockerfile|container image|image bauen|build image),container,0.94,Baue ein Container-Image für den Worker-Service,system,Container image build and packaging requests
+(shell command|bash script|terminal kommando|cli ausführen),container,0.90,Führe dieses Bash-Kommando im isolierten Environment aus,system,Command execution in terminal-like runtime
+(datei(en)? entpacken|unzip|tar -x|extract archive),container,0.88,Entpacke das Release-Archiv und prüfe die Struktur,filesystem,Archive extraction and filesystem manipulation
+(port freigeben|port öffnen|expose port|localhost:),container,0.87,Expose Port 8080 für den lokalen Test,network,Networking or port exposure inside runtime
+(ffmpeg|imagemagick|pandoc|system package),container,0.91,Nutze ffmpeg um das Video in MP4 umzuwandeln,system,Use of native binaries or OS-level tooling
+(mehrere dateien verarbeiten|batch files|ordner traversieren),container,0.84,Verarbeite alle CSV-Dateien im Eingabeordner,filesystem,Batch file processing over directories
+(sandbox|isolierte umgebung|isolated environment),container,0.86,Starte das in einer isolierten Umgebung,system,Need for isolated execution environment
+(clone repo|git clone|repository klonen),container,0.85,Clone das Repo und führe die Tests aus,filesystem,Repository checkout plus local execution
+(system-level|os-level|betriebssystemnah),container,0.92,Das braucht OS-level Zugriff auf Dateien und Prozesse,system,Explicit request for OS or process level operations
+(skript ausführen|run script|python script),container,0.83,Führe das Python-Script gegen die lokalen Dateien aus,execution,Single-run script execution in runtime
+(convert file|datei konvertieren|transcode),container,0.82,Konvertiere die Markdown-Datei mit pandoc zu HTML,filesystem,File conversion using local tools
+(ressourcen limit|memory limit|cpu limit),container,0.80,Starte den Job mit begrenztem RAM,system,Execution with explicit compute/resource constraints
+(temp dir|tmp ordner|working directory),container,0.79,Lege die Zwischendateien in einem tmp-Ordner ab,filesystem,Work with ephemeral directories and temp outputs
+(dependency conflict|native dependency|shared library),container,0.89,Löse den Native-Dependency-Konflikt im Build,system,Native dependency or linker issue handling
+(container|docker|podman) .* (ausführen|run|start),container,0.93,Starte den Container und prüfe die Logs,system,Direct container lifecycle control request
+(verwende den .* skill|use the .* skill),skill,0.95,Verwende den PDF-Skill um die Datei zu verarbeiten,tooling,Explicit invocation of a named skill/capability
+(pdf zusammenfassen|summarize pdf|aus pdf extrahieren),skill,0.92,Fasse das PDF auf Deutsch zusammen,document,Document-specific workflow usually mapped to a skill
+(erstelle slides|make slides|präsentation erstellen),skill,0.93,Erstelle Slides für das Kickoff-Meeting,presentation,Slide generation workflow best handled by a skill
+(docx erstellen|word dokument|generate docx),skill,0.91,Erzeuge ein DOCX mit dem Meeting-Protokoll,document,Structured document authoring flow
+(spreadsheet|excel|xlsx|tabelle aufbauen),skill,0.90,Baue eine Excel-Datei mit den Ergebnissen,spreadsheet,Spreadsheet creation or analysis workflow
+(nutze das passende tool|route to skill|specialized workflow),skill,0.82,Route das an den passenden Skill für PDFs,tooling,Request hints that specialized workflow selection is desired
+(extrahiere tabellen aus pdf|pdf tables),skill,0.88,Extrahiere die Tabellen aus dem PDF,document,Table extraction from documents
+(formatiere als präsentation|presentation deck),skill,0.84,Mach daraus ein kurzes Presentation Deck,presentation,Transform content into presentation form
+(erstelle bericht als docx|report as word),skill,0.85,Erstelle den Bericht als Word-Dokument,document,Report generation in office-document format
+(skill ausführen|run skill|skill pipeline),skill,0.87,Führe die Skill-Pipeline für das Dokument aus,tooling,Generic skill execution phrasing
+(ocr auf dokument|document ocr),skill,0.81,Lass OCR über das gescannte Dokument laufen,document,OCR/document processing workflow
+(folie(n)? designen|slide layout|deck structure),skill,0.83,Strukturiere die Folien für ein Sales Deck,presentation,Slide layout/design oriented request
+(template verwenden|use template|vorlage nutzen),skill,0.80,Nutze die bestehende Vorlage für das DOCX,template,Template-driven asset generation
+(mehrseitiges dokument|multi-page report),skill,0.78,Erstelle ein mehrseitiges Dokument mit Inhaltsverzeichnis,document,Long-form document production
+(chart in excel|plot in spreadsheet|diagramm in tabelle),skill,0.79,Füge ein Diagramm in die Tabelle ein,spreadsheet,Charting or spreadsheet-native visuals
+(artifact|artefakt|deliverable) .* (doc|slide|sheet),skill,0.77,Erzeuge das finale Artefakt als Slide Deck,tooling,Deliverable-oriented asset generation request
+(täglich|daily|every day),cron,0.96,Erstelle jeden Morgen einen Bericht,temporal,Recurring daily scheduling intent
+(jede stunde|every hour|hourly),cron,0.97,Führe das Script jede Stunde aus,temporal,High-confidence recurring hourly pattern
+(wöchentlich|weekly|jede woche),cron,0.95,Starte den Cleanup-Job wöchentlich,temporal,Recurring weekly schedule
+(monatlich|monthly|jeden monat),cron,0.94,Schicke monatlich einen Status-Export,temporal,Recurring monthly schedule
+(cronjob|cron job|crontab),cron,0.98,Lege dafür einen Cronjob an,scheduler,Explicit cron terminology
+"(um \d{1,2}(:\d{2})? uhr|at \d{1,2}(:\d{2})? ?(am|pm))",cron,0.90,Starte das täglich um 06:30 Uhr,temporal,Specific time-of-day scheduling
+(jeden morgen|every morning|morgens),cron,0.93,Sende jeden Morgen die Zusammenfassung,temporal,Recurring morning execution
+(jede nacht|every night|nachts),cron,0.92,Lass den Sync jede Nacht laufen,temporal,Recurring nightly execution
+(immer am montag|every monday|montags),cron,0.91,Führe das immer am Montag um 9 aus,temporal,Day-of-week recurrence
+(alle 5 minuten|every 5 minutes|*/5),cron,0.96,Prüfe alle 5 Minuten den Eingang,interval,Short fixed interval schedule
+(fortlaufend planen|schedule recurring|wiederkehrend),cron,0.88,Plane das als wiederkehrenden Task,scheduler,Generic recurring scheduling language
+(regelmäßig|regularly|periodisch),cron,0.84,Führe die Bereinigung regelmäßig aus,temporal,Looser recurring cadence wording
+(am ersten tag jedes monats|first day of every month),cron,0.93,Exportiere am ersten Tag jedes Monats die Daten,temporal,Calendar-bound monthly recurrence
+(zum feierabend|end of day|geschäftsschluss),cron,0.80,Sende zum Feierabend eine Kurzinfo,temporal,Recurring business-day end schedule
+(scheduled task|geplanter task|job planen),cron,0.89,Erstelle einen geplanten Task für den Import,scheduler,Explicit scheduling/job setup
+(recurring|wiederkehrend|repeat automatically),cron,0.91,Repeat automatically every Friday,scheduler,Explicit repeat automation intent
+(mcp|model context protocol),mcp,0.98,Rufe das über MCP beim Filesystem-Server auf,protocol,Explicit MCP terminology
+(tool call|tool-call|werkzeugaufruf),mcp,0.92,Mach einen Tool-Call an den Browser-Server,tooling,Direct tool invocation phrasing
+(server endpoint|mcp server|verbinde mit server),mcp,0.90,Verbinde dich mit dem MCP-Server für GitHub,protocol,Connection to external MCP server
+(filesystem server|dateisystem server),mcp,0.89,Nutze den Filesystem-Server um Dateien zu lesen,filesystem,Remote file access via MCP server
+(github server|git server via mcp),mcp,0.88,Öffne das Repo über den GitHub-MCP-Server,integration,Repository integration through MCP
+(browser server|web server tool),mcp,0.87,Lass den Browser-Server die Seite öffnen,browser,Browser automation via MCP
+(call .* tool|invoke .* tool|rufe .* tool auf),mcp,0.84,Invoke the search tool on the MCP server,tooling,Generic remote tool call request
+(remote capability|externes tool|external server),mcp,0.83,Verwende das externe Tool über den Server,integration,External server-backed capability access
+(json-rpc|rpc call|protocol message),mcp,0.81,Sende einen RPC-Call an den MCP-Service,protocol,Protocol/message-level request
+(session .* server|server session|tool session),mcp,0.80,Starte eine Session mit dem MCP-Server,protocol,Persistent server session handling
+(list tools|available tools|verfügbare tools),mcp,0.86,Liste die verfügbaren Tools des Servers auf,tooling,Tool discovery against MCP server
+(resource .* mcp|read resource|resource abrufen),mcp,0.85,Lies die Resource vom Server per MCP,resource,Resource retrieval over MCP
+(prompt .* server|server prompt|template vom server),mcp,0.78,Hole das Prompt-Template vom MCP-Server,resource,Prompt/resource fetch through protocol
+(multi-tool orchestration|server orchestration|tool chaining),mcp,0.76,Chaine zwei MCP-Tool-Calls hintereinander,workflow,Coordinated use of multiple MCP tools
+(mcp client|client verbinden|register server),mcp,0.82,Registriere den Server im MCP-Client,protocol,Client/server registration or setup
+(tool schema|capability schema|input schema),mcp,0.79,Lies das Tool-Schema vom MCP-Server,schema,Schema inspection for tool calls
+(antworte direkt|just answer|direkt beantworten),direct,0.95,Antworte direkt ohne extra Tools,simplicity,User wants plain conversational response
+(kurz erklären|explain briefly|simple answer),direct,0.90,Erklär mir kurz den Unterschied,simplicity,Simple explanatory request
+(übersetzen|translate|in .* formulieren),direct,0.92,Übersetze das ins Englische,language,Direct language transformation
+(rewrite|umformulieren|rephrase),direct,0.88,Formuliere das freundlicher um,language,Direct rewriting/editing task
+(brainstorm|ideen sammeln|give ideas),direct,0.84,Gib mir 10 Ideen für einen Namen,creative,Ideation without external execution
+(zusammenfassen|summarize text|kurze zusammenfassung),direct,0.86,Fass diesen Absatz in zwei Sätzen zusammen,text,Short text-only summarization
+(feedback geben|review this text|verbessere den text),direct,0.85,Gib Feedback auf meinen Absatz,text,Text critique without tool usage
+(liste machen|make a list|stichpunkte),direct,0.82,Mach mir eine kurze Stichpunktliste,text,Simple list generation
+(erkläre den code|explain code|warum funktioniert),direct,0.80,Erkläre mir diesen Codeblock,reasoning,Reasoning/explanation on provided content
+(entscheidungshilfe|pros and cons|abwägen),direct,0.79,Wäge Vor- und Nachteile ab,reasoning,Analytical comparison in-chat
+(frage beantworten|answer my question|help me understand),direct,0.83,Beantworte einfach meine Frage,simplicity,General direct Q&A intent
+(tone verbessern|tone polish|freundlicher schreiben),direct,0.81,Mach die Nachricht professioneller,language,Tone editing request
+(headline|titelvorschlag|subject line),direct,0.78,Gib mir 5 Betreffzeilen,creative,Shortform generation within chat
+(code snippet schreiben|write a snippet|kleines beispiel),direct,0.77,Schreib ein kleines Python-Beispiel,coding,Small self-contained generation
+(ohne datei|no file needed|kein download),direct,0.74,"Kein Download nötig, schreib es einfach hier",simplicity,User explicitly rejects artifact/tooling path
+(plain text|nur text|direkt im chat),direct,0.87,Antwort nur als Plain Text im Chat,simplicity,Deliver response directly in the chat

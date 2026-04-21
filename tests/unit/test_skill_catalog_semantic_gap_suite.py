@@ -181,7 +181,7 @@ def test_postcheck_should_repair_unverified_draft_claim_without_list_draft_skill
         "verifiziert verfügbar, da die Registry keine verfügbaren Skills anzeigt."
     )
 
-    with patch("core.layers.output.load_grounding_policy", return_value=_policy()):
+    with patch("core.layers.output.layer.load_grounding_policy", return_value=_policy()):
         checked = layer._grounding_postcheck(answer, plan, _precheck(evidence))
 
     assert checked != answer
@@ -220,7 +220,7 @@ def test_postcheck_should_repair_tools_vs_skills_built_in_capability_drift():
         "installiert, sondern gehören zu meinen Kernfähigkeiten."
     )
 
-    with patch("core.layers.output.load_grounding_policy", return_value=_policy()):
+    with patch("core.layers.output.layer.load_grounding_policy", return_value=_policy()):
         checked = layer._grounding_postcheck(answer, plan, _precheck(evidence))
 
     assert checked != answer
@@ -249,7 +249,7 @@ def test_postcheck_should_repair_unsolicited_skill_creation_offer():
         "Möchtest du, dass ich einen speziellen Skill entwickle oder hast du eine konkrete Aufgabe im Sinn?"
     )
 
-    with patch("core.layers.output.load_grounding_policy", return_value=_policy()):
+    with patch("core.layers.output.layer.load_grounding_policy", return_value=_policy()):
         checked = layer._grounding_postcheck(answer, plan, _precheck(evidence))
 
     assert checked != answer

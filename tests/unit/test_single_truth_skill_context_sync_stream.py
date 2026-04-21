@@ -44,7 +44,7 @@ def _detect_project_root() -> str:
         if not root or root in seen:
             continue
         seen.add(root)
-        if os.path.exists(os.path.join(root, "config.py")) and os.path.exists(
+        if os.path.exists(os.path.join(root, "config", "__init__.py")) and os.path.exists(
             os.path.join(root, "core")
         ):
             return root
@@ -52,7 +52,7 @@ def _detect_project_root() -> str:
 
 
 _PROJECT_ROOT = _detect_project_root()
-_CONFIG_PATH = os.path.join(_PROJECT_ROOT, "config.py")
+_CONFIG_PATH = os.path.join(_PROJECT_ROOT, "config", "__init__.py")
 _CM_PATH = os.path.join(_PROJECT_ROOT, "core", "context_manager.py")
 
 if _PROJECT_ROOT not in sys.path:
@@ -60,12 +60,12 @@ if _PROJECT_ROOT not in sys.path:
 
 
 # ---------------------------------------------------------------------------
-# Helper: load config.py in isolation
+# Helper: load config package in isolation
 # ---------------------------------------------------------------------------
 
 def _load_config_fresh():
     for k in list(sys.modules):
-        if k == "config":
+        if k == "config" or k.startswith("config."):
             del sys.modules[k]
     _utils_pkg = types.ModuleType("utils")
     _utils_pkg.__path__ = []
@@ -85,7 +85,11 @@ def _load_config_fresh():
     sys.modules["utils.settings"] = _settings_mod
     sys.modules["utils.service_endpoint_resolver"] = _service_endpoint_mod
     try:
-        spec = importlib.util.spec_from_file_location("config", _CONFIG_PATH)
+        spec = importlib.util.spec_from_file_location(
+            "config",
+            _CONFIG_PATH,
+            submodule_search_locations=[os.path.dirname(_CONFIG_PATH)],
+        )
         mod = importlib.util.module_from_spec(spec)
         sys.modules["config"] = mod
         spec.loader.exec_module(mod)
@@ -245,7 +249,7 @@ class TestSkillContextRendererConfig(unittest.TestCase):
         return getattr(_load_config_fresh(), "get_skill_context_renderer", None)
 
     def test_getter_exists(self):
-        self.assertIsNotNone(self._get_fn(), "get_skill_context_renderer missing in config.py")
+        self.assertIsNotNone(self._get_fn(), "get_skill_context_renderer missing in config package")
 
     def test_default_is_typedstate(self):
         fn = self._get_fn()

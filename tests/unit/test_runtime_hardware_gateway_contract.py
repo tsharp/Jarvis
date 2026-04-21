@@ -19,7 +19,7 @@ def test_admin_api_exposes_runtime_hardware_gateway_routes():
 
 def test_runtime_hardware_gateway_has_reachable_fallback_urls():
     src = _read("adapters/admin-api/runtime_hardware_routes.py")
-    helper_src = _read("utils/service_endpoint_resolver.py")
+    helper_src = _read("utils/routing/service_endpoint.py")
     assert 'RUNTIME_HARDWARE_URL' in src
     assert 'candidate_service_endpoints(' in src
     assert 'host.docker.internal:{int(port)}' in helper_src

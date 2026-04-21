@@ -105,7 +105,7 @@ class TestNoDoubleInjection:
         if ol is None:
             pytest.skip("OutputLayer not importable")
         plan = _make_verified_plan(_tool_results="X" * 500)
-        with patch("core.layers.output._is_small_model_mode", return_value=False):
+        with patch("core.layers.output.layer._is_small_model_mode", return_value=False):
             prompt = ol.build_system_prompt(plan, memory_data="base")
         assert "PFLICHT — TOOL-ERGEBNISSE" not in prompt
 

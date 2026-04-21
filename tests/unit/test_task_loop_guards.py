@@ -75,7 +75,7 @@ def test_evaluate_stop_conditions_stops_on_risk_gate():
         objective_id="obj-1",
         conversation_id="conv-1",
         plan_id="plan-1",
-        risk_level=RiskLevel.NEEDS_CONFIRMATION,
+        risk_level=RiskLevel.RISKY,
         pending_step="Change files",
     )
 
