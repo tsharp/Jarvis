@@ -65,14 +65,54 @@ def _fingerprint(tool_name: str, error_msg: str) -> str:
 def _extract_errors_from_context(tool_context: str) -> List[Dict]:
     """Extrahiert fehlgeschlagene Tools + Fehlermeldungen aus tool_context."""
     errors = []
+    seen: set[tuple[str, str]] = set()
+
+    def _append(tool_name: str, error_msg: str) -> None:
+        tool = str(tool_name or "").strip()
+        msg = _normalize_error_message(error_msg)
+        if not tool or not msg:
+            return
+        sig = (tool, msg)
+        if sig in seen:
+            return
+        seen.add(sig)
+        errors.append({"tool": tool, "error": msg})
+
     pattern = re.compile(
         r"### TOOL-FEHLER \(([^)]+)\):\n(.*?)(?=\n###|\Z)", re.DOTALL
     )
     for match in pattern.finditer(tool_context):
-        tool_name = match.group(1).strip()
-        error_msg = match.group(2).strip()[:200]
-        errors.append({"tool": tool_name, "error": error_msg})
+        _append(match.group(1), match.group(2))
+
+    card_pattern = re.compile(
+        r"(?ms)^\[TOOL-CARD:\s*([^|\]]+?)\s*\|\s*([^|\]]+?)\s*\|\s*ref:[^\]]+\]\n(.*?)(?=^\[TOOL-CARD:|^### |\Z)"
+    )
+    for match in card_pattern.finditer(tool_context):
+        tool_name = str(match.group(1) or "").strip()
+        status = str(match.group(2) or "").strip().lower()
+        if not any(marker in status for marker in ("error", "fail", "❌")):
+            continue
+        _append(tool_name, match.group(3))
     return errors
+
+
+def _normalize_error_message(error_msg: str) -> str:
+    lines = []
+    for raw_line in str(error_msg or "").splitlines():
+        line = str(raw_line or "").strip()
+        if not line:
+            continue
+        if line.startswith("[TOOL-CARD:"):
+            continue
+        if line.startswith("ts:"):
+            continue
+        if line.startswith("- "):
+            line = line[2:].strip()
+        lines.append(line)
+    compact = " | ".join(lines[:3]).strip()
+    if not compact:
+        compact = " ".join(str(error_msg or "").split())
+    return compact[:200]
 
 
 def _build_alternative_args(rule: Dict, original_args: Dict, user_text: str) -> Dict:

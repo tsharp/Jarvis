@@ -125,3 +125,33 @@ def test_apply_corrections_maps_confirmation_pending_to_interactive_defer():
     assert corrected["execution_mode"] == "interactive_defer"
     assert corrected["_authoritative_turn_mode"] == "interactive_defer"
     assert corrected["turn_mode"] == "interactive_defer"
+
+
+def test_apply_corrections_marks_active_task_loop_presence_without_implying_resume():
+    layer = ControlLayer()
+
+    corrected = layer.apply_corrections(
+        {
+            "_task_loop_active": True,
+            "_task_loop_active_state": "waiting_for_user",
+            "task_loop_candidate": False,
+            "needs_visible_progress": False,
+            "sequential_complexity": 1,
+        },
+        {
+            "approved": True,
+            "decision_class": "allow",
+            "corrections": {},
+            "warnings": [],
+            "final_instruction": "",
+        },
+    )
+
+    assert corrected["_authoritative_execution_mode"] == "task_loop"
+    assert corrected["execution_mode"] == "task_loop"
+    assert corrected["_authoritative_execution_mode_reason"] == "active_task_loop_present"
+    assert corrected["_authoritative_execution_mode_reasons"] == ["active_task_loop_present"]
+    assert corrected["_authoritative_turn_mode"] == "task_loop"
+    assert corrected["turn_mode"] == "task_loop"
+    assert corrected["_authoritative_turn_mode_reason"] == "active_task_loop_present"
+    assert corrected["_authoritative_turn_mode_reasons"] == ["active_task_loop_present"]

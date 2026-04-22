@@ -18,7 +18,10 @@ from core.task_loop.active_turn_policy import (
     ACTIVE_TASK_LOOP_REASON_CONTINUE,
     ACTIVE_TASK_LOOP_REASON_MODE_SHIFT,
     ACTIVE_TASK_LOOP_REASON_RESTART,
+    can_keep_active_task_loop_in_background,
     classify_active_task_loop_routing,
+    explain_active_task_loop_routing,
+    is_independent_tool_turn_candidate,
     is_authoritative_task_loop_turn,
     is_runtime_resume_candidate,
     is_task_loop_meta_turn,
@@ -71,12 +74,24 @@ def inject_active_task_loop_context(
         snapshot,
         user_text,
         raw_request=raw_request,
+        verified_plan=plan,
     )
+    plan["_task_loop_background_preservable"] = can_keep_active_task_loop_in_background(snapshot)
+    plan["_task_loop_active_topic"] = str(getattr(snapshot, "objective_summary", "") or snapshot.pending_step or "")
     plan["_task_loop_meta_turn"] = is_task_loop_meta_turn(user_text)
+    plan["_task_loop_independent_tool_turn_candidate"] = is_independent_tool_turn_candidate(snapshot, plan)
     plan["_task_loop_last_step_type"] = str(snapshot.current_step_type.value)
     plan["_task_loop_last_step_status"] = str(snapshot.current_step_status.value)
     plan["_task_loop_stop_reason"] = str(snapshot.stop_reason.value) if snapshot.stop_reason else ""
     plan["_task_loop_active_reason"] = ACTIVE_TASK_LOOP_REASON_CONTINUE
+    active_explanation = explain_active_task_loop_routing(
+        user_text,
+        snapshot,
+        plan,
+        raw_request=raw_request,
+    )
+    plan["_task_loop_active_reason"] = str(active_explanation.get("reason") or ACTIVE_TASK_LOOP_REASON_CONTINUE)
+    plan["_task_loop_active_reason_detail"] = str(active_explanation.get("detail") or "").strip()
     return plan
 
 

@@ -19,6 +19,7 @@ from core.task_loop.contracts import (
     RiskLevel,
     TaskLoopSnapshot,
     TaskLoopStepExecutionSource,
+    TaskLoopStepRequest,
     TaskLoopStepResult,
     TaskLoopStepStatus,
     TaskLoopStepType,
@@ -95,6 +96,7 @@ def _build_verified_artifacts(
             {
                 "artifact_type": "execution_result",
                 "done_reason": str(execution_result.get("done_reason") or ""),
+                "direct_response": str(execution_result.get("direct_response") or ""),
                 "tool_statuses": list(execution_result.get("tool_statuses") or []),
                 "grounding": dict(execution_result.get("grounding") or {}),
                 "metadata": dict(execution_result.get("metadata") or {}),
@@ -108,6 +110,48 @@ def _build_verified_artifacts(
             }
         )
     return artifacts
+
+
+def check_tool_request_preconditions(
+    snapshot: TaskLoopSnapshot,
+    step_request: "TaskLoopStepRequest",
+    *,
+    user_reply: str = "",
+    resume_completed: bool = False,
+) -> tuple[TaskLoopStepStatus | None, str]:
+    """Prüft Blueprint- und Parameter-Vorabgates für TOOL_REQUEST-Schritte.
+
+    Gibt (status, message) zurück wenn der Schritt pausieren muss, sonst (None, "").
+    Muss sowohl im Stream-Pfad als auch im Sync/Async-Pfad aufgerufen werden.
+    """
+    if resume_completed:
+        return None, ""
+    requested_capability = dict(step_request.requested_capability or {})
+    if str(requested_capability.get("capability_action") or "").strip().lower() != "request_container":
+        return None, ""
+    request_ctx = build_container_request_context(
+        snapshot,
+        requested_capability=requested_capability,
+        user_reply=user_reply,
+        capability_context=step_request.capability_context,
+    )
+    if request_ctx.get("requires_user_choice"):
+        msg = str(request_ctx.get("waiting_message") or "").strip()
+        return TaskLoopStepStatus.WAITING_FOR_USER, msg
+    selected_blueprint = request_ctx.get("selected_blueprint")
+    if not isinstance(selected_blueprint, dict):
+        selected_blueprint = {}
+    parameter_ctx = build_container_parameter_context(
+        snapshot,
+        requested_capability=requested_capability,
+        selected_blueprint=selected_blueprint,
+        capability_context=step_request.capability_context,
+        user_reply=user_reply,
+    )
+    if parameter_ctx.get("requires_user_input"):
+        msg = str(parameter_ctx.get("waiting_message") or "").strip()
+        return TaskLoopStepStatus.WAITING_FOR_USER, msg
+    return None, ""
 
 
 def _next_action_for_status(status: TaskLoopStepStatus) -> str:
@@ -559,61 +603,29 @@ async def execute_task_loop_step(
             TaskLoopStepStatus.WAITING_FOR_USER,
         }
     )
-    request_container_context = build_container_request_context(
-        snapshot,
-        requested_capability=prepared.step_request.requested_capability,
-        user_reply=resume_user_text,
-        capability_context=prepared.step_request.capability_context,
-    )
-    if (
-        step_type is TaskLoopStepType.TOOL_REQUEST
-        and not tool_request_resume_completed
-        and bool(request_container_context.get("requires_user_choice"))
-    ):
-        waiting_text = str(request_container_context.get("waiting_message") or prepared.fallback_text).strip()
-        return TaskLoopStepRuntimeResult(
-            visible_text=waiting_text,
-            control_decision=prepared.control_decision,
-            verified_plan=prepared.verified_plan,
-            step_result=_step_result_from_text(
-                prepared,
-                visible_text=waiting_text,
-                source=TaskLoopStepExecutionSource.LOOP,
-                trace_reason="task_loop_container_request_waiting_for_blueprint_choice",
-                used_fallback=False,
-                waiting_for_user=False,
-                status_override=TaskLoopStepStatus.WAITING_FOR_USER,
-            ),
-            used_fallback=False,
+    if step_type is TaskLoopStepType.TOOL_REQUEST:
+        gate_status, gate_msg = check_tool_request_preconditions(
+            snapshot,
+            prepared.step_request,
+            user_reply=resume_user_text,
+            resume_completed=tool_request_resume_completed,
         )
-    parameter_context = build_container_parameter_context(
-        snapshot,
-        requested_capability=prepared.step_request.requested_capability,
-        selected_blueprint=request_container_context.get("selected_blueprint") if isinstance(request_container_context.get("selected_blueprint"), dict) else {},
-        capability_context=prepared.step_request.capability_context,
-        user_reply=resume_user_text,
-    )
-    if (
-        step_type is TaskLoopStepType.TOOL_REQUEST
-        and not tool_request_resume_completed
-        and bool(parameter_context.get("requires_user_input"))
-    ):
-        waiting_text = str(parameter_context.get("waiting_message") or prepared.fallback_text).strip()
-        return TaskLoopStepRuntimeResult(
-            visible_text=waiting_text,
-            control_decision=prepared.control_decision,
-            verified_plan=prepared.verified_plan,
-            step_result=_step_result_from_text(
-                prepared,
+        if gate_status is not None:
+            waiting_text = gate_msg or prepared.fallback_text
+            return TaskLoopStepRuntimeResult(
                 visible_text=waiting_text,
-                source=TaskLoopStepExecutionSource.LOOP,
-                trace_reason="task_loop_container_request_waiting_for_parameters",
+                control_decision=prepared.control_decision,
+                verified_plan=prepared.verified_plan,
+                step_result=_step_result_from_text(
+                    prepared,
+                    visible_text=waiting_text,
+                    source=TaskLoopStepExecutionSource.LOOP,
+                    trace_reason="task_loop_tool_request_precondition_gate",
+                    used_fallback=False,
+                    status_override=gate_status,
+                ),
                 used_fallback=False,
-                waiting_for_user=False,
-                status_override=TaskLoopStepStatus.WAITING_FOR_USER,
-            ),
-            used_fallback=False,
-        )
+            )
     tool_request_status = (
         TaskLoopStepStatus.COMPLETED
         if tool_request_resume_completed
@@ -706,6 +718,7 @@ __all__ = [
     "_map_orchestrator_status",
     "_next_action_for_status",
     "_step_result_from_text",
+    "check_tool_request_preconditions",
     "execute_task_loop_step",
     "stream_task_loop_step_output",
 ]

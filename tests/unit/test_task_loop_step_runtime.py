@@ -554,6 +554,100 @@ def test_build_task_loop_step_prompt_carries_forward_container_request_params():
     assert "Erkannte Request-Parameter: cpu_cores=8, ram=16 GB, runtime=nvidia" in prompt
 
 
+def test_build_task_loop_step_prompt_carries_forward_verified_tool_answer():
+    snapshot = TaskLoopSnapshot(
+        objective_id="obj-step-runtime",
+        conversation_id="conv-step-runtime",
+        plan_id="plan-step-runtime",
+        current_step_id="step-2",
+        current_step_type=TaskLoopStepType.TOOL_EXECUTION,
+        current_plan=[
+            "Container-Anfrage zur Freigabe vorbereiten",
+            "Container-Anfrage ausfuehren",
+        ],
+        plan_steps=[],
+        pending_step="Container-Anfrage ausfuehren",
+        risk_level=RiskLevel.SAFE,
+        verified_artifacts=[
+            {
+                "artifact_type": "execution_result",
+                "done_reason": "success",
+                "direct_response": "Container-Anfrage wurde erfolgreich ausgefuehrt.",
+                "tool_statuses": [{"tool_name": "request_container", "status": "ok", "reason": ""}],
+                "grounding": {"tool_name": "request_container"},
+                "metadata": {},
+            }
+        ],
+    )
+
+    prompt = build_task_loop_step_prompt(
+        "Container-Anfrage ausfuehren",
+        {
+            "step_type": TaskLoopStepType.TOOL_EXECUTION.value,
+            "goal": "Den angefragten Container ausfuehren.",
+            "done_criteria": "Ein verifizierter Ausfuehrungsbefund liegt vor.",
+            "suggested_tools": ["request_container"],
+            "objective": "Gaming-Container kontrolliert starten",
+        },
+        snapshot,
+    )
+
+    assert "Zuletzt verifizierte Tool-Antwort: Container-Anfrage wurde erfolgreich ausgefuehrt." in prompt
+    assert "Letzte Tool-Statuses: request_container=ok" in prompt
+
+
+def test_build_task_loop_step_prompt_carries_forward_grounding_evidence_facts():
+    snapshot = TaskLoopSnapshot(
+        objective_id="obj-step-runtime",
+        conversation_id="conv-step-runtime",
+        plan_id="plan-step-runtime",
+        current_step_id="step-2",
+        current_step_type=TaskLoopStepType.TOOL_EXECUTION,
+        current_plan=[
+            "Blueprints pruefen",
+            "Container-Anfrage ausfuehren",
+        ],
+        plan_steps=[],
+        pending_step="Container-Anfrage ausfuehren",
+        risk_level=RiskLevel.SAFE,
+        verified_artifacts=[
+            {
+                "artifact_type": "execution_result",
+                "done_reason": "success",
+                "tool_statuses": [{"tool_name": "blueprint_list", "status": "ok", "reason": ""}],
+                "grounding": {"tool_name": "blueprint_list"},
+                "metadata": {
+                    "grounding_evidence": [
+                        {
+                            "tool_name": "blueprint_list",
+                            "status": "ok",
+                            "key_facts": [
+                                "installed_count: 2",
+                                "installed_names: Gaming Station, Gaming Lite",
+                            ],
+                        }
+                    ]
+                },
+            }
+        ],
+    )
+
+    prompt = build_task_loop_step_prompt(
+        "Container-Anfrage ausfuehren",
+        {
+            "step_type": TaskLoopStepType.TOOL_EXECUTION.value,
+            "goal": "Den angefragten Container ausfuehren.",
+            "done_criteria": "Ein verifizierter Ausfuehrungsbefund liegt vor.",
+            "suggested_tools": ["request_container"],
+            "objective": "Gaming-Container kontrolliert starten",
+        },
+        snapshot,
+    )
+
+    assert "Verifizierte Tool-Fakten:" in prompt
+    assert "- blueprint_list [ok]: installed_count: 2; installed_names: Gaming Station, Gaming Lite" in prompt
+
+
 def _simple_snapshot() -> TaskLoopSnapshot:
     return TaskLoopSnapshot(
         objective_id="obj-approval",

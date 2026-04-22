@@ -178,6 +178,7 @@ from core.orchestrator_modules.context.semantic import (
     derive_container_addon_tags_from_inspect as util_derive_container_addon_tags_from_inspect,
     maybe_build_active_container_capability_context as util_maybe_build_active_container_capability_context,
     maybe_build_skill_semantic_context as util_maybe_build_skill_semantic_context,
+    maybe_build_system_knowledge_context as util_maybe_build_system_knowledge_context,
     parse_list_draft_skills_snapshot as util_parse_list_draft_skills_snapshot,
     parse_list_skills_runtime_snapshot as util_parse_list_skills_runtime_snapshot,
     summarize_container_inspect_for_capability_context as util_summarize_container_inspect_for_capability_context,
@@ -1959,6 +1960,28 @@ class PipelineOrchestrator:
             build_grounding_evidence_entry_fn=self._build_grounding_evidence_entry,
             merge_grounding_evidence_items_fn=self._merge_grounding_evidence_items,
             safe_str_fn=lambda value, max_len: self._safe_str(value, max_len=max_len),
+            log_warn_fn=log_warn,
+        )
+
+    async def _maybe_build_system_knowledge_context(
+        self,
+        *,
+        user_text: str,
+        conversation_id: str,
+        verified_plan: Dict[str, Any],
+    ) -> Dict[str, str]:
+        from core.task_loop.capabilities.system_knowledge.context import (
+            load_system_knowledge_context,
+        )
+
+        return await util_maybe_build_system_knowledge_context(
+            user_text=user_text,
+            conversation_id=conversation_id,
+            verified_plan=verified_plan,
+            load_system_knowledge_context_fn=load_system_knowledge_context,
+            build_tool_result_card_fn=self._build_tool_result_card,
+            build_grounding_evidence_entry_fn=self._build_grounding_evidence_entry,
+            merge_grounding_evidence_items_fn=self._merge_grounding_evidence_items,
             log_warn_fn=log_warn,
         )
 

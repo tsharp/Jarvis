@@ -26,6 +26,8 @@ def should_skip_control_layer(
         return False, "fact_query_requires_control"
     if bool((thinking_plan or {}).get("_hardware_gate_triggered")):
         return False, "hardware_gate_requires_control"
+    if bool((thinking_plan or {}).get("_task_loop_active")):
+        return False, "active_task_loop_requires_control"
     execution_mode = str(
         (thinking_plan or {}).get("_authoritative_execution_mode")
         or (thinking_plan or {}).get("execution_mode")

@@ -137,6 +137,7 @@ def _make_orch(thinking_plan: dict, verification: dict) -> MagicMock:
     orch._tool_context_has_failures_or_skips = MagicMock(return_value=False)
     orch._maybe_build_active_container_capability_context = AsyncMock(return_value=None)
     orch._maybe_build_skill_semantic_context = AsyncMock(return_value=None)
+    orch._maybe_build_system_knowledge_context = AsyncMock(return_value=None)
 
     # Plan data
     orch._conversation_container_state = {}

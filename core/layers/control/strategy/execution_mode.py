@@ -5,6 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 
+ACTIVE_TASK_LOOP_PRESENT_REASON = "active_task_loop_present"
+
+
 def normalize_execution_mode(value: Any) -> str:
     """Normalize execution-mode values to the supported control states."""
     execution_mode = str(value or "").strip().lower()
@@ -78,7 +81,7 @@ def derive_authoritative_execution_mode(
     if verification.get("_needs_skill_confirmation") or thinking_plan.get("_pending_intent"):
         return "interactive_defer", ["confirmation_pending"], []
     if bool(thinking_plan.get("_task_loop_active")):
-        return "task_loop", ["continue_active_task_loop"], []
+        return "task_loop", [ACTIVE_TASK_LOOP_PRESENT_REASON], []
 
     candidate = bool(thinking_plan.get("task_loop_candidate"))
     explicit_signal = bool(thinking_plan.get("_task_loop_explicit_signal"))
@@ -101,6 +104,7 @@ def derive_authoritative_execution_mode(
 
 
 __all__ = [
+    "ACTIVE_TASK_LOOP_PRESENT_REASON",
     "derive_authoritative_execution_mode",
     "execution_mode_to_turn_mode",
     "normalize_execution_mode",

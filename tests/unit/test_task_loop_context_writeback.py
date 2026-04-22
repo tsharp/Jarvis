@@ -15,6 +15,7 @@ def test_persist_context_only_turn_updates_snapshot_and_workspace():
         plan_id="plan-ctx",
         state=TaskLoopState.WAITING_FOR_USER,
         pending_step="Rueckfrage beantworten",
+        objective_summary="Container-Auswahl abschliessen",
     )
 
     updated, event, workspace_updates, event_ids = persist_context_only_turn(
@@ -28,6 +29,8 @@ def test_persist_context_only_turn_updates_snapshot_and_workspace():
     assert updated.verified_artifacts[-1]["artifact_type"] == "context_only_turn"
     assert updated.workspace_event_ids == ["evt-context"]
     assert event["type"] == "task_loop_context_updated"
+    assert event["event_data"]["background_loop_preserved"] is True
+    assert event["event_data"]["background_loop_topic"] == "Container-Auswahl abschliessen"
     assert workspace_updates == [{"type": "workspace_update", "entry_id": "evt-context"}]
     assert event_ids == ["evt-context"]
     assert calls[0]["entry_type"] == "task_loop_context_updated"

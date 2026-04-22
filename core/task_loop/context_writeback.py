@@ -18,6 +18,20 @@ def _clip(text: Any, limit: int = 400) -> str:
     return compact[: max(0, limit - 3)].rstrip() + "..."
 
 
+def build_background_loop_state(snapshot: TaskLoopSnapshot) -> Dict[str, Any]:
+    topic = str(snapshot.objective_summary or "").strip()
+    pending_step = str(snapshot.pending_step or "").strip()
+    if not topic:
+        topic = pending_step
+    return {
+        "background_loop_preserved": True,
+        "background_loop_state": snapshot.state.value,
+        "background_loop_topic": topic,
+        "background_loop_pending_step": pending_step,
+        "background_loop_step_index": int(snapshot.step_index or 0),
+    }
+
+
 def build_context_only_artifact(
     assistant_text: str,
     *,
@@ -68,6 +82,7 @@ def persist_context_only_turn(
         event_data={
             "context_only": True,
             "context_only_done_reason": str(done_reason or "").strip(),
+            **build_background_loop_state(updated),
         },
     )
     workspace_updates: List[Dict[str, Any]] = []

@@ -395,10 +395,18 @@ async def process_request(
     elif routing_decision.clear_active_loop:
         clear_active_task_loop(conversation_id)
         verified_plan["_active_task_loop_reason"] = routing_decision.active_task_loop_reason
+        verified_plan["_active_task_loop_reason_detail"] = routing_decision.active_task_loop_detail
+        verified_plan["_active_task_loop_branch"] = routing_decision.branch
         log_info_fn(f"[TaskLoop] active loop cleared reason={routing_decision.active_task_loop_reason}")
     elif routing_decision.context_only:
         verified_plan["_active_task_loop_reason"] = routing_decision.active_task_loop_reason
+        verified_plan["_active_task_loop_reason_detail"] = routing_decision.active_task_loop_detail
+        verified_plan["_active_task_loop_branch"] = routing_decision.branch
         log_info_fn("[TaskLoop] active loop kept as context-only turn")
+    else:
+        verified_plan["_active_task_loop_reason"] = routing_decision.active_task_loop_reason
+        verified_plan["_active_task_loop_reason_detail"] = routing_decision.active_task_loop_detail
+        verified_plan["_active_task_loop_branch"] = routing_decision.branch
 
     if routing_decision.use_task_loop and active_task_loop_snapshot is None:
         task_loop_response = await maybe_handle_task_loop_sync(
@@ -593,6 +601,28 @@ async def process_request(
         append_runtime_tool_results(
             verified_plan,
             f"\n{_skill_semantic_tool_results}\n",
+        )
+
+    _system_knowledge_ctx = await orch._maybe_build_system_knowledge_context(
+        user_text=user_text,
+        conversation_id=conversation_id,
+        verified_plan=verified_plan,
+    )
+    _system_knowledge_ctx_text = str((_system_knowledge_ctx or {}).get("context_text") or "").strip()
+    if _system_knowledge_ctx_text:
+        retrieved_memory = orch._append_context_block(
+            retrieved_memory,
+            _system_knowledge_ctx_text,
+            "system_knowledge_ctx",
+            ctx_trace,
+        )
+    _system_knowledge_tool_results = str(
+        (_system_knowledge_ctx or {}).get("tool_results_text") or ""
+    ).strip()
+    if _system_knowledge_tool_results:
+        append_runtime_tool_results(
+            verified_plan,
+            f"\n{_system_knowledge_tool_results}\n",
         )
 
     orch._inject_carryover_grounding_evidence(

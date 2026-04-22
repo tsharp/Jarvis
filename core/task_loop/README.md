@@ -88,6 +88,55 @@ Dabei soll pro Turn genau **ein** autoritativer Ausfuehrungsmodus gelten:
 - `task_loop`
 - `interactive_defer`
 
+### Autoritaetsgrenze: Control vs Routing
+
+Seit den Handoff-Fixes gilt fuer aktive Task-Loops eine feste Rollenverteilung:
+
+- **Control bestimmt nur den groben Runtime-Modus.**
+  Wenn bereits ein aktiver Loop-Snapshot existiert, darf Control weiter
+  `execution_mode=task_loop` und `turn_mode=task_loop` setzen, damit der Turn
+  nicht in einen Low-Risk-Skip oder einen falschen `direct`-Pfad kippt.
+  Der dazugehoerige Reason-Code ist bewusst nur noch
+  `active_task_loop_present`.
+
+- **Routing entscheidet final ueber das Handoff.**
+  Die Frage, ob ein aktiver Loop wirklich fortgesetzt wird oder nur als
+  Hintergrund-Kontext erhalten bleibt, wird ausschliesslich in
+  `core/task_loop/active_turn_policy.py` und
+  `core/orchestrator_modules/task_loop_routing.py` entschieden.
+  Control darf an dieser Stelle kein semantisches Resume mehr behaupten.
+
+- **Resume-vs-Background ist ein Routing-Detail, kein Control-Reason.**
+  Die eigentlichen Handoff-Details kommen aus den Routing-Reason-Details:
+  - `explicit_continue_request`
+  - `runtime_resume_candidate`
+  - `meta_turn_background_preserved`
+  - `independent_tool_turn_background_preserved`
+  - `authoritative_task_loop_non_resume_background`
+  - `background_loop_preserved`
+
+- **Thinking-/Trace-UI zeigt beide Ebenen getrennt.**
+  `authoritative_execution_mode` / `authoritative_turn_mode` zeigen nur noch,
+  dass ein aktiver Loop praesent ist. Die konkrete Branch-Entscheidung wird
+  zusaetzlich als `task_loop_active_reason`,
+  `task_loop_active_reason_detail` und `task_loop_routing_branch`
+  in Thinking- und Routing-Events ausgespielt.
+
+### Handoff-Regeln fuer aktive Loops
+
+Fuer einen aktiven Loop in `WAITING_FOR_USER` oder `BLOCKED` gelten jetzt diese
+Produktregeln:
+
+1. `weiter` oder ein echter Runtime-Resume-Kandidat gehen in den aktiven Loop.
+2. Explizites `stoppen` beendet den aktiven Loop.
+3. Ein expliziter neuer Task-Loop-Start ersetzt bzw. startet einen neuen Loop.
+4. Meta-Fragen zum bisherigen Stand laufen im normalen Orchestrator, der Loop
+   bleibt als `context_only` im Hintergrund erhalten.
+5. Unabhaengige Tool-/Discovery-Fragen laufen ebenfalls im normalen
+   Orchestrator, der Loop bleibt im Hintergrund erhalten.
+6. Nur ein echter Moduswechsel ohne Background-Preserve oder ein harter Blocker
+   darf den aktiven Loop clearen.
+
 ### Was aktuell bereits sauber funktioniert
 
 - `task_loop_candidate`-Prompts mit sichtbarer Mehrschrittigkeit werden ueber

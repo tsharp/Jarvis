@@ -8,6 +8,7 @@ from core.orchestrator_modules.task_loop import (
     ACTIVE_TASK_LOOP_REASON_CONTEXT_ONLY,
     ACTIVE_TASK_LOOP_REASON_CONTINUE,
     ACTIVE_TASK_LOOP_REASON_MODE_SHIFT,
+    explain_active_task_loop_routing,
     classify_active_task_loop_routing,
     inject_active_task_loop_context,
     maybe_build_task_loop_stream_events,
@@ -185,6 +186,7 @@ def test_inject_active_task_loop_context_marks_continue_and_state():
     assert plan["_task_loop_continue_requested"] is True
     assert plan["_task_loop_cancel_requested"] is False
     assert plan["_task_loop_runtime_resume_candidate"] is False
+    assert plan["_task_loop_active_reason_detail"] == "background_loop_preserved"
 
 
 def test_classify_active_task_loop_routing_returns_reason_codes():
@@ -221,7 +223,31 @@ def test_classify_active_task_loop_routing_returns_reason_codes():
             {"_authoritative_turn_mode": "single_turn"},
             raw_request={},
         )
-        == ACTIVE_TASK_LOOP_REASON_MODE_SHIFT
+        == ACTIVE_TASK_LOOP_REASON_CONTEXT_ONLY
+    )
+
+
+def test_classify_active_task_loop_routing_keeps_waiting_loop_for_independent_tool_turn():
+    store = TaskLoopStore()
+    started = start_chat_task_loop(
+        "Task-Loop: Bitte schrittweise arbeiten",
+        "conv-active-tool-turn",
+        store=store,
+        auto_continue=False,
+    )
+
+    assert (
+        classify_active_task_loop_routing(
+            "zeig mir die skills",
+            started.snapshot,
+            {
+                "_authoritative_turn_mode": "task_loop",
+                "suggested_tools": ["list_skills"],
+                "requested_capability": {"capability_type": "skill_management"},
+            },
+            raw_request={},
+        )
+        == ACTIVE_TASK_LOOP_REASON_CONTEXT_ONLY
     )
 
 
@@ -243,6 +269,87 @@ def test_classify_active_task_loop_routing_uses_context_only_for_meta_turns():
         )
         == ACTIVE_TASK_LOOP_REASON_CONTEXT_ONLY
     )
+
+    explanation = explain_active_task_loop_routing(
+        "was ist passiert?",
+        started.snapshot,
+        {"_authoritative_turn_mode": "single_turn"},
+        raw_request={},
+    )
+    assert explanation["detail"] == "meta_turn_background_preserved"
+    assert explanation["meta_turn"] is True
+
+
+def test_explain_active_task_loop_routing_marks_independent_tool_turn_background_preserve():
+    snapshot = TaskLoopSnapshot(
+        objective_id="obj-independent",
+        conversation_id="conv-active-independent",
+        plan_id="plan-independent",
+        state=TaskLoopState.WAITING_FOR_USER,
+        current_step_id="step-container-1",
+        current_step_type=TaskLoopStepType.TOOL_EXECUTION,
+        current_step_status=TaskLoopStepStatus.WAITING_FOR_USER,
+        step_execution_source=TaskLoopStepExecutionSource.ORCHESTRATOR,
+        current_plan=["Blueprints pruefen", "Container auswaehlen"],
+        plan_steps=[
+            {
+                "step_id": "step-container-1",
+                "title": "Blueprints pruefen",
+                "suggested_tools": ["blueprint_list"],
+                "requested_capability": {"capability_type": "container_manager"},
+            }
+        ],
+        pending_step="Blueprints pruefen",
+    )
+
+    explanation = explain_active_task_loop_routing(
+        "zeig mir die skills",
+        snapshot,
+        {
+            "_authoritative_turn_mode": "single_turn",
+            "suggested_tools": ["list_skills"],
+            "requested_capability": {"capability_type": "skill_management"},
+        },
+        raw_request={},
+    )
+
+    assert explanation["reason"] == ACTIVE_TASK_LOOP_REASON_CONTEXT_ONLY
+    assert explanation["detail"] == "independent_tool_turn_background_preserved"
+    assert explanation["independent_tool_turn"] is True
+
+
+def test_explain_active_task_loop_routing_marks_runtime_resume_detail():
+    snapshot = TaskLoopSnapshot(
+        objective_id="obj-tool",
+        conversation_id="conv-runtime-resume",
+        plan_id="plan-runtime-resume",
+        state=TaskLoopState.WAITING_FOR_USER,
+        current_step_id="step-tool-1",
+        current_step_type=TaskLoopStepType.TOOL_EXECUTION,
+        current_step_status=TaskLoopStepStatus.WAITING_FOR_USER,
+        step_execution_source=TaskLoopStepExecutionSource.ORCHESTRATOR,
+        current_plan=["Daten holen", "Ergebnis zusammenfassen"],
+        plan_steps=[
+            {
+                "step_id": "step-tool-1",
+                "title": "Daten holen",
+                "suggested_tools": ["blueprint_list"],
+                "requested_capability": {"capability_type": "container_manager"},
+            }
+        ],
+        pending_step="Daten holen",
+    )
+
+    explanation = explain_active_task_loop_routing(
+        "python-sandbox bitte",
+        snapshot,
+        {"_authoritative_turn_mode": "task_loop"},
+        raw_request={},
+    )
+
+    assert explanation["reason"] == ACTIVE_TASK_LOOP_REASON_CONTINUE
+    assert explanation["detail"] == "runtime_resume_candidate"
+    assert explanation["runtime_resume_candidate"] is True
 
 
 def test_decide_task_loop_routing_uses_single_authority_for_new_loop_start():
@@ -277,6 +384,29 @@ def test_decide_task_loop_routing_uses_turn_mode_only_as_compat_fallback():
 
     assert decision.execution_mode == "task_loop"
     assert decision.authority_source == "turn_mode_compat"
+
+
+def test_decide_task_loop_routing_exposes_detail_flags_for_background_preserve():
+    store = TaskLoopStore()
+    started = start_chat_task_loop(
+        "Task-Loop: Bitte schrittweise arbeiten",
+        "conv-routing-detail",
+        store=store,
+        auto_continue=False,
+    )
+
+    decision = decide_task_loop_routing(
+        "was ist passiert?",
+        started.snapshot,
+        {"_authoritative_turn_mode": "single_turn"},
+        raw_request={},
+    )
+
+    assert decision.context_only is True
+    assert decision.active_task_loop_reason == ACTIVE_TASK_LOOP_REASON_CONTEXT_ONLY
+    assert decision.active_task_loop_detail == "meta_turn_background_preserved"
+    assert decision.background_preservable is True
+    assert decision.meta_turn is True
 
 
 @pytest.mark.asyncio

@@ -141,6 +141,15 @@ def test_thinking_box_renders_compact_strategy_and_trace_metadata():
         'renderMetaRow("Loop Kind"',
         'renderMetaRow("Exec Mode"',
         'renderMetaRow("Turn Mode"',
+        'renderMetaRow("Active Loop"',
+        'renderMetaRow("Loop Topic"',
+        'renderMetaRow("Loop Route"',
+        'renderMetaRow("Loop Detail"',
+        'renderMetaRow("Loop Branch"',
+        'renderMetaRow("Loop Resume"',
+        'renderMetaRow("Loop Preserve"',
+        'renderMetaRow("Loop Meta"',
+        'renderMetaRow("Loop Divergence"',
         'renderMetaRow("Plan Fixes"',
         'renderMetaRow("Fact Query"',
         'renderMetaRow("Uses History"',
@@ -170,6 +179,11 @@ def test_plan_box_renders_loop_trace_event_variants():
         'title: "Korrektur angewendet"',
         '"Task-Loop abgeschlossen"',
         '"Task-Loop läuft"',
+        '"Task-Loop pausiert im Hintergrund"',
+        "active_task_loop_detail",
+        "runtime_resume_candidate",
+        "background_preservable",
+        "independent_tool_turn",
     ]:
         assert marker in src
 

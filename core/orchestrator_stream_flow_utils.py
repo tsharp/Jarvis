@@ -32,7 +32,7 @@ from core.control_contract import (
     persist_execution_result,
     tool_allowed_by_control_decision,
 )
-from core.task_loop.context_writeback import persist_context_only_turn
+from core.task_loop.context_writeback import build_background_loop_state, persist_context_only_turn
 from core.plan_runtime_bridge import (
     append_runtime_tool_results,
     get_runtime_grounding_evidence,
@@ -120,6 +120,16 @@ def _build_thinking_ui_payload(plan: Optional[Dict[str, Any]], **overrides: Any)
             if isinstance(base.get("_loop_trace_normalization"), dict)
             else []
         ),
+        "task_loop_active": bool(base.get("_task_loop_active", False)),
+        "task_loop_active_state": base.get("_task_loop_active_state"),
+        "task_loop_active_topic": base.get("_task_loop_active_topic"),
+        "task_loop_active_reason": base.get("_active_task_loop_reason") or base.get("_task_loop_active_reason"),
+        "task_loop_active_reason_detail": base.get("_active_task_loop_reason_detail") or base.get("_task_loop_active_reason_detail"),
+        "task_loop_runtime_resume_candidate": bool(base.get("_task_loop_runtime_resume_candidate", False)),
+        "task_loop_background_preservable": bool(base.get("_task_loop_background_preservable", False)),
+        "task_loop_meta_turn": bool(base.get("_task_loop_meta_turn", False)),
+        "task_loop_independent_tool_turn_candidate": bool(base.get("_task_loop_independent_tool_turn_candidate", False)),
+        "task_loop_routing_branch": base.get("_active_task_loop_branch"),
         "authoritative_execution_mode": base.get("_authoritative_execution_mode") or base.get("execution_mode"),
         "authoritative_turn_mode": base.get("_authoritative_turn_mode") or base.get("turn_mode"),
     }
@@ -140,7 +150,12 @@ def _build_task_loop_routing_payload(
         "authority_source": str(routing_decision.authority_source or "").strip(),
         "is_authoritative_task_loop_turn": bool(routing_decision.is_authoritative_task_loop_turn),
         "active_task_loop_reason": str(routing_decision.active_task_loop_reason or "").strip(),
+        "active_task_loop_detail": str(routing_decision.active_task_loop_detail or "").strip(),
         "branch": str(routing_decision.branch or "").strip(),
+        "runtime_resume_candidate": bool(routing_decision.runtime_resume_candidate),
+        "background_preservable": bool(routing_decision.background_preservable),
+        "meta_turn": bool(routing_decision.meta_turn),
+        "independent_tool_turn": bool(routing_decision.independent_tool_turn),
         "task_loop_candidate": bool(plan.get("task_loop_candidate", False)),
         "task_loop_kind": plan.get("task_loop_kind"),
         "task_loop_confidence": plan.get("task_loop_confidence"),
@@ -898,10 +913,18 @@ async def process_stream_with_events(
     elif routing_decision.clear_active_loop:
         clear_active_task_loop(conversation_id)
         verified_plan["_active_task_loop_reason"] = routing_decision.active_task_loop_reason
+        verified_plan["_active_task_loop_reason_detail"] = routing_decision.active_task_loop_detail
+        verified_plan["_active_task_loop_branch"] = routing_decision.branch
         log_info_fn(f"[TaskLoop] active loop cleared reason={routing_decision.active_task_loop_reason}")
     elif routing_decision.context_only:
         verified_plan["_active_task_loop_reason"] = routing_decision.active_task_loop_reason
+        verified_plan["_active_task_loop_reason_detail"] = routing_decision.active_task_loop_detail
+        verified_plan["_active_task_loop_branch"] = routing_decision.branch
         log_info_fn("[TaskLoop] active loop kept as context-only turn")
+    else:
+        verified_plan["_active_task_loop_reason"] = routing_decision.active_task_loop_reason
+        verified_plan["_active_task_loop_reason_detail"] = routing_decision.active_task_loop_detail
+        verified_plan["_active_task_loop_branch"] = routing_decision.branch
 
     if routing_decision.use_task_loop and active_task_loop_snapshot is None:
         orch.lifecycle.finish_task(
@@ -2094,6 +2117,28 @@ async def process_stream_with_events(
             f"\n{_skill_semantic_tool_results}\n",
         )
 
+    _system_knowledge_ctx = await orch._maybe_build_system_knowledge_context(
+        user_text=user_text,
+        conversation_id=conversation_id,
+        verified_plan=verified_plan,
+    )
+    _system_knowledge_ctx_text = str((_system_knowledge_ctx or {}).get("context_text") or "").strip()
+    if _system_knowledge_ctx_text:
+        full_context = orch._append_context_block(
+            full_context,
+            _system_knowledge_ctx_text,
+            "system_knowledge_ctx",
+            ctx_trace_stream,
+        )
+    _system_knowledge_tool_results = str(
+        (_system_knowledge_ctx or {}).get("tool_results_text") or ""
+    ).strip()
+    if _system_knowledge_tool_results:
+        append_runtime_tool_results(
+            verified_plan,
+            f"\n{_system_knowledge_tool_results}\n",
+        )
+
     orch._inject_carryover_grounding_evidence(
         conversation_id,
         verified_plan,
@@ -2384,6 +2429,7 @@ async def process_stream_with_events(
                 "event_types": ["task_loop_context_updated"],
                 "is_final": False,
                 "context_only": True,
+                **build_background_loop_state(updated_snapshot),
             },
         )
         for workspace_update in workspace_updates:

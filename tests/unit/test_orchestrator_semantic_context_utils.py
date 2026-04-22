@@ -6,6 +6,7 @@ import pytest
 from core.orchestrator_semantic_context_utils import (
     derive_container_addon_tags_from_inspect,
     maybe_build_skill_semantic_context,
+    maybe_build_system_knowledge_context,
     parse_list_draft_skills_snapshot,
     parse_list_skills_runtime_snapshot,
     summarize_container_inspect_for_capability_context,
@@ -193,3 +194,46 @@ async def test_maybe_build_skill_semantic_context_direct_utility_path():
     assert any(item.get("tool_name") == "list_skills" for item in evidence)
     assert any(item.get("tool_name") == "skill_registry_snapshot" for item in evidence)
     assert any(item.get("tool_name") == "skill_addons" for item in evidence)
+
+
+@pytest.mark.asyncio
+async def test_maybe_build_system_knowledge_context_direct_utility_path():
+    verified_plan = {
+        "intent": "welche services laufen auf welchem port?",
+        "is_fact_query": True,
+    }
+
+    out = await maybe_build_system_knowledge_context(
+        user_text="wie ist die system-topologie aufgebaut?",
+        conversation_id="conv-system-semantic",
+        verified_plan=verified_plan,
+        load_system_knowledge_context_fn=AsyncMock(
+            return_value={
+                "system_addon_context": "Der Skill-Server laeuft im internen Docker-Netz und stellt die Skill-Endpunkte bereit.",
+                "system_addon_query_class": "system_topology",
+                "system_addon_docs": ["00-services", "30-tool-surface"],
+            }
+        ),
+        build_tool_result_card_fn=lambda tool_name, raw_result, status, conversation_id: (
+            f"\n[TOOL-CARD: {tool_name} | {status} | ref:{tool_name}-ref]\n- ok\n",
+            f"{tool_name}-ref",
+        ),
+        build_grounding_evidence_entry_fn=lambda tool_name, raw_result, status, ref_id: {
+            "tool_name": tool_name,
+            "status": status,
+            "ref_id": ref_id,
+            "key_facts": [str(raw_result).splitlines()[0]],
+        },
+        merge_grounding_evidence_items_fn=lambda existing, extra: list(existing or []) + list(extra or []),
+        log_warn_fn=lambda msg: None,
+    )
+
+    assert "SYSTEM SELF-KNOWLEDGE CONTEXT" in out["context_text"]
+    assert "not live runtime state" in out["context_text"]
+    assert "system_topology" in out["context_text"]
+    assert "00-services" in out["context_text"]
+    assert "system_addons" in out["tool_results_text"]
+    assert verified_plan["_system_knowledge_context"]["query_class"] == "system_topology"
+
+    evidence = get_runtime_grounding_evidence(verified_plan)
+    assert any(item.get("tool_name") == "system_addons" for item in evidence)

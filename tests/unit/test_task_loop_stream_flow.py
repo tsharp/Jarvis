@@ -289,6 +289,7 @@ async def test_process_stream_with_events_keeps_active_loop_as_context_for_meta_
     orch._append_context_block = MagicMock(side_effect=lambda base, extra, _source, _trace: f"{base}{extra}")
     orch._maybe_build_active_container_capability_context = AsyncMock(return_value={})
     orch._maybe_build_skill_semantic_context = AsyncMock(return_value={})
+    orch._maybe_build_system_knowledge_context = AsyncMock(return_value={})
     orch._inject_carryover_grounding_evidence = MagicMock()
     orch._maybe_auto_recover_grounding_once = AsyncMock(return_value="")
     orch._remember_conversation_grounding_state = MagicMock()
@@ -393,9 +394,14 @@ async def test_process_stream_with_events_keeps_active_loop_as_context_for_meta_
 
     assert any("Das war ein Timeout" in item[0] for item in content_events)
     assert any(item[2].get("context_only") is True for item in task_loop_updates)
+    assert any(item[2].get("background_loop_preserved") is True for item in task_loop_updates)
+    assert any(item[2].get("background_loop_topic") for item in task_loop_updates)
     assert any(event.get("thinking", {}).get("source") == "trace" for event in thinking_traces)
     assert any(event.get("thinking", {}).get("source") == "trace_final" for event in thinking_traces)
     assert any(event.get("thinking", {}).get("authoritative_turn_mode") == "task_loop" for event in thinking_traces)
+    assert any(event.get("thinking", {}).get("task_loop_active_reason") == "active_task_loop_context_only" for event in thinking_traces)
+    assert any(event.get("thinking", {}).get("task_loop_active_reason_detail") == "authoritative_task_loop_non_resume_background" for event in thinking_traces)
+    assert any(event.get("thinking", {}).get("task_loop_routing_branch") == "task_loop_context_only" for event in thinking_traces)
     snapshot = get_task_loop_store().get_active(conversation_id)
     assert snapshot is not None
     assert snapshot.last_user_visible_answer == "Das war ein Timeout im vorherigen Schritt."

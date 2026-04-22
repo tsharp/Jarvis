@@ -618,3 +618,106 @@ async def maybe_build_skill_semantic_context(
         "context_text": "\n".join(line for line in context_lines if str(line).strip()).strip(),
         "tool_results_text": "".join(tool_result_cards),
     }
+
+
+async def maybe_build_system_knowledge_context(
+    *,
+    user_text: str,
+    conversation_id: str,
+    verified_plan: Dict[str, Any],
+    load_system_knowledge_context_fn: Callable[..., Any],
+    build_tool_result_card_fn: Callable[[str, Any, str, str], Any],
+    build_grounding_evidence_entry_fn: Callable[[str, Any, str, str], Dict[str, Any]],
+    merge_grounding_evidence_items_fn: Callable[[Any, Any], List[Dict[str, Any]]],
+    log_warn_fn: Callable[[str], None],
+) -> Dict[str, str]:
+    if not isinstance(verified_plan, dict):
+        return {}
+
+    candidate_texts: List[str] = []
+    seen_candidates: set[str] = set()
+    for raw_candidate in (
+        str(verified_plan.get("intent") or "").strip(),
+        str(user_text or "").strip(),
+    ):
+        candidate = raw_candidate.strip()
+        key = candidate.lower()
+        if not candidate or key in seen_candidates:
+            continue
+        seen_candidates.add(key)
+        candidate_texts.append(candidate)
+
+    addon_context: Dict[str, Any] = {}
+    context_source = ""
+    for candidate in candidate_texts:
+        try:
+            result = await load_system_knowledge_context_fn(candidate)
+        except Exception as exc:
+            log_warn_fn(f"[Orchestrator] System addon context skipped: {exc}")
+            continue
+        if isinstance(result, dict) and str(result.get("system_addon_context") or "").strip():
+            addon_context = result
+            context_source = candidate
+            break
+
+    context_text = str(addon_context.get("system_addon_context") or "").strip()
+    if not context_text:
+        return {}
+
+    query_class = str(addon_context.get("system_addon_query_class") or "").strip()
+    doc_ids = [
+        str(item or "").strip()
+        for item in list(addon_context.get("system_addon_docs") or [])
+        if str(item or "").strip()
+    ]
+    docs_text = ", ".join(doc_ids[:4])
+
+    summary_parts: List[str] = []
+    if query_class:
+        summary_parts.append(f"query_class: {query_class}")
+    if docs_text:
+        summary_parts.append(f"selected_docs: {docs_text}")
+    summary_parts.append(context_text)
+    addon_summary = "\n".join(summary_parts).strip()
+
+    addon_card, addon_ref = build_tool_result_card_fn(
+        "system_addons",
+        addon_summary,
+        "ok",
+        conversation_id,
+    )
+    merged_evidence = merge_grounding_evidence_items_fn(
+        get_runtime_grounding_evidence(verified_plan),
+        [
+            build_grounding_evidence_entry_fn(
+                "system_addons",
+                addon_summary,
+                "ok",
+                addon_ref,
+            )
+        ],
+    )
+    set_runtime_grounding_evidence(verified_plan, merged_evidence)
+
+    context_lines = [
+        "### SYSTEM SELF-KNOWLEDGE CONTEXT:",
+        "Treat these addon excerpts as static system topology, data-location and self-extension facts.",
+        "They are not live runtime state. Running services, ports in use right now and current container state still require tool evidence.",
+    ]
+    if docs_text:
+        context_lines.append(f"Relevant system addon docs: {docs_text}")
+    if query_class:
+        context_lines.append(f"Detected system query class: {query_class}")
+    context_lines.append("Relevant system addon context:")
+    context_lines.append(context_text)
+
+    verified_plan["_system_knowledge_context"] = {
+        "query_class": query_class,
+        "selected_docs": docs_text,
+        "selected_doc_ids": doc_ids,
+        "context_source": context_source,
+    }
+    return {
+        "context_text": "\n".join(line for line in context_lines if str(line).strip()).strip(),
+        "tool_results_text": addon_card,
+    }

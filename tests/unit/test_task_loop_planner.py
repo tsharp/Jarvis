@@ -154,6 +154,7 @@ def test_create_task_loop_snapshot_carries_structured_plan_steps():
     assert snapshot.current_plan[0] == "Pruefziel festlegen: Loop pruefen"
     assert snapshot.plan_steps[0]["title"] == "Pruefziel festlegen: Loop pruefen"
     assert snapshot.pending_step == "Pruefziel festlegen: Loop pruefen"
+    assert snapshot.objective_summary == "Pruefe den Loop"
 
 
 def test_build_task_loop_steps_blueprint_list_uses_container_manager_template():

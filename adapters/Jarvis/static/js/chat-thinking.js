@@ -171,6 +171,33 @@ export function finalizeThinking(thinkingId, thinking) {
         if (thinking.authoritative_turn_mode) {
             metaRows.push(renderMetaRow("Turn Mode", thinking.authoritative_turn_mode, "text-sky-300"));
         }
+        if (thinking.task_loop_active) {
+            metaRows.push(renderMetaRow("Active Loop", thinking.task_loop_active_state || "yes", "text-cyan-300"));
+        }
+        if (thinking.task_loop_active_topic) {
+            metaRows.push(renderMetaRow("Loop Topic", thinking.task_loop_active_topic, "text-cyan-300"));
+        }
+        if (thinking.task_loop_active_reason) {
+            metaRows.push(renderMetaRow("Loop Route", thinking.task_loop_active_reason, "text-amber-300"));
+        }
+        if (thinking.task_loop_active_reason_detail) {
+            metaRows.push(renderMetaRow("Loop Detail", thinking.task_loop_active_reason_detail, "text-amber-300"));
+        }
+        if (thinking.task_loop_routing_branch) {
+            metaRows.push(renderMetaRow("Loop Branch", thinking.task_loop_routing_branch, "text-sky-300"));
+        }
+        if (thinking.task_loop_runtime_resume_candidate) {
+            metaRows.push(renderMetaRow("Loop Resume", "yes", "text-cyan-300"));
+        }
+        if (thinking.task_loop_background_preservable) {
+            metaRows.push(renderMetaRow("Loop Preserve", "yes", "text-cyan-300"));
+        }
+        if (thinking.task_loop_meta_turn) {
+            metaRows.push(renderMetaRow("Loop Meta", "yes", "text-cyan-300"));
+        }
+        if (thinking.task_loop_independent_tool_turn_candidate) {
+            metaRows.push(renderMetaRow("Loop Divergence", "independent_tool_turn", "text-amber-300"));
+        }
         if (Array.isArray(thinking.loop_trace_corrections) && thinking.loop_trace_corrections.length) {
             metaRows.push(renderMetaRow("Plan Fixes", `${thinking.loop_trace_corrections.length}`, "text-cyan-300"));
         }
@@ -210,6 +237,16 @@ export function finalizeThinking(thinkingId, thinking) {
             is_fact_query: Boolean(thinking.is_fact_query),
             authoritative_execution_mode: thinking.authoritative_execution_mode || null,
             authoritative_turn_mode: thinking.authoritative_turn_mode || null,
+            task_loop_active: Boolean(thinking.task_loop_active),
+            task_loop_active_state: thinking.task_loop_active_state || null,
+            task_loop_active_topic: thinking.task_loop_active_topic || null,
+            task_loop_active_reason: thinking.task_loop_active_reason || null,
+            task_loop_active_reason_detail: thinking.task_loop_active_reason_detail || null,
+            task_loop_runtime_resume_candidate: Boolean(thinking.task_loop_runtime_resume_candidate),
+            task_loop_background_preservable: Boolean(thinking.task_loop_background_preservable),
+            task_loop_meta_turn: Boolean(thinking.task_loop_meta_turn),
+            task_loop_independent_tool_turn_candidate: Boolean(thinking.task_loop_independent_tool_turn_candidate),
+            task_loop_routing_branch: thinking.task_loop_routing_branch || null,
             skill_catalog_hints: Array.isArray(thinking.skill_catalog_hints) ? thinking.skill_catalog_hints : [],
             skill_catalog_docs: Array.isArray(thinking.skill_catalog_docs) ? thinking.skill_catalog_docs : [],
             skill_catalog_postcheck: thinking.skill_catalog_postcheck || null,

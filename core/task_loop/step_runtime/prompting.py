@@ -94,6 +94,110 @@ def _latest_request_params(snapshot: TaskLoopSnapshot) -> Dict[str, Any]:
     return {}
 
 
+def _latest_execution_result(snapshot: TaskLoopSnapshot) -> Dict[str, Any]:
+    for artifact in reversed(list(snapshot.verified_artifacts or [])):
+        if not isinstance(artifact, dict):
+            continue
+        if str(artifact.get("artifact_type") or "").strip().lower() != "execution_result":
+            continue
+        return dict(artifact)
+    return {}
+
+
+def _format_tool_statuses(execution_result: Dict[str, Any]) -> str:
+    compact: List[str] = []
+    for row in list(execution_result.get("tool_statuses") or []):
+        if not isinstance(row, dict):
+            continue
+        tool_name = str(row.get("tool_name") or row.get("tool") or "").strip()
+        status = str(row.get("status") or "").strip().lower()
+        if not tool_name and not status:
+            continue
+        if tool_name and status:
+            compact.append(f"{tool_name}={status}")
+        else:
+            compact.append(tool_name or status)
+        if len(compact) >= 4:
+            break
+    return ", ".join(compact)
+
+
+def _grounding_fact_lines(execution_result: Dict[str, Any]) -> List[str]:
+    metadata = execution_result.get("metadata")
+    if not isinstance(metadata, dict):
+        return []
+    facts: List[str] = []
+    for item in list(metadata.get("grounding_evidence") or []):
+        if not isinstance(item, dict):
+            continue
+        tool_name = str(item.get("tool_name") or "").strip()
+        status = str(item.get("status") or "").strip().lower()
+        key_facts = [
+            _clip(fact, 120)
+            for fact in list(item.get("key_facts") or [])
+            if str(fact or "").strip()
+        ]
+        if not key_facts:
+            structured = item.get("structured")
+            if isinstance(structured, dict):
+                if isinstance(structured.get("blueprints"), list):
+                    names = [
+                        str(row.get("name") or row.get("blueprint_id") or "").strip()
+                        for row in structured.get("blueprints") or []
+                        if isinstance(row, dict) and str(row.get("name") or row.get("blueprint_id") or "").strip()
+                    ]
+                    if names:
+                        key_facts = ["Blueprints: " + ", ".join(names[:4])]
+                elif isinstance(structured.get("containers"), list):
+                    names = [
+                        str(row.get("name") or row.get("container_id") or "").strip()
+                        for row in structured.get("containers") or []
+                        if isinstance(row, dict) and str(row.get("name") or row.get("container_id") or "").strip()
+                    ]
+                    if names:
+                        key_facts = ["Container: " + ", ".join(names[:4])]
+                else:
+                    for key in ("output", "result", "description", "status", "name"):
+                        value = structured.get(key)
+                        if str(value or "").strip():
+                            key_facts = [_clip(value, 120)]
+                            break
+        if not key_facts:
+            continue
+        prefix = tool_name or "tool"
+        if status:
+            prefix = f"{prefix} [{status}]"
+        facts.append(f"{prefix}: {'; '.join(key_facts[:3])}")
+        if len(facts) >= 3:
+            break
+    return facts
+
+
+def _execution_result_context_lines(snapshot: TaskLoopSnapshot) -> List[str]:
+    execution_result = _latest_execution_result(snapshot)
+    if not execution_result:
+        return []
+
+    lines: List[str] = []
+    done_reason = str(execution_result.get("done_reason") or "").strip().lower()
+    if done_reason:
+        lines.append(f"Zuletzt verifizierter Tool-Status: {done_reason}")
+
+    tool_statuses = _format_tool_statuses(execution_result)
+    if tool_statuses:
+        lines.append(f"Letzte Tool-Statuses: {tool_statuses}")
+
+    direct_response = str(execution_result.get("direct_response") or "").strip()
+    if direct_response:
+        lines.append(f"Zuletzt verifizierte Tool-Antwort: {_clip(direct_response, 220)}")
+
+    grounding_lines = _grounding_fact_lines(execution_result)
+    if grounding_lines:
+        lines.append("Verifizierte Tool-Fakten:")
+        lines.extend(f"- {line}" for line in grounding_lines)
+    return lines
+
+
 def _verified_context_block(snapshot: TaskLoopSnapshot, *, user_reply: str = "") -> str:
     lines: List[str] = []
     if str(user_reply or "").strip():
@@ -111,6 +215,7 @@ def _verified_context_block(snapshot: TaskLoopSnapshot, *, user_reply: str = "")
         lines.append(
             "Erkannte Request-Parameter: " + ", ".join(f"{key}={value}" for key, value in request_params.items())
         )
+    lines.extend(_execution_result_context_lines(snapshot))
     if not lines:
         return ""
     return "\n".join(lines) + "\n\n"

@@ -282,6 +282,7 @@ class TaskLoopSnapshot:
     workspace_event_ids: List[str] = field(default_factory=list)
     error_count: int = 0
     no_progress_count: int = 0
+    objective_summary: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -307,6 +308,7 @@ class TaskLoopSnapshot:
             "workspace_event_ids": list(self.workspace_event_ids),
             "error_count": int(self.error_count),
             "no_progress_count": int(self.no_progress_count),
+            "objective_summary": self.objective_summary,
         }
 
 

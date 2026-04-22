@@ -363,7 +363,12 @@ function buildEventView(eventType, payload) {
                 turn_mode: p.turn_mode,
                 is_authoritative_task_loop_turn: p.is_authoritative_task_loop_turn,
                 active_task_loop_reason: p.active_task_loop_reason,
+                active_task_loop_detail: p.active_task_loop_detail,
                 branch: p.branch,
+                runtime_resume_candidate: p.runtime_resume_candidate,
+                background_preservable: p.background_preservable,
+                meta_turn: p.meta_turn,
+                independent_tool_turn: p.independent_tool_turn,
                 task_loop_candidate: p.task_loop_candidate,
                 task_loop_kind: p.task_loop_kind,
                 task_loop_confidence: p.task_loop_confidence,
@@ -378,12 +383,17 @@ function buildEventView(eventType, payload) {
         const pendingStep = p.task_loop?.pending_step || "";
         const doneReason = p.done_reason || "";
         const isFinal = Boolean(p.is_final);
+        const backgroundTopic = p.background_loop_topic || p.task_loop?.objective_summary || "";
+        const backgroundPreserved = Boolean(p.background_loop_preserved);
+        const isContextOnly = Boolean(p.context_only);
 
         const badge = isFinal
             ? (doneReason === "task_loop_completed" ? "done" : "warn")
             : "step";
 
-        const title = isFinal
+        const title = (isContextOnly && backgroundPreserved)
+            ? "Task-Loop pausiert im Hintergrund"
+            : isFinal
             ? (doneReason === "task_loop_completed"
                 ? "Task-Loop abgeschlossen"
                 : `Task-Loop gestoppt (${doneReason})`)
@@ -396,7 +406,10 @@ function buildEventView(eventType, payload) {
             badge,
             detail: toText({
                 state,
+                background_loop_topic: backgroundTopic || undefined,
+                background_loop_pending_step: isContextOnly ? (p.background_loop_pending_step || pendingStep || undefined) : undefined,
                 pending_step: pendingStep || undefined,
+                context_only: isContextOnly || undefined,
                 done_reason: doneReason || undefined,
             }),
         };

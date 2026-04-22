@@ -11,6 +11,7 @@ from core.task_loop.active_turn_policy import (
     ACTIVE_TASK_LOOP_REASON_MODE_SHIFT,
     ACTIVE_TASK_LOOP_REASON_RESTART,
     classify_active_task_loop_routing,
+    explain_active_task_loop_routing,
 )
 from core.task_loop.routing_policy import (
     is_authoritative_task_loop_execution,
@@ -25,12 +26,17 @@ class TaskLoopRoutingDecision:
     turn_mode: str
     authority_source: str
     active_task_loop_reason: str
+    active_task_loop_detail: str
     branch: str
     is_authoritative_task_loop_turn: bool
     use_task_loop: bool
     force_start: bool
     clear_active_loop: bool
     context_only: bool
+    runtime_resume_candidate: bool
+    background_preservable: bool
+    meta_turn: bool
+    independent_tool_turn: bool
 
 
 def decide_task_loop_routing(
@@ -45,12 +51,13 @@ def decide_task_loop_routing(
     if not authority_source:
         authority_source = turn_mode_source
 
-    active_task_loop_reason = classify_active_task_loop_routing(
+    active_loop_explanation = explain_active_task_loop_routing(
         user_text,
         snapshot,
         verified_plan,
         raw_request=raw_request,
     )
+    active_task_loop_reason = str(active_loop_explanation.get("reason") or "").strip()
     authoritative_task_loop = is_authoritative_task_loop_execution(verified_plan)
 
     branch = "direct_response"
@@ -88,12 +95,17 @@ def decide_task_loop_routing(
         turn_mode=turn_mode,
         authority_source=authority_source,
         active_task_loop_reason=active_task_loop_reason,
+        active_task_loop_detail=str(active_loop_explanation.get("detail") or "").strip(),
         branch=branch,
         is_authoritative_task_loop_turn=authoritative_task_loop,
         use_task_loop=use_task_loop,
         force_start=force_start,
         clear_active_loop=clear_active_loop,
         context_only=context_only,
+        runtime_resume_candidate=bool(active_loop_explanation.get("runtime_resume_candidate")),
+        background_preservable=bool(active_loop_explanation.get("background_preservable")),
+        meta_turn=bool(active_loop_explanation.get("meta_turn")),
+        independent_tool_turn=bool(active_loop_explanation.get("independent_tool_turn")),
     )
 
 

@@ -19,7 +19,15 @@ def _runtime_waiting_snapshot() -> TaskLoopSnapshot:
         current_step_status=TaskLoopStepStatus.WAITING_FOR_USER,
         step_execution_source=TaskLoopStepExecutionSource.ORCHESTRATOR,
         current_plan=["Container kontrolliert anfragen"],
-        plan_steps=[],
+        plan_steps=[
+            {
+                "step_id": "step-1",
+                "title": "Container kontrolliert anfragen",
+                "step_type": TaskLoopStepType.TOOL_REQUEST.value,
+                "suggested_tools": ["request_container"],
+                "requested_capability": {"capability_type": "container_manager"},
+            }
+        ],
         pending_step="Container kontrolliert anfragen",
         last_step_result={
             "status": TaskLoopStepStatus.WAITING_FOR_USER.value,
@@ -39,3 +47,20 @@ def test_is_runtime_resume_candidate_rejects_meta_question():
     snapshot = _runtime_waiting_snapshot()
 
     assert is_runtime_resume_candidate(snapshot, "was ist passiert?", raw_request={}) is False
+
+
+def test_is_runtime_resume_candidate_rejects_independent_tool_turn():
+    snapshot = _runtime_waiting_snapshot()
+
+    assert (
+        is_runtime_resume_candidate(
+            snapshot,
+            "zeig mir bitte meine skills",
+            raw_request={},
+            verified_plan={
+                "suggested_tools": ["list_skills"],
+                "requested_capability": {"capability_type": "skill_management"},
+            },
+        )
+        is False
+    )

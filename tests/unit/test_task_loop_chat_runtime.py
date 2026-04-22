@@ -98,6 +98,7 @@ def test_build_initial_chat_plan_strips_task_loop_marker_from_objective():
 
 def test_should_restart_task_loop_requires_explicit_new_loop_prompt():
     assert should_restart_task_loop("Task-Loop: Bitte neu starten")
+    assert not should_restart_task_loop("zeig mir die skills")
     assert not should_restart_task_loop("weiter")
     assert not should_restart_task_loop("stoppen")
 

@@ -82,3 +82,18 @@ def test_should_skip_control_layer_blocks_skip_for_task_loop_execution_mode():
     )
     assert skip is False
     assert reason == "task_loop_execution_mode_requires_control"
+
+
+def test_should_skip_control_layer_blocks_skip_for_active_task_loop_even_without_mode():
+    skip, reason = should_skip_control_layer(
+        "was ist passiert?",
+        {
+            "hallucination_risk": "low",
+            "_task_loop_active": True,
+            "_task_loop_active_state": "waiting_for_user",
+        },
+        suggested_tool_names=(),
+        **_base_kwargs(),
+    )
+    assert skip is False
+    assert reason == "active_task_loop_requires_control"

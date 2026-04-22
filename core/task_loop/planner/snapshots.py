@@ -10,6 +10,7 @@ from core.task_loop.contracts import (
     TaskLoopStepStatus,
     TaskLoopStepType,
 )
+from core.task_loop.planner.objective import clean_task_loop_objective
 from core.task_loop.planner.steps import build_task_loop_steps
 
 
@@ -25,6 +26,7 @@ def create_task_loop_snapshot_from_plan(
     steps = build_task_loop_steps(user_text, thinking_plan=thinking_plan, max_steps=max_steps)
     plan_titles = [step.title for step in steps]
     first = plan_titles[0] if plan_titles else ""
+    objective_summary = clean_task_loop_objective(user_text)
     return TaskLoopSnapshot(
         objective_id=f"obj-{suffix}",
         conversation_id=conversation_id or "global",
@@ -37,6 +39,7 @@ def create_task_loop_snapshot_from_plan(
         plan_steps=[step.to_dict() for step in steps],
         pending_step=first,
         risk_level=RiskLevel.SAFE,
+        objective_summary=objective_summary,
     )
 
 

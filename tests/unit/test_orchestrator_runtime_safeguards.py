@@ -624,6 +624,52 @@ async def test_skill_semantic_context_adds_runtime_snapshot_and_addon_grounding(
     assert any(item.get("tool_name") == "skill_addons" for item in evidence)
 
 
+@pytest.mark.asyncio
+async def test_system_knowledge_context_adds_static_addon_grounding():
+    orch = _make_orchestrator()
+    orch._build_tool_result_card = MagicMock(return_value=("card", "ref-system-addons"))
+    orch._build_grounding_evidence_entry = MagicMock(
+        return_value={
+            "tool_name": "system_addons",
+            "status": "ok",
+            "ref_id": "ref-system-addons",
+            "key_facts": ["query_class: system_topology"],
+        }
+    )
+    orch._merge_grounding_evidence_items = MagicMock(
+        side_effect=lambda existing, extra: list(existing or []) + list(extra or [])
+    )
+    verified_plan = {
+        "intent": "welche services laufen auf welchem port?",
+        "is_fact_query": True,
+    }
+
+    with patch(
+        "core.task_loop.capabilities.system_knowledge.context.load_system_knowledge_context",
+        new=AsyncMock(
+            return_value={
+                "system_addon_context": "Der Skill-Server ist intern erreichbar und bedient die Skill-Endpunkte.",
+                "system_addon_query_class": "system_topology",
+                "system_addon_docs": ["00-services"],
+            }
+        ),
+    ):
+        out = await orch._maybe_build_system_knowledge_context(
+            user_text="wie ist das system intern verdrahtet?",
+            conversation_id="conv-system-knowledge",
+            verified_plan=verified_plan,
+        )
+
+    assert "SYSTEM SELF-KNOWLEDGE CONTEXT" in out["context_text"]
+    assert "not live runtime state" in out["context_text"]
+    assert "system_topology" in out["context_text"]
+    assert out["tool_results_text"] == "card"
+    assert verified_plan["_system_knowledge_context"]["selected_docs"] == "00-services"
+
+    evidence = get_runtime_grounding_evidence(verified_plan)
+    assert any(item.get("tool_name") == "system_addons" for item in evidence)
+
+
 def test_sync_and_stream_flows_inject_skill_catalog_context_hook():
     root = Path(__file__).resolve().parents[2]
     sync_src = (root / "core" / "orchestrator_sync_flow_utils.py").read_text(encoding="utf-8")
@@ -640,6 +686,18 @@ def test_sync_and_stream_flows_inject_skill_catalog_context_hook():
     assert '"final_execution_tools"' in stream_src
     assert '"tool_route_status"' in sync_src
     assert '"tool_route_status"' in stream_src
+
+
+def test_sync_and_stream_flows_inject_system_knowledge_context_hook():
+    root = Path(__file__).resolve().parents[2]
+    sync_src = (root / "core" / "orchestrator_sync_flow_utils.py").read_text(encoding="utf-8")
+    stream_src = (root / "core" / "orchestrator_stream_flow_utils.py").read_text(encoding="utf-8")
+
+    assert "_maybe_build_system_knowledge_context(" in sync_src
+    assert '"system_knowledge_ctx"' in sync_src
+    assert "_maybe_build_system_knowledge_context(" in stream_src
+    assert '"system_knowledge_ctx"' in stream_src
+    assert '"system_addons"' in (root / "core" / "orchestrator_modules" / "context" / "semantic.py").read_text(encoding="utf-8")
 
 
 def test_execute_tools_sync_autoresolves_pending_container_id_via_container_list():

@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from .execution_mode import execution_mode_to_turn_mode, turn_mode_to_execution_mode
+from .execution_mode import (
+    ACTIVE_TASK_LOOP_PRESENT_REASON,
+    execution_mode_to_turn_mode,
+    turn_mode_to_execution_mode,
+)
 
 
 def normalize_turn_mode(value: Any) -> str:
@@ -52,7 +56,7 @@ def derive_authoritative_turn_mode(
     if verification.get("_needs_skill_confirmation") or thinking_plan.get("_pending_intent"):
         return "single_turn", ["confirmation_pending"], []
     if bool(thinking_plan.get("_task_loop_active")):
-        return "task_loop", ["continue_active_task_loop"], []
+        return "task_loop", [ACTIVE_TASK_LOOP_PRESENT_REASON], []
 
     candidate = bool(thinking_plan.get("task_loop_candidate"))
     explicit_signal = bool(thinking_plan.get("_task_loop_explicit_signal"))

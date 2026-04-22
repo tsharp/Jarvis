@@ -108,7 +108,29 @@ _CANCEL_MARKERS = {
 
 def is_task_loop_candidate(user_text: str, raw_request: Optional[Dict[str, Any]] = None) -> bool:
     raw = raw_request if isinstance(raw_request, dict) else {}
-    flag = raw.get("task_loop") or raw.get("task_loop_candidate")
+    if has_explicit_task_loop_signal(user_text, raw_request):
+        return True
+
+    flag = raw.get("task_loop_candidate")
+    if flag is True:
+        return True
+
+    lower = " ".join(str(user_text or "").strip().lower().split())
+    if not lower:
+        return False
+
+    # Semantic: interrogative/inspection verb + tool-domain noun -> tool call needed
+    has_verb = any(v in lower for v in _TOOL_INSPECTION_VERBS)
+    has_noun = any(n in lower for n in _TOOL_DOMAIN_NOUNS)
+    return has_verb and has_noun
+
+
+def has_explicit_task_loop_signal(
+    user_text: str,
+    raw_request: Optional[Dict[str, Any]] = None,
+) -> bool:
+    raw = raw_request if isinstance(raw_request, dict) else {}
+    flag = raw.get("task_loop")
     mode = str(raw.get("task_loop_mode") or "").strip().lower()
     if flag is True or mode in {"start", "on", "chat"}:
         return True
@@ -122,11 +144,7 @@ def is_task_loop_candidate(user_text: str, raw_request: Optional[Dict[str, Any]]
             return True
     if any(phrase in lower for phrase in _EXPLICIT_TEXT_PHRASES):
         return True
-
-    # Semantic: interrogative/inspection verb + tool-domain noun → tool call needed
-    has_verb = any(v in lower for v in _TOOL_INSPECTION_VERBS)
-    has_noun = any(n in lower for n in _TOOL_DOMAIN_NOUNS)
-    return has_verb and has_noun
+    return False
 
 
 def is_task_loop_continue(user_text: str) -> bool:
@@ -145,7 +163,7 @@ def should_restart_task_loop(
 ) -> bool:
     if is_task_loop_continue(user_text) or is_task_loop_cancel(user_text):
         return False
-    return is_task_loop_candidate(user_text, raw_request)
+    return has_explicit_task_loop_signal(user_text, raw_request)
 
 
 def build_initial_chat_plan(user_text: str) -> List[str]:

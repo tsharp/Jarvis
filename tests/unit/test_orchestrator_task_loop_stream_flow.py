@@ -131,6 +131,8 @@ async def test_stream_path_active_task_loop_routes_after_control_with_reason_cod
     routing_events = [item[2] for item in out if item[2].get("type") == "task_loop_routing"]
     assert routing_events
     assert routing_events[0]["branch"] == "active_task_loop"
+    assert routing_events[0]["active_task_loop_detail"] == "explicit_continue_request"
+    assert routing_events[0]["runtime_resume_candidate"] is False
     assert routing_events[0]["is_authoritative_task_loop_turn"] is True
     assert any(item[2].get("type") == "task_loop_update" for item in out)
     assert any(item[2].get("type") == "workspace_update" for item in out)
