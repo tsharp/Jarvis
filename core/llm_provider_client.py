@@ -786,14 +786,14 @@ async def complete_chat(
     return {"content": "".join(out).strip(), "tool_calls": []}
 
 
-async def stream_chat(
+async def stream_chat_events(
     *,
     provider: str,
     model: str,
     messages: Iterable[Dict[str, Any]],
     timeout_s: float = 90.0,
     ollama_endpoint: str = "",
-) -> AsyncGenerator[str, None]:
+) -> AsyncGenerator[Dict[str, str], None]:
     provider_norm = normalize_provider(provider)
     model_name = str(model or "").strip()
 
@@ -840,9 +840,12 @@ async def stream_chat(
                             except Exception:
                                 continue
                             msg = data.get("message", {}) if isinstance(data.get("message"), dict) else {}
+                            thinking = _flatten_content(msg.get("thinking"))
+                            if thinking:
+                                yield {"type": "thinking", "chunk": thinking}
                             chunk = _flatten_content(msg.get("content"))
                             if chunk:
-                                yield chunk
+                                yield {"type": "content", "chunk": chunk}
                             if data.get("done"):
                                 break
                 return
@@ -855,7 +858,6 @@ async def stream_chat(
         if last_exc:
             raise last_exc
         raise RuntimeError(f"{provider_norm}_stream_chat_failed_no_candidate")
-        return
 
     api_key = await _resolve_cloud_api_key(provider_norm)
     if not api_key:
@@ -892,7 +894,7 @@ async def stream_chat(
                     delta = choices[0].get("delta", {}) if choices else {}
                     chunk = _flatten_content(delta.get("content"))
                     if chunk:
-                        yield chunk
+                        yield {"type": "content", "chunk": chunk}
         return
 
     system, norm_messages = _normalize_anthropic_messages(messages)
@@ -933,4 +935,26 @@ async def stream_chat(
                 delta = data.get("delta", {}) if isinstance(data.get("delta"), dict) else {}
                 chunk = str(delta.get("text") or "")
                 if chunk:
-                    yield chunk
+                    yield {"type": "content", "chunk": chunk}
+
+
+async def stream_chat(
+    *,
+    provider: str,
+    model: str,
+    messages: Iterable[Dict[str, Any]],
+    timeout_s: float = 90.0,
+    ollama_endpoint: str = "",
+) -> AsyncGenerator[str, None]:
+    async for event in stream_chat_events(
+        provider=provider,
+        model=model,
+        messages=messages,
+        timeout_s=timeout_s,
+        ollama_endpoint=ollama_endpoint,
+    ):
+        if str(event.get("type") or "") != "content":
+            continue
+        chunk = str(event.get("chunk") or "")
+        if chunk:
+            yield chunk

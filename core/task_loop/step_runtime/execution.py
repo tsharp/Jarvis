@@ -695,11 +695,27 @@ async def execute_task_loop_step(
         )
 
 
-async def stream_task_loop_step_output(
+async def stream_task_loop_step_events(
     prepared: PreparedTaskLoopStepRuntime,
     *,
     output_layer: Any,
-) -> AsyncGenerator[str, None]:
+) -> AsyncGenerator[Dict[str, str], None]:
+    if hasattr(output_layer, "generate_stream_events"):
+        async for event in output_layer.generate_stream_events(
+            user_text=prepared.prompt,
+            verified_plan=prepared.verified_plan,
+            memory_data="",
+            control_decision=prepared.control_decision,
+            execution_result=prepared.verified_plan.get("_execution_result"),
+        ):
+            if not isinstance(event, dict):
+                continue
+            event_type = str(event.get("type") or "").strip().lower()
+            chunk = str(event.get("chunk") or "")
+            if event_type in {"thinking", "content"} and chunk:
+                yield {"type": event_type, "chunk": chunk}
+        return
+
     async for chunk in output_layer.generate_stream(
         user_text=prepared.prompt,
         verified_plan=prepared.verified_plan,
@@ -708,7 +724,23 @@ async def stream_task_loop_step_output(
         execution_result=prepared.verified_plan.get("_execution_result"),
     ):
         if chunk:
-            yield str(chunk)
+            yield {"type": "content", "chunk": str(chunk)}
+
+
+async def stream_task_loop_step_output(
+    prepared: PreparedTaskLoopStepRuntime,
+    *,
+    output_layer: Any,
+) -> AsyncGenerator[str, None]:
+    async for event in stream_task_loop_step_events(
+        prepared,
+        output_layer=output_layer,
+    ):
+        if str(event.get("type") or "") != "content":
+            continue
+        chunk = str(event.get("chunk") or "")
+        if chunk:
+            yield chunk
 
 
 __all__ = [
@@ -720,5 +752,6 @@ __all__ = [
     "_step_result_from_text",
     "check_tool_request_preconditions",
     "execute_task_loop_step",
+    "stream_task_loop_step_events",
     "stream_task_loop_step_output",
 ]

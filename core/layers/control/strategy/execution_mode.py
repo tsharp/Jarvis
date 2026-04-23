@@ -84,14 +84,22 @@ def derive_authoritative_execution_mode(
         return "task_loop", [ACTIVE_TASK_LOOP_PRESENT_REASON], []
 
     candidate = bool(thinking_plan.get("task_loop_candidate"))
+    strong_signal = bool(thinking_plan.get("_task_loop_signal_strong"))
+    strong_reasons = [
+        str(item).strip()
+        for item in list(thinking_plan.get("_task_loop_signal_reasons") or [])
+        if str(item).strip()
+    ]
     explicit_signal = bool(thinking_plan.get("_task_loop_explicit_signal"))
     needs_visible_progress = bool(thinking_plan.get("needs_visible_progress"))
     complexity = int(thinking_plan.get("sequential_complexity", 0) or 0)
 
-    if candidate and (explicit_signal or needs_visible_progress or complexity >= 7):
+    if candidate and (explicit_signal or strong_signal or needs_visible_progress or complexity >= 7):
         reasons: list[str] = []
         if explicit_signal:
             reasons.append("explicit_task_loop_signal")
+        if strong_signal:
+            reasons.extend(strong_reasons or ["strong_task_loop_signal"])
         if needs_visible_progress:
             reasons.append("needs_visible_progress")
         if complexity >= 7:
@@ -99,6 +107,9 @@ def derive_authoritative_execution_mode(
         if not reasons:
             reasons.append("task_loop_candidate")
         return "task_loop", reasons, []
+
+    if strong_signal:
+        return "task_loop", (strong_reasons or ["strong_task_loop_signal"]), []
 
     return "direct", ["default_direct"], []
 

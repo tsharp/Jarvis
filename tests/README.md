@@ -78,3 +78,9 @@ def test_what_it_does_when_given_this():
 ```bash
 pytest --cov=. --cov-report=term-missing
 ```
+
+## Benchmarks
+
+- Control Task-Loop Detection Benchmark:
+  [tests/benchmarks/README.md](/home/danny/Jarvis/tests/benchmarks/README.md)
+  Dokumentiert den 100-Faelle-Benchmark fuer die reine Control-Routing-Erkennung.

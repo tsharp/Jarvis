@@ -8,6 +8,7 @@ from core.task_loop.step_runtime.execution import (
     _next_action_for_status,
     _step_result_from_text,
     execute_task_loop_step,
+    stream_task_loop_step_events,
     stream_task_loop_step_output,
 )
 from core.task_loop.step_runtime.plans import build_task_loop_step_plan

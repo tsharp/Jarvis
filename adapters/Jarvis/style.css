@@ -570,3 +570,620 @@ pre:not(.code-editor-container pre) code {
 .token.atrule, .token.attr-value, .token.keyword { color: #cba6f7; }
 .token.function, .token.class-name { color: #89b4fa; }
 .token.regex, .token.important, .token.variable { color: #f9e2af; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TRION Task-Loop Pipeline View — chat-taskloop.css additions
+   Add to style.css
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── Color tokens ────────────────────────────────────────────────────────── */
+.tl-color-plan       { color: #89b4fa; }   /* blue */
+.tl-color-thinking   { color: #cba6f7; }   /* mauve/purple */
+.tl-color-tool       { color: #fab387; }   /* peach/orange */
+.tl-color-reflection { color: #94e2d5; }   /* teal */
+.tl-color-finish     { color: #a6e3a1; }   /* green */
+.tl-color-error      { color: #f38ba8; }   /* red */
+
+/* ─── Wrapper ─────────────────────────────────────────────────────────────── */
+.tl-wrapper {
+    margin-bottom: 10px;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(30, 30, 46, 0.55);
+    backdrop-filter: blur(6px);
+}
+
+/* ─── Header ──────────────────────────────────────────────────────────────── */
+.tl-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px;
+    background: rgba(255,255,255,0.04);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    gap: 10px;
+}
+
+.tl-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.tl-work-label {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #f5c542;
+}
+
+.tl-work-done  { color: #a6e3a1; }
+.tl-work-error { color: #f38ba8; }
+
+/* ─── Toggle button ───────────────────────────────────────────────────────── */
+.tl-toggle {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 3px 5px;
+    border-radius: 6px;
+    color: #6c7086;
+    transition: color 0.2s, background 0.2s;
+    display: flex;
+    align-items: center;
+}
+.tl-toggle:hover { background: rgba(255,255,255,0.08); color: #cdd6f4; }
+.tl-toggle svg   { transition: transform 0.25s ease; }
+.tl-toggle--open svg { transform: rotate(180deg); }
+
+/* ─── Body (collapsed by default) ────────────────────────────────────────── */
+.tl-body {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.tl-body--open {
+    max-height: 2000px;
+}
+
+.tl-blocks {
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+/* ─── Individual blocks ───────────────────────────────────────────────────── */
+.tl-block {
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.025);
+    transition: border-color 0.2s;
+}
+.tl-block:hover { border-color: rgba(255,255,255,0.12); }
+
+.tl-details { list-style: none; }
+.tl-details summary { list-style: none; }
+.tl-details summary::-webkit-details-marker { display: none; }
+
+.tl-summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s;
+}
+.tl-summary:hover { background: rgba(255,255,255,0.04); }
+
+.tl-block-icon {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+}
+
+/* Pulsing icon while active */
+.tl-icon-pulse {
+    animation: tl-pulse 1.4s ease-in-out infinite;
+}
+.tl-icon-done {
+    animation: none;
+    opacity: 0.8;
+}
+
+@keyframes tl-pulse {
+    0%, 100% { opacity: 1;   transform: scale(1);    }
+    50%       { opacity: 0.4; transform: scale(0.85); }
+}
+
+.tl-block-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.tl-block-badge {
+    font-size: 10px;
+    color: #6c7086;
+    margin-left: 4px;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+
+.tl-chevron {
+    color: #45475a;
+    transition: transform 0.2s;
+    flex-shrink: 0;
+}
+details[open] .tl-chevron { transform: rotate(90deg); }
+
+/* ─── Block body / content area ───────────────────────────────────────────── */
+.tl-block-body {
+    padding: 8px 12px 10px 12px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+}
+
+.tl-block-stream {
+    font-family: "JetBrains Mono", "Fira Mono", ui-monospace, monospace;
+    font-size: 11px;
+    line-height: 1.65;
+    color: #9399b2;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.tl-block-content {
+    font-size: 12px;
+    color: #bac2de;
+    line-height: 1.6;
+}
+
+/* ─── Plan list ───────────────────────────────────────────────────────────── */
+.tl-plan-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.tl-plan-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 11px;
+    color: #6c7086;
+    padding: 3px 0;
+    transition: color 0.2s;
+}
+
+.tl-plan-dot {
+    font-size: 11px;
+    width: 14px;
+    flex-shrink: 0;
+    text-align: center;
+    margin-top: 1px;
+}
+
+.tl-plan-dot--done    { color: #a6e3a1; }
+.tl-plan-dot--running { color: #89dceb; animation: tl-pulse 1s ease-in-out infinite; }
+
+.tl-plan-text--done    { text-decoration: line-through; color: #45475a; }
+.tl-plan-text--running { color: #cdd6f4; font-weight: 500; }
+
+/* ─── Transition connectors ───────────────────────────────────────────────── */
+.tl-transition {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 4px;
+    margin: 2px 0;
+}
+
+.tl-transition-line {
+    flex: 1;
+    height: 1px;
+    background: rgba(255,255,255,0.07);
+}
+
+.tl-transition-text {
+    font-size: 10px;
+    color: #45475a;
+    white-space: nowrap;
+    max-width: 280px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    letter-spacing: 0.02em;
+}
+
+/* ─── Footer (status bar) ─────────────────────────────────────────────────── */
+.tl-footer {
+    padding: 0 14px 8px 14px;
+    font-size: 10px;
+    color: #45475a;
+}
+
+/* ─── TRION Triangle Loader ───────────────────────────────────────────────── */
+.tl-loader {
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+}
+
+.tl-triangle {
+    width: 22px;
+    height: 22px;
+    position: relative;
+}
+
+/* 3 corner dots of the triangle */
+.tl-dot {
+    position: absolute;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #f5c542;
+    animation: tl-triangle-spin 1.4s ease-in-out infinite;
+}
+
+/* Top center */
+.tl-dot-a {
+    top: 0; left: 50%;
+    transform: translateX(-50%);
+    animation-delay: 0s;
+}
+/* Bottom-left */
+.tl-dot-b {
+    bottom: 0; left: 0;
+    animation-delay: 0.47s;
+}
+/* Bottom-right */
+.tl-dot-c {
+    bottom: 0; right: 0;
+    animation-delay: 0.94s;
+}
+
+@keyframes tl-triangle-spin {
+    0%, 100% { opacity: 1;   transform: scale(1.2); }
+    33%       { opacity: 0.3; transform: scale(0.7); }
+    66%       { opacity: 0.7; transform: scale(1);   }
+}
+
+/* When loop is done — fade the loader out */
+.tl-loader--done {
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    pointer-events: none;
+}
+
+/* ─── Block type overrides ────────────────────────────────────────────────── */
+.tl-block--finish {
+    border-color: rgba(166, 227, 161, 0.15);
+    background: rgba(166, 227, 161, 0.04);
+}
+.tl-block--error {
+    border-color: rgba(243, 139, 168, 0.15);
+    background: rgba(243, 139, 168, 0.04);
+}
+.tl-block--thinking .tl-block-stream {
+    color: #b4befe;  /* lavender — thinking gets a slightly warmer mono color */
+}
+/* ═══════════════════════════════════════════════════════════════════════════
+   TRION Task-Loop Pipeline View — chat-taskloop.css additions
+   Add to style.css
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── Color tokens ────────────────────────────────────────────────────────── */
+.tl-color-plan       { color: #89b4fa; }   /* blue */
+.tl-color-thinking   { color: #cba6f7; }   /* mauve/purple */
+.tl-color-tool       { color: #fab387; }   /* peach/orange */
+.tl-color-reflection { color: #94e2d5; }   /* teal */
+.tl-color-finish     { color: #a6e3a1; }   /* green */
+.tl-color-error      { color: #f38ba8; }   /* red */
+
+/* ─── Wrapper ─────────────────────────────────────────────────────────────── */
+.tl-wrapper {
+    margin-bottom: 10px;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(30, 30, 46, 0.55);
+    backdrop-filter: blur(6px);
+}
+
+/* ─── Header ──────────────────────────────────────────────────────────────── */
+.tl-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px;
+    background: rgba(255,255,255,0.04);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    gap: 10px;
+}
+
+.tl-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.tl-work-label {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #f5c542;
+}
+
+.tl-work-done  { color: #a6e3a1; }
+.tl-work-error { color: #f38ba8; }
+
+/* ─── Toggle button ───────────────────────────────────────────────────────── */
+.tl-toggle {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 3px 5px;
+    border-radius: 6px;
+    color: #6c7086;
+    transition: color 0.2s, background 0.2s;
+    display: flex;
+    align-items: center;
+}
+.tl-toggle:hover { background: rgba(255,255,255,0.08); color: #cdd6f4; }
+.tl-toggle svg   { transition: transform 0.25s ease; }
+.tl-toggle--open svg { transform: rotate(180deg); }
+
+/* ─── Body (collapsed by default) ────────────────────────────────────────── */
+.tl-body {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.tl-body--open {
+    max-height: 2000px;
+}
+
+.tl-blocks {
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+/* ─── Individual blocks ───────────────────────────────────────────────────── */
+.tl-block {
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.025);
+    transition: border-color 0.2s;
+}
+.tl-block:hover { border-color: rgba(255,255,255,0.12); }
+
+.tl-details { list-style: none; }
+.tl-details summary { list-style: none; }
+.tl-details summary::-webkit-details-marker { display: none; }
+
+.tl-summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s;
+}
+.tl-summary:hover { background: rgba(255,255,255,0.04); }
+
+.tl-block-icon {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+}
+
+/* Pulsing icon while active */
+.tl-icon-pulse {
+    animation: tl-pulse 1.4s ease-in-out infinite;
+}
+.tl-icon-done {
+    animation: none;
+    opacity: 0.8;
+}
+
+@keyframes tl-pulse {
+    0%, 100% { opacity: 1;   transform: scale(1);    }
+    50%       { opacity: 0.4; transform: scale(0.85); }
+}
+
+.tl-block-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.tl-block-badge {
+    font-size: 10px;
+    color: #6c7086;
+    margin-left: 4px;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+
+.tl-chevron {
+    color: #45475a;
+    transition: transform 0.2s;
+    flex-shrink: 0;
+}
+details[open] .tl-chevron { transform: rotate(90deg); }
+
+/* ─── Block body / content area ───────────────────────────────────────────── */
+.tl-block-body {
+    padding: 8px 12px 10px 12px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+}
+
+.tl-block-stream {
+    font-family: "JetBrains Mono", "Fira Mono", ui-monospace, monospace;
+    font-size: 11px;
+    line-height: 1.65;
+    color: #9399b2;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.tl-block-content {
+    font-size: 12px;
+    color: #bac2de;
+    line-height: 1.6;
+}
+
+/* ─── Plan list ───────────────────────────────────────────────────────────── */
+.tl-plan-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.tl-plan-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 11px;
+    color: #6c7086;
+    padding: 3px 0;
+    transition: color 0.2s;
+}
+
+.tl-plan-dot {
+    font-size: 11px;
+    width: 14px;
+    flex-shrink: 0;
+    text-align: center;
+    margin-top: 1px;
+}
+
+.tl-plan-dot--done    { color: #a6e3a1; }
+.tl-plan-dot--running { color: #89dceb; animation: tl-pulse 1s ease-in-out infinite; }
+
+.tl-plan-text--done    { text-decoration: line-through; color: #45475a; }
+.tl-plan-text--running { color: #cdd6f4; font-weight: 500; }
+
+/* ─── Transition connectors ───────────────────────────────────────────────── */
+.tl-transition {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 4px;
+    margin: 2px 0;
+}
+
+.tl-transition-line {
+    flex: 1;
+    height: 1px;
+    background: rgba(255,255,255,0.07);
+}
+
+.tl-transition-text {
+    font-size: 10px;
+    color: #45475a;
+    white-space: nowrap;
+    max-width: 280px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    letter-spacing: 0.02em;
+}
+
+/* ─── Footer (status bar) ─────────────────────────────────────────────────── */
+.tl-footer {
+    padding: 0 14px 8px 14px;
+    font-size: 10px;
+    color: #45475a;
+}
+
+/* ─── TRION Triangle Loader ───────────────────────────────────────────────── */
+.tl-loader {
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+}
+
+.tl-triangle {
+    width: 22px;
+    height: 22px;
+    position: relative;
+}
+
+/* 3 corner dots of the triangle */
+.tl-dot {
+    position: absolute;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #f5c542;
+    animation: tl-triangle-spin 1.4s ease-in-out infinite;
+}
+
+/* Top center */
+.tl-dot-a {
+    top: 0; left: 50%;
+    transform: translateX(-50%);
+    animation-delay: 0s;
+}
+/* Bottom-left */
+.tl-dot-b {
+    bottom: 0; left: 0;
+    animation-delay: 0.47s;
+}
+/* Bottom-right */
+.tl-dot-c {
+    bottom: 0; right: 0;
+    animation-delay: 0.94s;
+}
+
+@keyframes tl-triangle-spin {
+    0%, 100% { opacity: 1;   transform: scale(1.2); }
+    33%       { opacity: 0.3; transform: scale(0.7); }
+    66%       { opacity: 0.7; transform: scale(1);   }
+}
+
+/* When loop is done — fade the loader out */
+.tl-loader--done {
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    pointer-events: none;
+}
+
+/* ─── Block type overrides ────────────────────────────────────────────────── */
+.tl-block--finish {
+    border-color: rgba(166, 227, 161, 0.15);
+    background: rgba(166, 227, 161, 0.04);
+}
+.tl-block--error {
+    border-color: rgba(243, 139, 168, 0.15);
+    background: rgba(243, 139, 168, 0.04);
+}
+.tl-block--thinking .tl-block-stream {
+    color: #b4befe;  /* lavender — thinking gets a slightly warmer mono color */
+}

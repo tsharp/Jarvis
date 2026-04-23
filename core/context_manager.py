@@ -34,6 +34,9 @@ from mcp.client import (
     search_memory_fallback,
 )
 from core.trion_laws_policy import load_trion_laws_policy
+from core.task_loop.store import get_task_loop_store
+from core.work_context.service import load_work_context
+from core.work_context.writers.workspace_events import build_workspace_event_from_work_context
 # Constants
 SYSTEM_CONV_ID = "system"
 
@@ -1358,6 +1361,39 @@ class ContextManager:
             return sc.get("entries", [])
         return []
 
+    def _build_work_context_extra_events(
+        self,
+        *,
+        conversation_id: Optional[str],
+        workspace_events: List[dict],
+    ) -> List[dict]:
+        """Optional Zusatzprojektion des aktuellen Work Context in Event-Form.
+
+        Nutzt den bestehenden extra_events-Pfad des compact context, statt eine
+        zweite Aggregationslogik im ContextManager einzubauen.
+        """
+
+        conv_id = str(conversation_id or "").strip()
+        if not conv_id:
+            return []
+        if any(str(item.get("event_type") or "").startswith("task_loop_") for item in list(workspace_events or [])):
+            return []
+
+        snapshot = get_task_loop_store().get(conv_id)
+        if snapshot is None or not hasattr(snapshot, "conversation_id") or not hasattr(snapshot, "state"):
+            return []
+
+        work_context = load_work_context(
+            conversation_id=conv_id,
+            task_loop_snapshot=snapshot,
+            workspace_events=workspace_events,
+        )
+        extra_event = build_workspace_event_from_work_context(
+            work_context,
+            event_id=f"work-context-{conv_id}",
+        )
+        return [extra_event] if isinstance(extra_event, dict) else []
+
     # ═══════════════════════════════════════════════════════════
     # SMALL-MODEL CONTEXT CLEANUP
     # ═══════════════════════════════════════════════════════════
@@ -1434,8 +1470,15 @@ class ContextManager:
                 conversation_id=conversation_id or None,
             )
 
+            work_context_events = self._build_work_context_extra_events(
+                conversation_id=conversation_id,
+                workspace_events=events,
+            )
+            extra_events = list(csv_events or [])
+            extra_events.extend(work_context_events)
+
             ctx = build_compact_context(events, entries=entries, limits=limits,
-                                        extra_events=csv_events or None)
+                                        extra_events=extra_events or None)
 
             # TypedState V1 wiring (Commit 4: shadow=log-diff, active=use-v1-render)
             # off (default) → legacy path (format_compact_context), behavior unchanged.

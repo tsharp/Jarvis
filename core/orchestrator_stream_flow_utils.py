@@ -701,7 +701,14 @@ async def process_stream_with_events(
             full_context,
             response_mode=response_mode_stream,
         )
-        verified_plan = orch.control.apply_corrections(thinking_plan, verification)
+        try:
+            verified_plan = orch.control.apply_corrections(
+                thinking_plan,
+                verification,
+                user_text=user_text,
+            )
+        except TypeError:
+            verified_plan = orch.control.apply_corrections(thinking_plan, verification)
         # Skill Confirmation Handling (stream parity with sync path)
         if verification.get("_needs_skill_confirmation") and intent_system_available:
             skill_name = verification.get("_skill_name", "unknown")

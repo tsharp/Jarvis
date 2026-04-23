@@ -52,6 +52,15 @@ The frontend recently underwent a major overhaul (Phase 1 Implemented). Key impr
 - Responsive design updates.
 - Visual feedback for system status.
 
+### Task-Loop Stream Notes
+- The new `static/js/chat-taskloop.js` viewer is driven by `task_loop_update` events plus normal `content` chunks.
+- `task_loop_update` may contain multiple `event_types`; the frontend must process all of them in order, not only the first one.
+- `task_loop_update` now also carries serialized `events`, so the frontend can map each block (`plan`, `thinking`, `tool`, `reflection`, `finish`, `error`) from the real event payload instead of only a shared snapshot.
+- Task-loop step execution now also emits a separate `task_loop_thinking` transport event. This is distinct from the global orchestration `thinking_stream` and should be routed only into the active task-loop block.
+- Step bodies are filled from the live `content` stream while a task-loop step is active. The task-loop event itself is primarily the routing/state signal; the streamed text still comes over `content`.
+- While a task-loop is running, intermediate step text should stay in the task-loop work view. Only the final task-loop output is mirrored into the normal assistant chat transcript.
+- Goal of the current frontend bridge: keep the animated task-loop boxes and the normal assistant transcript in sync, so step containers do not render as empty shells.
+
 ## Usage
 
 ### Running the Adapter

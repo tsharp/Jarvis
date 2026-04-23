@@ -23,6 +23,9 @@ from dataclasses import field as _dc_field
 from datetime import datetime
 from typing import Dict, List, Optional
 
+from core.work_context.readers.workspace_events import build_work_context_from_workspace_events
+from core.work_context.selectors import visible_next_step
+
 try:
     import yaml
     _YAML_AVAILABLE = True
@@ -122,6 +125,12 @@ class TypedState:
         self.last_error: Optional[str] = None
         self.pending_blueprint: Optional[str] = None
         self.updated_at: str = datetime.utcnow().isoformat() + "Z"
+        self.task_loop_topic: Optional[str] = None
+        self.task_loop_state: Optional[str] = None
+        self.task_loop_pending_step: Optional[str] = None
+        self.task_loop_next_step: Optional[str] = None
+        self.task_loop_blocker: Optional[str] = None
+        self.task_loop_updated_at: str = ""
         # ── TypedState V1 fields ──────────────────────────────────────────
         self.version: str = "1"
         self.session_id: Optional[str] = None
@@ -515,6 +524,44 @@ def _apply_event(
     Existing event types are fully backward-compatible.
     New in Commit 2: tool_result, pending_skill/approval_requested/skill_pending.
     """
+    def _legacy_task_loop_projection(data: dict, ev_type: str) -> tuple[str, str, str, str]:
+        """Minimaler Fallback fuer alte/inkompatible task_loop-Events.
+
+        Der primaere Pfad laeuft ueber `build_work_context_from_workspace_events`.
+        Diese Projektion bleibt nur fuer defensive Legacy-Faelle erhalten und
+        soll keine zweite vollwertige Task-Loop-Semantik mehr tragen.
+        """
+
+        topic = str(
+            data.get("background_loop_topic")
+            or data.get("objective_summary")
+            or data.get("pending_step")
+            or ""
+        ).strip()
+        loop_state = str(
+            data.get("background_loop_state")
+            or data.get("state")
+            or ev_type.removeprefix("task_loop_")
+            or ""
+        ).strip()
+        pending_step = str(
+            data.get("background_loop_pending_step")
+            or data.get("pending_step")
+            or ""
+        ).strip()
+        blocker = ""
+
+        last_step_result = data.get("last_step_result")
+        if isinstance(last_step_result, dict):
+            for item in list(last_step_result.get("blockers") or []):
+                text = str(item or "").strip()
+                if text:
+                    blocker = text[:120]
+                    break
+
+        next_step = pending_step or ("Offenen Task-Loop-Blocker klaeren" if blocker else "")
+        return topic, loop_state, pending_step, next_step
+
     event_type = event.get("event_type", "")
     event_data = event.get("event_data", {})
     if not isinstance(event_data, dict):
@@ -874,6 +921,63 @@ def _apply_event(
         except Exception:
             pass  # fail-closed
 
+    # ── task_loop_* bridge ───────────────────────────────────────────────
+    elif event_type.startswith("task_loop_"):
+        work_context = build_work_context_from_workspace_events(
+            [event],
+            conversation_id=str(state.conversation_id or ""),
+        )
+        if work_context is not None:
+            topic = str(work_context.topic or "").strip()
+            loop_state = str(
+                event_data.get("background_loop_state")
+                or event_data.get("state")
+                or work_context.status.value
+                or ""
+            ).strip()
+            pending_step = str(work_context.last_step or "").strip()
+            blocker = str(work_context.blocker or "").strip()
+            next_step = visible_next_step(work_context)
+        else:
+            topic, loop_state, pending_step, next_step = _legacy_task_loop_projection(event_data, event_type)
+            blocker = ""
+
+        if topic:
+            state.task_loop_topic = topic[:140]
+        if loop_state:
+            state.task_loop_state = loop_state[:60]
+        state.task_loop_pending_step = pending_step[:140] if pending_step else None
+        state.task_loop_next_step = next_step[:140] if next_step else None
+        state.task_loop_blocker = blocker[:140] if blocker else None
+        state.task_loop_updated_at = created_at
+
+        if blocker:
+            issue = f"task_loop:{blocker[:100]}"
+            if issue not in state.open_issues:
+                state.open_issues.append(issue)
+            state.last_error = blocker[:120]
+            if blocker[:120] not in state.last_errors:
+                state.last_errors.append(blocker[:120])
+            if len(state.last_errors) > 10:
+                state.last_errors = state.last_errors[-10:]
+
+        if topic:
+            fact_parts = [f"topic={topic[:80]}"]
+            if loop_state:
+                fact_parts.append(f"state={loop_state[:40]}")
+            if blocker:
+                fact_parts.append(f"blocker={blocker[:60]}")
+            elif next_step:
+                fact_parts.append(f"next={next_step[:60]}")
+            state.add_fact(TypedFact(
+                fact_type="TASK_LOOP_CONTEXT",
+                value=" ".join(fact_parts)[:200],
+                confidence=_compute_fact_confidence("workspace_event", conf_cfg=conf_cfg),
+                observed_at=created_at,
+                source=event_type,
+                source_event_ids=[event_id] if event_id else [],
+            ))
+
 
 # ---------------------------------------------------------------------------
 # Commit 2: Pipeline step 4 — Apply events to state
@@ -921,6 +1025,7 @@ def _apply_events_to_state(
 _NOW_ORDER_DEFAULT: List[str] = [
     "active_container",
     "focus_entity",
+    "task_loop_context",
     "active_gates",
     "open_issues",
     "last_error",
@@ -1017,6 +1122,21 @@ def _build_now_bullets(state: TypedState, cfg: dict, output_cfg: dict) -> List[s
         log_warn(f"[ContextCleanup] NOW focus_entity builder error: {exc}")
 
     try:
+        # ── task_loop_context ─────────────────────────────────────────────
+        if state.task_loop_topic:
+            bullet = (
+                f"TASK_CONTEXT {state.task_loop_topic[:80]} "
+                f"state={str(state.task_loop_state or 'unknown')[:30]}"
+            )
+            if state.task_loop_pending_step:
+                bullet += f" pending={state.task_loop_pending_step[:50]}"
+            elif state.task_loop_blocker:
+                bullet += f" blocker={state.task_loop_blocker[:50]}"
+            buckets["task_loop_context"].append(bullet[:_ITEM_CHAR_CAP])
+    except Exception as exc:
+        log_warn(f"[ContextCleanup] NOW task_loop_context builder error: {exc}")
+
+    try:
         # ── active_gates: sorted for determinism ──────────────────────────
         for gate in sorted(state.active_gates):
             buckets["active_gates"].append(
@@ -1092,6 +1212,10 @@ def _build_next_bullets(state: TypedState, cfg: dict) -> List[str]:
         if state.pending_approvals:
             ref = state.pending_approvals[-1]  # most recently added
             next_steps.append(f"Handle pending approval: {ref[:60]}"[:_ITEM_CHAR_CAP])
+
+        if state.task_loop_next_step:
+            label = "Follow up on task context" if state.task_loop_blocker else "Resume task context"
+            next_steps.append(f"{label}: {state.task_loop_next_step[:80]}"[:_ITEM_CHAR_CAP])
 
         # Priority 2: last error must be diagnosed
         if state.last_error:
@@ -1208,6 +1332,27 @@ def _build_candidates_from_state(
         log_warn(f"[ContextCleanup] Candidate focus_entity error: {exc}")
 
     try:
+        if state.task_loop_topic:
+            text = (
+                f"TASK_CONTEXT {state.task_loop_topic[:80]} "
+                f"state={str(state.task_loop_state or 'unknown')[:30]}"
+            )
+            if state.task_loop_pending_step:
+                text += f" pending={state.task_loop_pending_step[:50]}"
+            elif state.task_loop_blocker:
+                text += f" blocker={state.task_loop_blocker[:50]}"
+            candidates.append(Candidate(
+                section="now",
+                text=text[:_ITEM_CHAR_CAP],
+                confidence=1.0,
+                severity=2 if state.task_loop_blocker else 1,
+                recency_ts=_ts_to_float(state.task_loop_updated_at or ""),
+                tie_breaker=f"now:{text[:50]}",
+            ))
+    except Exception as exc:
+        log_warn(f"[ContextCleanup] Candidate task_loop_context error: {exc}")
+
+    try:
         for issue in sorted(state.open_issues):
             text = f"OPEN_ISSUE {issue}"[:_ITEM_CHAR_CAP]
             candidates.append(Candidate(
@@ -1267,6 +1412,17 @@ def _build_candidates_from_state(
             candidates.append(Candidate(
                 section="next", text=text, confidence=1.0, severity=3,
                 recency_ts=0.0, tie_breaker=f"next:{text[:50]}",
+            ))
+        if state.task_loop_next_step:
+            label = "Follow up on task context" if state.task_loop_blocker else "Resume task context"
+            text = f"{label}: {state.task_loop_next_step[:80]}"[:_ITEM_CHAR_CAP]
+            candidates.append(Candidate(
+                section="next",
+                text=text,
+                confidence=1.0,
+                severity=3 if state.task_loop_blocker else 2,
+                recency_ts=_ts_to_float(state.task_loop_updated_at or ""),
+                tie_breaker=f"next:{text[:50]}",
             ))
         if state.last_error:
             text = "Diagnose last error before proceeding"

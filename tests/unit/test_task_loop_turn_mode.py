@@ -155,3 +155,86 @@ def test_apply_corrections_marks_active_task_loop_presence_without_implying_resu
     assert corrected["turn_mode"] == "task_loop"
     assert corrected["_authoritative_turn_mode_reason"] == "active_task_loop_present"
     assert corrected["_authoritative_turn_mode_reasons"] == ["active_task_loop_present"]
+
+
+def test_apply_corrections_hardens_under_signaled_python_container_request_into_task_loop():
+    layer = ControlLayer()
+
+    corrected = layer.apply_corrections(
+        {
+            "task_loop_candidate": False,
+            "needs_visible_progress": False,
+            "sequential_complexity": 4,
+            "dialogue_act": "request",
+            "is_fact_query": False,
+        },
+        {
+            "approved": True,
+            "decision_class": "allow",
+            "corrections": {},
+            "warnings": [],
+            "final_instruction": "",
+        },
+        user_text="Ich brauche einen Python-Container mit passender Auswahl und Start.",
+    )
+
+    assert corrected["_task_loop_signal_strong"] is True
+    assert corrected["_task_loop_signal_reasons"]
+    assert corrected["_authoritative_execution_mode"] == "task_loop"
+    assert corrected["_authoritative_turn_mode"] == "task_loop"
+
+
+def test_apply_corrections_keeps_blueprint_inventory_question_single_turn():
+    layer = ControlLayer()
+
+    corrected = layer.apply_corrections(
+        {
+            "task_loop_candidate": False,
+            "needs_visible_progress": False,
+            "sequential_complexity": 2,
+            "dialogue_act": "question",
+            "is_fact_query": True,
+        },
+        {
+            "approved": True,
+            "decision_class": "allow",
+            "corrections": {},
+            "warnings": [],
+            "final_instruction": "",
+        },
+        user_text="Welche Blueprints gibt es?",
+    )
+
+    assert corrected["_authoritative_execution_mode"] == "direct"
+    assert corrected["_authoritative_turn_mode"] == "single_turn"
+    assert corrected.get("_task_loop_signal_strong") is False
+
+
+def test_apply_corrections_keeps_explanatory_unresolved_followup_single_turn():
+    layer = ControlLayer()
+
+    corrected = layer.apply_corrections(
+        {
+            "task_loop_candidate": False,
+            "needs_visible_progress": False,
+            "sequential_complexity": 3,
+            "dialogue_act": "question",
+            "is_fact_query": False,
+            "_unresolved_task_context": {
+                "task_topic": "Python-Entwicklungscontainer starten",
+                "blocker": "request_container:routing_block",
+                "next_step": "Verfuegbare Blueprints pruefen",
+            },
+        },
+        {
+            "approved": True,
+            "decision_class": "allow",
+            "corrections": {},
+            "warnings": [],
+            "final_instruction": "",
+        },
+        user_text="Was fehlt noch?",
+    )
+
+    assert corrected["_authoritative_execution_mode"] == "direct"
+    assert corrected["_authoritative_turn_mode"] == "single_turn"

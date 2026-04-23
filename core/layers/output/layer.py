@@ -30,7 +30,7 @@ from config import (
 )
 from utils.logger import log_info, log_error, log_debug, log_warning
 from utils.role_endpoint_resolver import resolve_role_endpoint
-from core.llm_provider_client import complete_chat, resolve_role_provider, stream_chat
+from core.llm_provider_client import complete_chat, resolve_role_provider, stream_chat, stream_chat_events
 from core.persona import get_persona
 from core.grounding_policy import load_grounding_policy
 from core.control_contract import ControlDecision, is_interactive_tool_status
@@ -2642,6 +2642,218 @@ class OutputLayer:
         except Exception as e:
             log_error(f"[OutputLayer] Error: {type(e).__name__}: {e}")
             yield f"Entschuldigung, es gab einen Fehler: {str(e)}"
+
+    async def generate_stream_events(
+        self,
+        user_text: str,
+        verified_plan: Dict[str, Any],
+        memory_data: str = "",
+        model: str = None,
+        memory_required_but_missing: bool = False,
+        chat_history: list = None,
+        control_decision: Optional[ControlDecision] = None,
+        execution_result: Optional[Dict[str, Any]] = None,
+    ) -> AsyncGenerator[Dict[str, str], None]:
+        """Streaming-Ausgabe mit typed events (`thinking`/`content`)."""
+        direct_response = get_runtime_direct_response(verified_plan)
+        if direct_response:
+            log_info("[OutputLayer] Direct response short-circuit (tool-backed)")
+            yield {"type": "content", "chunk": direct_response}
+            return
+
+        model = (model or "").strip() or get_output_model()
+        response_mode = str(verified_plan.get("_response_mode", "interactive")).lower()
+        budgets = self._resolve_output_budgets(verified_plan)
+        char_cap = int(budgets["hard_cap"])
+        soft_target = int(budgets["soft_target"])
+        verified_plan["_length_policy"] = {
+            "response_mode": response_mode,
+            "hard_cap": char_cap,
+            "soft_target": soft_target,
+            "length_hint": self._normalize_length_hint(verified_plan.get("response_length_hint")),
+        }
+        timeout_s = task_loop_output_timeout_override(verified_plan)
+        if timeout_s is None:
+            timeout_s = verified_plan.get("_output_time_budget_s")
+        if timeout_s is None:
+            timeout_s = (
+                get_output_timeout_deep_s()
+                if response_mode == "deep"
+                else get_output_timeout_interactive_s()
+            )
+        try:
+            timeout_s = float(timeout_s)
+        except Exception:
+            timeout_s = float(get_output_timeout_interactive_s())
+        timeout_s = max(5.0, min(300.0, timeout_s))
+
+        messages = self._build_messages(
+            user_text, verified_plan, memory_data,
+            memory_required_but_missing, chat_history
+        )
+        self._set_runtime_grounding_value(
+            verified_plan,
+            execution_result,
+            "analysis_guard_user_text",
+            user_text,
+        )
+        self._set_runtime_grounding_value(
+            verified_plan,
+            execution_result,
+            "analysis_guard_memory_present",
+            bool(str(memory_data or "").strip()),
+        )
+        precheck = self._grounding_precheck(verified_plan, memory_data, execution_result=execution_result)
+        if str(precheck.get("mode", "")).strip().lower() in {
+            "tool_execution_failed_fallback",
+            "missing_evidence_fallback",
+            "evidence_summary_fallback",
+        }:
+            self._set_runtime_grounding_value(
+                verified_plan,
+                execution_result,
+                "fallback_used",
+                True
+            )
+            yield {"type": "content", "chunk": str(precheck.get("response") or "")}
+            return
+        postcheck_policy = precheck.get("policy") or {}
+        postcheck_enabled = self._stream_postcheck_enabled(precheck)
+        buffer_for_postcheck = self._should_buffer_stream_postcheck(
+            verified_plan,
+            postcheck_policy,
+            postcheck_enabled=postcheck_enabled,
+        )
+
+        provider = resolve_role_provider("output", default=get_output_provider())
+        try:
+            endpoint = self.ollama_base
+            if provider == "ollama":
+                route = resolve_role_endpoint("output", default_endpoint=self.ollama_base)
+                log_info(
+                    f"[Routing] role=output provider=ollama requested_target={route['requested_target']} "
+                    f"effective_target={route['effective_target'] or 'none'} "
+                    f"fallback={bool(route['fallback_reason'])} "
+                    f"fallback_reason={route['fallback_reason'] or 'none'} "
+                    f"endpoint_source={route['endpoint_source']}"
+                )
+                if route["hard_error"]:
+                    yield {"type": "content", "chunk": "Entschuldigung, Output-Compute ist aktuell nicht verfügbar."}
+                    return
+                endpoint = route["endpoint"] or self.ollama_base
+            else:
+                log_info(f"[Routing] role=output provider={provider} endpoint=cloud")
+
+            total_chars = 0
+            truncated = False
+            buffered_chunks: List[str] = []
+            postcheck_chunks: List[str] = []
+
+            async for event in stream_chat_events(
+                provider=provider,
+                model=model,
+                messages=messages,
+                timeout_s=timeout_s,
+                ollama_endpoint=endpoint,
+            ):
+                event_type = str(event.get("type") or "").strip().lower()
+                chunk = str(event.get("chunk") or "")
+                if not chunk:
+                    continue
+                if event_type == "thinking":
+                    yield {"type": "thinking", "chunk": chunk}
+                    continue
+                if event_type != "content":
+                    continue
+                if char_cap > 0 and total_chars >= char_cap:
+                    truncated = True
+                    break
+                if char_cap > 0 and total_chars + len(chunk) > char_cap:
+                    keep = max(0, char_cap - total_chars)
+                    if keep > 0:
+                        chunk_out = chunk[:keep]
+                        if postcheck_enabled:
+                            postcheck_chunks.append(chunk_out)
+                        if buffer_for_postcheck:
+                            buffered_chunks.append(chunk_out)
+                        else:
+                            yield {"type": "content", "chunk": chunk_out}
+                        total_chars += keep
+                    truncated = True
+                    break
+                total_chars += len(chunk)
+                if postcheck_enabled:
+                    postcheck_chunks.append(chunk)
+                if buffer_for_postcheck:
+                    buffered_chunks.append(chunk)
+                else:
+                    yield {"type": "content", "chunk": chunk}
+
+            if truncated:
+                trunc_note = (
+                    "\n\n[Antwort gekürzt: Interaktiv-Budget erreicht. "
+                    "Wenn du willst, führe ich direkt fort.]"
+                    if response_mode != "deep"
+                    else "\n\n[Antwort gekürzt: Deep-Mode Output-Budget erreicht.]"
+                )
+                if buffer_for_postcheck:
+                    buffered_chunks.append(trunc_note)
+                else:
+                    yield {"type": "content", "chunk": trunc_note}
+
+            if postcheck_enabled:
+                merged = "".join(postcheck_chunks)
+                checked = self._grounding_postcheck(
+                    merged,
+                    verified_plan,
+                    precheck,
+                    execution_result=execution_result,
+                )
+                changed = checked != merged
+                if changed and not bool(
+                    get_runtime_grounding_value(
+                        verified_plan,
+                        key="repair_used",
+                        default=False,
+                    )
+                ):
+                    self._set_runtime_grounding_value(
+                        verified_plan,
+                        execution_result,
+                        "fallback_used",
+                        True
+                    )
+
+                if buffer_for_postcheck:
+                    if changed:
+                        yield {"type": "content", "chunk": checked}
+                    else:
+                        for part in buffered_chunks:
+                            yield {"type": "content", "chunk": part}
+                elif changed:
+                    yield {"type": "content", "chunk": "\n\n[Grounding-Korrektur]\n"}
+                    yield {"type": "content", "chunk": checked}
+
+            log_info(
+                f"[OutputLayer] Streamed {total_chars} chars with events "
+                f"(cap_hit={truncated}, soft_target={soft_target}, hard_cap={char_cap})"
+            )
+
+        except httpx.TimeoutException:
+            log_error(f"[OutputLayer] Stream Timeout nach {timeout_s:.0f}s")
+            yield {"type": "content", "chunk": "Entschuldigung, die Anfrage hat zu lange gedauert."}
+        except httpx.HTTPStatusError as e:
+            log_error(f"[OutputLayer] Stream HTTP Error: {e.response.status_code}")
+            yield {"type": "content", "chunk": f"Entschuldigung, Server-Fehler: {e.response.status_code}"}
+        except (httpx.ReadError, httpx.RemoteProtocolError) as e:
+            log_error(f"[OutputLayer] Stream disconnected: {e}")
+            yield {"type": "content", "chunk": "Verbindung zum Model wurde unterbrochen. Bitte Anfrage erneut senden."}
+        except httpx.ConnectError as e:
+            log_error(f"[OutputLayer] Connection Error: {e}")
+            yield {"type": "content", "chunk": "Entschuldigung, konnte keine Verbindung zum Model herstellen."}
+        except Exception as e:
+            log_error(f"[OutputLayer] Error: {type(e).__name__}: {e}")
+            yield {"type": "content", "chunk": f"Entschuldigung, es gab einen Fehler: {str(e)}"}
     
     async def _chat_check_tools(
         self, 

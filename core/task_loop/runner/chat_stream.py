@@ -42,8 +42,10 @@ from core.task_loop.runner.snapshot_state import (
 from core.task_loop.step_answers import answer_for_chat_step
 from core.task_loop.step_runtime import (
     prepare_task_loop_step_runtime,
-    stream_task_loop_step_output,
+    stream_task_loop_step_events,
 )
+from core.task_loop.step_runtime.execution import check_tool_request_preconditions
+from core.task_loop.step_runtime.prompting import _effective_step_status
 from core.task_loop.tool_step_policy import should_execute_tool_via_orchestrator
 from utils.logger import log_warn
 
@@ -51,6 +53,7 @@ from utils.logger import log_warn
 @dataclass(frozen=True)
 class TaskLoopStreamChunk:
     content_delta: str
+    thinking_delta: str
     snapshot: TaskLoopSnapshot
     events: List[Dict[str, Any]]
     is_final: bool
@@ -81,6 +84,7 @@ async def stream_chat_auto_loop(
         header_snapshot = replace(snapshot, last_user_visible_answer=header)
         yield TaskLoopStreamChunk(
             content_delta=header,
+            thinking_delta="",
             snapshot=header_snapshot,
             events=list(initial_events or []),
             is_final=False,
@@ -92,6 +96,7 @@ async def stream_chat_auto_loop(
     elif initial_events:
         yield TaskLoopStreamChunk(
             content_delta="",
+            thinking_delta="",
             snapshot=replace(snapshot, last_user_visible_answer=current_content),
             events=list(initial_events or []),
             is_final=False,
@@ -139,6 +144,7 @@ async def stream_chat_auto_loop(
             running_snap = _set_step_running(snapshot, snapshot.pending_step.strip()) if snapshot.pending_step.strip() else snapshot
             yield TaskLoopStreamChunk(
                 content_delta="",
+                thinking_delta="",
                 snapshot=running_snap,
                 events=[make_task_loop_event(TaskLoopEventType.STEP_STARTED, running_snap)],
                 is_final=False,
@@ -159,6 +165,7 @@ async def stream_chat_auto_loop(
             )
             yield TaskLoopStreamChunk(
                 content_delta=step_result.content_delta,
+                thinking_delta=getattr(step_result, "thinking_delta", ""),
                 snapshot=step_result.snapshot,
                 events=step_result.events,
                 is_final=step_result.is_final,
@@ -194,6 +201,7 @@ async def stream_chat_auto_loop(
             )
             yield TaskLoopStreamChunk(
                 content_delta=step_result.content_delta,
+                thinking_delta=getattr(step_result, "thinking_delta", ""),
                 snapshot=step_result.snapshot,
                 events=step_result.events,
                 is_final=step_result.is_final,
@@ -229,6 +237,7 @@ async def _stream_chat_auto_loop_step_async(
     events.append(make_task_loop_event(TaskLoopEventType.STEP_STARTED, working_snapshot))
     yield TaskLoopStreamChunk(
         content_delta="",
+        thinking_delta="",
         snapshot=working_snapshot,
         events=list(events),
         is_final=False,
@@ -243,6 +252,7 @@ async def _stream_chat_auto_loop_step_async(
         delta = "Alle Schritte abgeschlossen."
         yield TaskLoopStreamChunk(
             content_delta=delta,
+            thinking_delta="",
             snapshot=replace(
                 completed,
                 last_user_visible_answer=_append_visible_content(current_content, delta),
@@ -280,6 +290,7 @@ async def _stream_chat_auto_loop_step_async(
             delta = _msg_hard_block(detail)
             yield TaskLoopStreamChunk(
                 content_delta=delta,
+                thinking_delta="",
                 snapshot=replace(
                     blocked,
                     last_user_visible_answer=_append_visible_content(current_content, delta),
@@ -299,6 +310,7 @@ async def _stream_chat_auto_loop_step_async(
         delta = _msg_control_soft_block(detail)
         yield TaskLoopStreamChunk(
             content_delta=delta,
+            thinking_delta="",
             snapshot=replace(
                 waiting,
                 last_user_visible_answer=_append_visible_content(current_content, delta),
@@ -328,6 +340,7 @@ async def _stream_chat_auto_loop_step_async(
     )
     yield TaskLoopStreamChunk(
         content_delta=streamed_step_content,
+        thinking_delta="",
         snapshot=current_snapshot,
         events=[],
         is_final=False,
@@ -335,15 +348,72 @@ async def _stream_chat_auto_loop_step_async(
         emit_update=False,
     )
 
+    # Pre-check: TOOL_REQUEST-Schritte auf fehlende Blueprint/Parameter prüfen
+    # bevor der LLM-Stream startet — verhindert Halluzinationen statt Waits.
+    if prepared.step_request.step_type is TaskLoopStepType.TOOL_REQUEST:
+        resume_completed = _effective_step_status(working_snapshot, TaskLoopStepType.TOOL_REQUEST) in {
+            TaskLoopStepStatus.WAITING_FOR_APPROVAL,
+            TaskLoopStepStatus.WAITING_FOR_USER,
+        }
+        gate_status, gate_msg = check_tool_request_preconditions(
+            working_snapshot,
+            prepared.step_request,
+            user_reply=resume_user_text,
+            resume_completed=resume_completed,
+        )
+        if gate_status is not None:
+            waiting_text = gate_msg or prepared.fallback_text
+            waiting_snap = transition_task_loop(
+                working_snapshot,
+                TaskLoopState.WAITING_FOR_USER,
+                stop_reason=StopReason.USER_DECISION_REQUIRED,
+            )
+            wait_events = [make_task_loop_event(TaskLoopEventType.WAITING_FOR_USER, waiting_snap)]
+            yield TaskLoopStreamChunk(
+                content_delta=waiting_text,
+                thinking_delta="",
+                snapshot=replace(
+                    waiting_snap,
+                    last_user_visible_answer=_append_visible_content(current_content, waiting_text),
+                ),
+                events=wait_events,
+                is_final=True,
+                done_reason="task_loop_waiting_for_user",
+                emit_update=True,
+            )
+            return
+
     model_chunks: List[str] = []
+    thinking_chunks: List[str] = []
     used_fallback = False
     fallback_reason = ""
     stream_chunk_count = 0
+    thinking_chunk_count = 0
     try:
-        async for out_chunk in stream_task_loop_step_output(prepared, output_layer=output_layer):
-            model_chunks.append(str(out_chunk))
+        async for out_event in stream_task_loop_step_events(prepared, output_layer=output_layer):
+            event_type = str(out_event.get("type") or "").strip().lower()
+            streamed_piece = str(out_event.get("chunk") or "")
+            if not streamed_piece:
+                continue
+            current_snapshot = replace(
+                working_snapshot,
+                last_user_visible_answer=_append_visible_content(current_content, streamed_step_content),
+            )
+            if event_type == "thinking":
+                thinking_chunks.append(streamed_piece)
+                thinking_chunk_count += 1
+                yield TaskLoopStreamChunk(
+                    content_delta="",
+                    thinking_delta=streamed_piece,
+                    snapshot=current_snapshot,
+                    events=[],
+                    is_final=False,
+                    done_reason="",
+                    emit_update=False,
+                )
+                continue
+            model_chunks.append(streamed_piece)
             stream_chunk_count += 1
-            streamed_piece = str(out_chunk)
             streamed_step_content += streamed_piece
             current_snapshot = replace(
                 working_snapshot,
@@ -351,6 +421,7 @@ async def _stream_chat_auto_loop_step_async(
             )
             yield TaskLoopStreamChunk(
                 content_delta=streamed_piece,
+                thinking_delta="",
                 snapshot=current_snapshot,
                 events=[],
                 is_final=False,
@@ -379,6 +450,7 @@ async def _stream_chat_auto_loop_step_async(
         )
         yield TaskLoopStreamChunk(
             content_delta=fallback_piece,
+            thinking_delta="",
             snapshot=current_snapshot,
             events=[],
             is_final=False,
@@ -414,6 +486,9 @@ async def _stream_chat_auto_loop_step_async(
         "used_fallback": used_fallback,
         "fallback_reason": fallback_reason,
         "stream_chunk_count": stream_chunk_count,
+        "thinking_chunk_count": thinking_chunk_count,
+        "thinking_chars": sum(len(chunk) for chunk in thinking_chunks),
+        "has_thinking_stream": bool(thinking_chunks),
         "control_approved": bool(prepared.control_decision.approved),
         "step_execution_source": step_result.step_execution_source.value,
         "step_status": step_result.status.value,
@@ -426,6 +501,7 @@ async def _stream_chat_auto_loop_step_async(
     )
     yield TaskLoopStreamChunk(
         content_delta="\n",
+        thinking_delta="",
         snapshot=current_snapshot,
         events=[],
         is_final=False,
@@ -500,6 +576,7 @@ async def _stream_chat_auto_loop_step_async(
         )
         yield TaskLoopStreamChunk(
             content_delta=content_delta,
+            thinking_delta="",
             snapshot=continued,
             events=answered_events,
             is_final=False,
@@ -519,6 +596,7 @@ async def _stream_chat_auto_loop_step_async(
         )
         yield TaskLoopStreamChunk(
             content_delta=tail,
+            thinking_delta="",
             snapshot=final_snapshot,
             events=answered_events,
             is_final=True,
@@ -547,6 +625,7 @@ async def _stream_chat_auto_loop_step_async(
         )
         yield TaskLoopStreamChunk(
             content_delta=tail,
+            thinking_delta="",
             snapshot=final_snapshot,
             events=answered_events,
             is_final=True,
@@ -569,6 +648,7 @@ async def _stream_chat_auto_loop_step_async(
     )
     yield TaskLoopStreamChunk(
         content_delta=tail,
+        thinking_delta="",
         snapshot=final_snapshot,
         events=answered_events,
         is_final=True,

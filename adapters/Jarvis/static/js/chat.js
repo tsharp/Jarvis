@@ -9,6 +9,7 @@ import * as Render from "./chat-render.js";
 import * as Thinking from "./chat-thinking.js";
 import * as Pending from "./chat-pending.js";
 import * as Plan from "./chat-plan.js";
+import * as TaskLoop from "./chat-taskloop.js";
 
 // Proxied Exports (State Access)
 export { setModel, getModel, isLoading, setHistoryLimit, getMessageCount } from "./chat-state.js";
@@ -261,25 +262,33 @@ export async function handleUserMessage(text, options = {}) {
     let planBoxId = null;          // Box 3: "Planmodus" (master + sequential events)
     let sawDirectPlanEvent = false;
     let sawTaskLoopEvent = false;
+    let taskLoopViewId = null;   // New pipeline viewer
     let botMsgId = null;
     let fullResponse = "";
     const segmentedResponses = [];
     let taskLoopBotMsgId = null;
     let taskLoopBuffer = "";
-    let taskLoopSegmentBoundary = false;
+    let taskLoopRenderFinalOnly = false;
+    let taskLoopFinalAnswer = "";
+    let taskLoopFinishBuffer = "";
     let usedModel = model;
     let controlBlockId = null;
     let doneReason = null;
 
     function finalizeTaskLoopSegment() {
-        if (!taskLoopBotMsgId) return;
-        Render.updateMessage(taskLoopBotMsgId, taskLoopBuffer, false);
-        if (taskLoopBuffer.trim()) {
-            segmentedResponses.push(taskLoopBuffer.trimEnd());
+        const finalText = String(taskLoopFinalAnswer || taskLoopBuffer || "").trimEnd();
+        if (taskLoopBotMsgId && finalText) {
+            Render.updateMessage(taskLoopBotMsgId, finalText, false);
         }
+        if (!taskLoopBotMsgId && finalText) {
+            taskLoopBotMsgId = Render.renderMessage("assistant", finalText, false);
+        }
+        if (finalText) segmentedResponses.push(finalText);
         taskLoopBotMsgId = null;
         taskLoopBuffer = "";
-        taskLoopSegmentBoundary = false;
+        taskLoopFinalAnswer = "";
+        taskLoopFinishBuffer = "";
+        taskLoopRenderFinalOnly = false;
     }
 
     try {
@@ -482,23 +491,82 @@ export async function handleUserMessage(text, options = {}) {
             if (PLAN_EVENT_TYPES.has(chunk.type)) {
                 sawDirectPlanEvent = true;
                 const planType = String(chunk.type || "");
+
+                // ── NEW: task_loop_update → Pipeline Viewer ──────────────
                 if (planType === "task_loop_update") {
                     sawTaskLoopEvent = true;
-                    finalizeTaskLoopSegment();
-                    taskLoopSegmentBoundary = true;
+                    touchActivity("I'm working on the next step...");
+
+                    // Create pipeline view on first task_loop event
+                    if (!taskLoopViewId) {
+                        taskLoopViewId = TaskLoop.createTaskLoopView(baseMsgId);
+                    }
+                    const tlEvents = Array.isArray(chunk.events) ? chunk.events : [];
+                    if (tlEvents.length) {
+                        for (const event of tlEvents) {
+                            const eventData = (event && typeof event === "object" && typeof event.event_data === "object")
+                                ? event.event_data
+                                : {};
+                            if (String(event?.type || "") === "task_loop_step_answered") {
+                                const summary = String(
+                                    eventData?.step_summary ||
+                                    eventData?.answer_summary ||
+                                    eventData?.last_step_result?.user_visible_summary ||
+                                    eventData?.last_user_visible_answer ||
+                                    ""
+                                ).trim();
+                                if (summary) taskLoopFinalAnswer = summary;
+                            }
+                            TaskLoop.handleTaskLoopUpdate(taskLoopViewId, String(event?.type || ""), {
+                                ...chunk,
+                                ...event,
+                                event_data: eventData,
+                                task_loop: eventData && Object.keys(eventData).length ? eventData : chunk.task_loop,
+                            });
+                        }
+                    } else {
+                        const tlEventTypes = Array.isArray(chunk.event_types) ? chunk.event_types : [];
+                        if (tlEventTypes.length) {
+                            for (const tlEventType of tlEventTypes) {
+                                TaskLoop.handleTaskLoopUpdate(taskLoopViewId, tlEventType, chunk);
+                            }
+                        } else {
+                            const tlEventType = chunk.done_reason || "";
+                            TaskLoop.handleTaskLoopUpdate(taskLoopViewId, tlEventType, chunk);
+                        }
+                    }
+                    taskLoopRenderFinalOnly = Boolean(chunk.is_final);
+                    if (taskLoopRenderFinalOnly) {
+                        taskLoopFinishBuffer = "";
+                    }
+                    Pending.updatePendingState("planning");
+                    continue;
                 }
+                // ────────────────────────────────────────────────────────
+
                 const planActivity = planType.startsWith("sequential_")
                     ? "I'm working through sequential steps..."
                     : planType.startsWith("loop_trace_")
                         ? "I'm tracing and correcting the loop..."
-                        : planType === "task_loop_update"
-                            ? "I'm working on the next step..."
                         : "I'm planning the next steps...";
                 touchActivity(planActivity);
                 if (!planBoxId) {
                     planBoxId = Plan.createPlanBox(baseMsgId);
                 }
                 Plan.appendPlanEvent(planBoxId, chunk.type, chunk);
+                Pending.updatePendingState("planning");
+                continue;
+            }
+
+            if (chunk.type === "task_loop_thinking") {
+                sawTaskLoopEvent = true;
+                touchActivity("I'm reasoning through this step...");
+                if (!taskLoopViewId) {
+                    taskLoopViewId = TaskLoop.createTaskLoopView(baseMsgId);
+                }
+                if (taskLoopViewId && TaskLoop.hasActiveTaskLoop(taskLoopViewId)) {
+                    TaskLoop.onThinkingStream(taskLoopViewId, String(chunk.chunk || ""));
+                }
                 Pending.updatePendingState("planning");
                 continue;
             }
@@ -589,13 +657,12 @@ export async function handleUserMessage(text, options = {}) {
                 if (sawTaskLoopEvent) {
                     Pending.removePendingBubble();
                     const contentChunk = String(chunk.content || "");
-                    if (taskLoopSegmentBoundary || !taskLoopBotMsgId) {
-                        taskLoopBotMsgId = Render.renderMessage("assistant", "", true);
-                        taskLoopBuffer = "";
-                        taskLoopSegmentBoundary = false;
+                    if (!taskLoopRenderFinalOnly && taskLoopViewId && TaskLoop.hasActiveTaskLoop(taskLoopViewId)) {
+                        TaskLoop.onStepContent(taskLoopViewId, contentChunk);
                     }
-                    taskLoopBuffer += contentChunk;
-                    Render.updateMessage(taskLoopBotMsgId, taskLoopBuffer, true);
+                    if (taskLoopRenderFinalOnly) {
+                        taskLoopFinishBuffer += contentChunk;
+                    }
                     if (chunk.model) usedModel = chunk.model;
                     continue;
                 }
@@ -621,6 +688,13 @@ export async function handleUserMessage(text, options = {}) {
                 if (chunk.model) usedModel = chunk.model;
                 doneReason = chunk.done_reason || doneReason;
                 if (chunk.code_model_used) UI.showCodeModelIndicator();
+                const finishContent = taskLoopFinishBuffer;
+                if (taskLoopViewId) {
+                    TaskLoop.onTaskLoopFinished(taskLoopViewId, {
+                        done_reason: doneReason || "task_loop_completed",
+                        content: finishContent,
+                    });
+                }
                 finalizeTaskLoopSegment();
                 if (planBoxId) {
                     Plan.finalizePlanBox(planBoxId, `done_reason=${doneReason || "stop"}`);

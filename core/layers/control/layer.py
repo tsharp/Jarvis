@@ -136,6 +136,9 @@ from .strategy.container_selection import (
     is_container_request_plan as _strategy_is_container_request_plan,
     normalize_container_candidates as _strategy_normalize_container_candidates,
 )
+from .strategy.task_loop_signals import (
+    prepare_task_loop_signals as _strategy_prepare_task_loop_signals,
+)
 from .verification.defaults import (
     default_verification as _verification_default_verification,
 )
@@ -648,6 +651,13 @@ class ControlLayer:
         )
 
     @staticmethod
+    def _prepare_task_loop_signals(
+        user_text: str,
+        thinking_plan: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        return _strategy_prepare_task_loop_signals(user_text, thinking_plan)
+
+    @staticmethod
     def _is_container_request_plan(thinking_plan: Dict[str, Any]) -> bool:
         return _strategy_is_container_request_plan(thinking_plan)
 
@@ -701,9 +711,10 @@ class ControlLayer:
         retrieved_memory: str = "",
         response_mode: str = "interactive",
     ) -> Dict[str, Any]:
+        prepared_plan = self._prepare_task_loop_signals(user_text, thinking_plan)
         return await _verification_verify_flow(
             user_text,
-            thinking_plan,
+            prepared_plan,
             retrieved_memory=retrieved_memory,
             response_mode=response_mode,
             light_cim=self.light_cim,
@@ -786,10 +797,18 @@ class ControlLayer:
     def _default_verification(self, thinking_plan: Dict[str, Any]) -> Dict[str, Any]:
         return _verification_default_verification(thinking_plan)
 
-    def apply_corrections(self, thinking_plan: Dict[str, Any], verification: Dict[str, Any]) -> Dict[str, Any]:
+    def apply_corrections(
+        self,
+        thinking_plan: Dict[str, Any],
+        verification: Dict[str, Any],
+        *,
+        user_text: str = "",
+    ) -> Dict[str, Any]:
+        prepared_plan = self._prepare_task_loop_signals(user_text, thinking_plan)
         return _verification_apply_corrections(
-            thinking_plan,
+            prepared_plan,
             verification,
+            user_text=user_text,
             sanitize_warning_messages_fn=self._sanitize_warning_messages,
             tool_names_fn=self._tool_names,
             normalize_resolution_strategy_fn=self._normalize_resolution_strategy,

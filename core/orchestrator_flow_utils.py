@@ -632,7 +632,14 @@ async def execute_control_layer(
         )
         log_info_fn(f"[Orchestrator-Control] approved={verification.get('approved')}")
         log_info_fn(f"[Orchestrator-Control] warnings={verification.get('warnings', [])}")
-        verified_plan = orch.control.apply_corrections(thinking_plan, verification)
+        try:
+            verified_plan = orch.control.apply_corrections(
+                thinking_plan,
+                verification,
+                user_text=user_text,
+            )
+        except TypeError:
+            verified_plan = orch.control.apply_corrections(thinking_plan, verification)
         control_decision = ControlDecision.from_verification(
             verification,
             default_approved=False,

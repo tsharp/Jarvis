@@ -9,6 +9,7 @@ def apply_corrections(
     thinking_plan: dict[str, Any],
     verification: dict[str, Any],
     *,
+    user_text: str = "",
     sanitize_warning_messages_fn,
     tool_names_fn,
     normalize_resolution_strategy_fn,
@@ -90,6 +91,8 @@ def apply_corrections(
         str(turn_mode_reasons[0]) if turn_mode_reasons else authoritative_turn_mode
     )
     corrected["_authoritative_turn_mode_blockers"] = list(turn_mode_blockers)
+    if user_text:
+        corrected["_control_user_text"] = str(user_text or "")
     if verification.get("_cim_decision"):
         corrected["_cim_decision"] = verification["_cim_decision"]
     return corrected

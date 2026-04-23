@@ -26,6 +26,80 @@ from core.task_loop.chat_runtime import start_chat_task_loop
 from core.task_loop.store import TaskLoopStore
 
 
+def _make_unresolved_terminal_snapshot() -> TaskLoopSnapshot:
+    return TaskLoopSnapshot(
+        objective_id="obj-unresolved",
+        conversation_id="conv-unresolved",
+        plan_id="plan-unresolved",
+        state=TaskLoopState.COMPLETED,
+        current_step_id="step-5",
+        current_step_type=TaskLoopStepType.TOOL_EXECUTION,
+        current_step_status=TaskLoopStepStatus.COMPLETED,
+        step_execution_source=TaskLoopStepExecutionSource.ORCHESTRATOR,
+        current_plan=[
+            "Container-Anforderungsziel klaeren",
+            "Verfuegbare Blueprints oder Container-Basis pruefen",
+            "Container-Anfrage ausfuehren",
+        ],
+        completed_steps=[
+            "Container-Anforderungsziel klaeren",
+            "Verfuegbare Blueprints oder Container-Basis pruefen",
+            "Container-Anfrage ausfuehren",
+        ],
+        pending_step="",
+        objective_summary="Python-Entwicklungscontainer starten",
+        verified_artifacts=[
+            {
+                "artifact_type": "container_capability_context",
+                "context": {
+                    "request_family": "python_container",
+                    "python_requested": True,
+                    "known_fields": {"python_version": "3.11", "build_or_runtime": "runtime"},
+                },
+            },
+            {
+                "artifact_type": "execution_result",
+                "metadata": {
+                    "grounding_evidence": [
+                        {
+                            "tool_name": "blueprint_list",
+                            "structured": {
+                                "blueprints": [
+                                    {
+                                        "id": "db-sandbox",
+                                        "name": "Database Sandbox",
+                                        "description": "SQLite/PostgreSQL",
+                                    }
+                                ]
+                            },
+                        }
+                    ]
+                },
+            },
+            {
+                "artifact_type": "container_recovery_hint",
+                "replan_step_title": "Verfuegbare Blueprints oder Container-Basis pruefen",
+                "next_tools": ["blueprint_list"],
+            },
+        ],
+        last_step_result={
+            "status": TaskLoopStepStatus.COMPLETED.value,
+            "step_type": TaskLoopStepType.TOOL_EXECUTION.value,
+            "step_execution_source": TaskLoopStepExecutionSource.ORCHESTRATOR.value,
+            "execution_result": {
+                "done_reason": "routing_block",
+                "tool_statuses": [
+                    {
+                        "tool_name": "request_container",
+                        "status": "routing_block",
+                        "reason": "no_jit_match",
+                    }
+                ],
+            },
+        },
+    )
+
+
 @pytest.mark.asyncio
 async def test_maybe_handle_task_loop_sync_returns_none_for_normal_turn(monkeypatch):
     store = TaskLoopStore()
@@ -719,3 +793,82 @@ async def test_maybe_handle_task_loop_sync_resumes_waiting_user_tool_step_with_u
     assert out["done_reason"] == "task_loop_completed"
     assert "Container-Anfrage mit User-Parametern wurde erfolgreich ausgefuehrt." in out["content"]
     assert any("nimm bitte gaming-station" in call[1] for call in orch.calls)
+
+
+@pytest.mark.asyncio
+async def test_maybe_handle_task_loop_sync_answers_unresolved_followup_from_terminal_context(monkeypatch):
+    store = TaskLoopStore()
+    store.put(_make_unresolved_terminal_snapshot())
+
+    monkeypatch.setattr(
+        "core.orchestrator_modules.task_loop.get_task_loop_store",
+        lambda: store,
+    )
+
+    out = await maybe_handle_task_loop_sync(
+        SimpleNamespace(
+            _save_workspace_entry=lambda **_kwargs: None,
+            thinking=SimpleNamespace(analyze=AsyncMock(return_value={"intent": "unused"})),
+        ),
+        SimpleNamespace(model="m", raw_request={}),
+        "was fehlt noch?",
+        "conv-unresolved",
+        core_chat_response_cls=lambda **kwargs: kwargs,
+        log_info_fn=lambda _msg: None,
+    )
+
+    assert out is not None
+    assert out["done_reason"] == "unresolved_task_context_explained"
+    assert "Python-Entwicklungscontainer starten" in out["content"]
+    assert "Database Sandbox" in out["content"]
+    assert "Python-Blueprint" in out["content"] or "Python" in out["content"]
+    assert "Verfuegbare Blueprints oder Container-Basis pruefen" in out["content"]
+
+
+@pytest.mark.asyncio
+async def test_maybe_handle_task_loop_sync_starts_new_loop_from_unresolved_seed(monkeypatch):
+    store = TaskLoopStore()
+    store.put(_make_unresolved_terminal_snapshot())
+
+    monkeypatch.setattr(
+        "core.orchestrator_modules.task_loop.get_task_loop_store",
+        lambda: store,
+    )
+
+    captured = {}
+
+    def _fake_loop_turn(user_text, conversation_id, **kwargs):
+        captured["user_text"] = user_text
+        captured["conversation_id"] = conversation_id
+        captured["thinking_plan"] = dict(kwargs.get("thinking_plan") or {})
+        return SimpleNamespace(
+            content="seeded loop",
+            done_reason="task_loop_completed",
+            snapshot=_make_unresolved_terminal_snapshot(),
+            events=[],
+            workspace_updates=[],
+        )
+
+    monkeypatch.setattr(
+        "core.orchestrator_modules.task_loop.maybe_handle_chat_task_loop_turn",
+        _fake_loop_turn,
+    )
+
+    out = await maybe_handle_task_loop_sync(
+        SimpleNamespace(
+            _save_workspace_entry=lambda **_kwargs: None,
+            thinking=SimpleNamespace(analyze=AsyncMock(return_value={"intent": "unused"})),
+        ),
+        SimpleNamespace(model="m", raw_request={}),
+        "pruef das jetzt",
+        "conv-unresolved",
+        core_chat_response_cls=lambda **kwargs: kwargs,
+        log_info_fn=lambda _msg: None,
+    )
+
+    assert out is not None
+    assert out["done_reason"] == "task_loop_completed"
+    assert "Python-Entwicklungscontainer starten" in captured["user_text"]
+    assert "Verfuegbare Blueprints oder Container-Basis pruefen" in captured["user_text"]
+    assert captured["conversation_id"] == "conv-unresolved"
+    assert captured["thinking_plan"]["_container_capability_context"]["request_family"] == "python_container"

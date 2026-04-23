@@ -35,6 +35,18 @@ from core.task_loop.events import (
 from core.task_loop.pipeline_adapter import build_task_loop_planning_context
 from core.task_loop.runner import run_chat_auto_loop_async, stream_chat_auto_loop
 from core.task_loop.store import get_task_loop_store
+from core.task_loop.unresolved_context import (
+    build_seeded_followup_user_text,
+    build_unresolved_task_response,
+    enrich_followup_thinking_plan,
+    maybe_build_unresolved_task_context,
+)
+from core.work_context.selectors import (
+    has_open_work_context,
+    should_execute_from_work_context,
+    should_explain_from_work_context,
+)
+from core.work_context.service import load_work_context
 
 
 def get_active_task_loop_snapshot(conversation_id: str) -> Optional[Any]:
@@ -99,6 +111,34 @@ def clear_active_task_loop(conversation_id: str) -> None:
     get_task_loop_store().clear(conversation_id)
 
 
+def _resolve_unresolved_followup(
+    store: Any,
+    conversation_id: str,
+    user_text: str,
+    *,
+    thinking_plan: Optional[Dict[str, Any]] = None,
+) -> tuple[Optional[str], Optional[str], Optional[Dict[str, Any]]]:
+    last_snapshot = store.get(conversation_id)
+    unresolved = maybe_build_unresolved_task_context(last_snapshot)
+    if unresolved is None:
+        return None, None, None
+    work_context = load_work_context(
+        conversation_id=conversation_id,
+        task_loop_snapshot=last_snapshot,
+    )
+    if not has_open_work_context(work_context):
+        return None, None, None
+    if should_explain_from_work_context(user_text, work_context):
+        return "explain", build_unresolved_task_response(unresolved), None
+    if should_execute_from_work_context(user_text, work_context):
+        return (
+            "loop",
+            build_seeded_followup_user_text(user_text, unresolved),
+            enrich_followup_thinking_plan(thinking_plan, unresolved),
+        )
+    return None, None, None
+
+
 def _persist_stream_chunk_events(
     events: List[Dict[str, Any]],
     *,
@@ -123,6 +163,18 @@ def _persist_stream_chunk_events(
     return event_ids, workspace_updates
 
 
+def _serialize_task_loop_events(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    serialized: List[Dict[str, Any]] = []
+    for event in list(events or []):
+        if not isinstance(event, dict):
+            continue
+        payload = dict(event)
+        event_data = payload.get("event_data")
+        payload["event_data"] = dict(event_data) if isinstance(event_data, dict) else {}
+        serialized.append(payload)
+    return serialized
+
+
 async def maybe_handle_task_loop_sync(
     orch: Any,
     request: Any,
@@ -139,7 +191,33 @@ async def maybe_handle_task_loop_sync(
     store = get_task_loop_store()
     active = store.get_active(conversation_id)
     raw_request = getattr(request, "raw_request", None)
-    if active is None and not (force_start or is_task_loop_candidate(user_text, getattr(request, "raw_request", None))):
+    effective_plan = dict(thinking_plan) if isinstance(thinking_plan, dict) else {}
+    if active is None:
+        unresolved_mode, unresolved_value, unresolved_plan = _resolve_unresolved_followup(
+            store,
+            conversation_id,
+            user_text,
+            thinking_plan=effective_plan,
+        )
+        if unresolved_mode == "explain" and unresolved_value:
+            log_info_fn("[TaskLoop] answered unresolved follow-up directly from preserved context")
+            return core_chat_response_cls(
+                model=request.model,
+                content=unresolved_value,
+                conversation_id=conversation_id,
+                done=True,
+                done_reason="unresolved_task_context_explained",
+                memory_used=False,
+                validation_passed=True,
+            )
+        if unresolved_mode == "loop" and unresolved_value:
+            user_text = unresolved_value
+            effective_plan = unresolved_plan if isinstance(unresolved_plan, dict) else effective_plan
+            force_start = True
+    if active is None and not (
+        force_start
+        or is_task_loop_candidate(user_text, getattr(request, "raw_request", None))
+    ):
         return None
     if active is not None and not force_start:
         if not is_task_loop_cancel(user_text):
@@ -176,7 +254,6 @@ async def maybe_handle_task_loop_sync(
                 memory_used=False,
                 validation_passed=True,
             )
-    effective_plan = dict(thinking_plan) if isinstance(thinking_plan, dict) else {}
     if active is None and not effective_plan:
         thinking_plan = await build_task_loop_planning_context(
             orch,
@@ -228,9 +305,26 @@ async def maybe_build_task_loop_stream_events(
 ) -> Optional[List[Tuple[str, bool, Dict[str, Any]]]]:
     store = get_task_loop_store()
     active = store.get_active(conversation_id)
+    effective_plan = dict(thinking_plan) if isinstance(thinking_plan, dict) else {}
+    if active is None:
+        unresolved_mode, unresolved_value, unresolved_plan = _resolve_unresolved_followup(
+            store,
+            conversation_id,
+            user_text,
+            thinking_plan=effective_plan,
+        )
+        if unresolved_mode == "explain" and unresolved_value:
+            log_info_fn("[TaskLoop] answered unresolved follow-up directly from preserved context (stream shim)")
+            return [
+                (unresolved_value, False, {"type": "content"}),
+                ("", True, {"type": "done", "done_reason": "unresolved_task_context_explained"}),
+            ]
+        if unresolved_mode == "loop" and unresolved_value:
+            user_text = unresolved_value
+            effective_plan = unresolved_plan if isinstance(unresolved_plan, dict) else effective_plan
+            force_start = True
     if active is None and not (force_start or is_task_loop_candidate(user_text, getattr(request, "raw_request", None))):
         return None
-    effective_plan = dict(thinking_plan) if isinstance(thinking_plan, dict) else {}
     if active is None and not effective_plan:
         thinking_plan = await build_task_loop_planning_context(
             orch,
@@ -268,6 +362,7 @@ async def maybe_build_task_loop_stream_events(
                 "done_reason": result.done_reason,
                 "task_loop": result.snapshot.to_dict(),
                 "event_types": [str(event.get("type") or "") for event in result.events],
+                "events": _serialize_task_loop_events(result.events),
             },
         )
     ]
@@ -303,6 +398,23 @@ async def stream_task_loop_events(
     store = get_task_loop_store()
     active = store.get_active(conversation_id)
     raw_request = getattr(request, "raw_request", None)
+    effective_plan = dict(thinking_plan) if isinstance(thinking_plan, dict) else {}
+    if active is None:
+        unresolved_mode, unresolved_value, unresolved_plan = _resolve_unresolved_followup(
+            store,
+            conversation_id,
+            user_text,
+            thinking_plan=effective_plan,
+        )
+        if unresolved_mode == "explain" and unresolved_value:
+            log_info_fn("[TaskLoop] answered unresolved follow-up directly from preserved context (stream)")
+            yield (unresolved_value, False, {"type": "content"})
+            yield ("", True, {"type": "done", "done_reason": "unresolved_task_context_explained"})
+            return
+        if unresolved_mode == "loop" and unresolved_value:
+            user_text = unresolved_value
+            effective_plan = unresolved_plan if isinstance(unresolved_plan, dict) else effective_plan
+            force_start = True
     if active is None and not (force_start or is_task_loop_candidate(user_text, raw_request)):
         return
 
@@ -353,6 +465,7 @@ async def stream_task_loop_events(
                             "done_reason": chunk.done_reason,
                             "task_loop": chunk_snapshot.to_dict(),
                             "event_types": [str(event.get("type") or "") for event in chunk.events],
+                            "events": _serialize_task_loop_events(chunk.events),
                             "is_final": chunk.is_final,
                             "step_runtime": dict(chunk.step_runtime or {}),
                         },
@@ -360,6 +473,17 @@ async def stream_task_loop_events(
                 store.put(chunk_snapshot)
                 for workspace_update in workspace_updates:
                     yield ("", False, workspace_update)
+                if chunk.thinking_delta:
+                    yield (
+                        "",
+                        False,
+                        {
+                            "type": "task_loop_thinking",
+                            "chunk": chunk.thinking_delta,
+                            "task_loop": chunk_snapshot.to_dict(),
+                            "step_runtime": dict(chunk.step_runtime or {}),
+                        },
+                    )
                 if chunk.content_delta:
                     yield (chunk.content_delta, False, {"type": "content"})
                 if chunk.is_final:
@@ -404,6 +528,7 @@ async def stream_task_loop_events(
                 "done_reason": result.done_reason,
                 "task_loop": result.snapshot.to_dict(),
                 "event_types": [str(event.get("type") or "") for event in result.events],
+                "events": _serialize_task_loop_events(result.events),
                 "is_final": True,
             },
         )
@@ -421,7 +546,6 @@ async def stream_task_loop_events(
         )
         return
 
-    effective_plan = dict(thinking_plan) if isinstance(thinking_plan, dict) else {}
     if not effective_plan:
         effective_plan = await build_task_loop_planning_context(
             orch,
@@ -475,6 +599,7 @@ async def stream_task_loop_events(
                     "done_reason": chunk.done_reason,
                     "task_loop": chunk_snapshot.to_dict(),
                     "event_types": [str(event.get("type") or "") for event in chunk.events],
+                    "events": _serialize_task_loop_events(chunk.events),
                     "is_final": chunk.is_final,
                     "step_runtime": dict(chunk.step_runtime or {}),
                 },
@@ -482,6 +607,17 @@ async def stream_task_loop_events(
         store.put(chunk_snapshot)
         for workspace_update in workspace_updates:
             yield ("", False, workspace_update)
+        if chunk.thinking_delta:
+            yield (
+                "",
+                False,
+                {
+                    "type": "task_loop_thinking",
+                    "chunk": chunk.thinking_delta,
+                    "task_loop": chunk_snapshot.to_dict(),
+                    "step_runtime": dict(chunk.step_runtime or {}),
+                },
+            )
         if chunk.content_delta:
             yield (chunk.content_delta, False, {"type": "content"})
         if chunk.is_final:

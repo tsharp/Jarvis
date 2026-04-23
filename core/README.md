@@ -39,6 +39,12 @@ Modellannahmen ist nicht mehr aktuell. Der heutige Stand ist:
   und Runner-Struktur sowie container-spezifischen Capability-Paketen.
   Details dazu stehen in `core/task_loop/README.md`.
 
+- `work_context/`
+  Neues, noch nicht produktiv verdrahtetes Scaffold fuer einen gemeinsamen
+  fachlichen Arbeitskontext zwischen Chat-Flow und Task-Loop.
+  Dort liegen aktuell Contracts, erste Reader und ein kleiner Load-/Merge-
+  Service. Details dazu stehen in `core/work_context/README.md`.
+
 - `control_contract.py`
   Typed Contracts fuer den Single-Authority-Pfad:
   `ControlDecision` ist die Policy-Autoritaet,
