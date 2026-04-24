@@ -64,16 +64,32 @@ def focus_block(step_type: TaskLoopStepType, suggested_tools: List[str]) -> str:
 def output_shape_block(step_type: TaskLoopStepType) -> str:
     if step_type is TaskLoopStepType.TOOL_REQUEST:
         return (
-            "Ausgabeform:\n"
-            "- aktueller Zwischenstand\n"
+            "Inhaltliche Bausteine fuer die Antwort:\n"
+            "- gesicherter Zwischenstand\n"
             "- was fuer die Anfrage noch fehlt oder schon vorliegt\n"
             "- naechster sichtbarer Schritt\n"
+            "Formuliere diese Bausteine natuerlich in 1-3 kurzen Saetzen. "
+            "Nutze keine starren Labels wie `Aktueller Status`, `Offener Punkt` oder `Naechster Schritt`, "
+            "ausser der User fragt explizit nach einer Checkliste.\n"
         )
     return (
-        "Ausgabeform:\n"
+        "Inhaltliche Bausteine fuer die Antwort:\n"
         "- konkreter Zwischenstand dieses Schritts\n"
         "- verbleibende Unsicherheit oder offener Punkt\n"
         "- naechster sinnvoller Schritt\n"
+        "Formuliere diese Bausteine natuerlich in 1-3 kurzen Saetzen. "
+        "Nutze keine starren Labels wie `Aktueller Status`, `Offener Punkt` oder `Naechster Schritt`, "
+        "ausser der User fragt explizit nach einer Checkliste.\n"
+    )
+
+
+def response_style_block(step_type: TaskLoopStepType) -> str:
+    _ = step_type
+    return (
+        "Antwortstil:\n"
+        "- Schreibe wie ein pragmatischer Agent, nicht wie ein Formular.\n"
+        "- Bleibe evidenzgebunden: nicht spekulieren, aber auch keine unnoetige Sicherheitsfloskel wiederholen.\n"
+        "- Wenn etwas blockiert ist, sag direkt was blockiert und welchen konkreten Schritt du als naechstes brauchst.\n"
     )
 
 
@@ -109,4 +125,5 @@ __all__ = [
     "claim_guard_block",
     "focus_block",
     "output_shape_block",
+    "response_style_block",
 ]

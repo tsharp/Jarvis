@@ -28,6 +28,17 @@ def build_grounding_evidence_entry(
         parsed = json.loads(raw_result) if isinstance(raw_result, str) else raw_result
     except Exception:
         parsed = None
+        # Formatted tool results have a header line ("### TOOL-ERGEBNIS..." / "--- Fast Lane ---")
+        # followed by the actual JSON on the next line — extract and retry.
+        if isinstance(raw_result, str):
+            for _line in raw_result.splitlines():
+                _line = _line.strip()
+                if _line.startswith(("{", "[")):
+                    try:
+                        parsed = json.loads(_line)
+                    except Exception:
+                        pass
+                    break
     if isinstance(parsed, dict):
         payload = parsed.get("structuredContent") if isinstance(parsed.get("structuredContent"), dict) else parsed
         if str(tool_name or "").strip() == "list_skills":

@@ -203,7 +203,7 @@ def test_container_request_prompt_matrix_keeps_visible_planning_and_safe_tool_or
 
 
 @pytest.mark.asyncio
-async def test_python_container_request_waits_for_missing_parameters_before_execution():
+async def test_python_container_request_replans_blueprint_discovery_before_execution():
     steps = build_task_loop_steps(
         PYTHON_CONTAINER_REQUEST,
         thinking_plan={
@@ -237,16 +237,20 @@ async def test_python_container_request_waits_for_missing_parameters_before_exec
     )
 
     assert result.step_result.step_type is TaskLoopStepType.TOOL_REQUEST
-    assert result.step_result.status.value == "waiting_for_user"
-    assert "Bitte nenne mindestens den gewuenschten Blueprint" in result.visible_text
-    assert "Python-Version" in result.visible_text or "Python-Version" in result.visible_text
-    assert "requirements.txt" in result.visible_text or "Abhaengigkeiten" in result.visible_text
-    assert "Build" in result.visible_text or "Runtime" in result.visible_text
+    assert result.step_result.status.value == "completed"
+    assert result.step_result.next_action == "replan_recovery"
+    assert "verfuegbaren Blueprints" in result.visible_text
+    recovery_hint = next(
+        artifact
+        for artifact in result.step_result.verified_artifacts
+        if artifact.get("artifact_type") == "container_recovery_hint"
+    )
+    assert recovery_hint["next_tools"] == ["blueprint_list"]
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("scenario", SCENARIOS, ids=[item["id"] for item in SCENARIOS])
-async def test_container_scenarios_request_step_stops_for_missing_parameters(scenario):
+async def test_container_scenarios_request_step_replans_discovery_before_missing_parameter_prompt(scenario):
     steps = build_task_loop_steps(
         scenario["prompt"],
         thinking_plan=scenario["thinking_plan"],
@@ -276,12 +280,18 @@ async def test_container_scenarios_request_step_stops_for_missing_parameters(sce
     )
 
     assert result.step_result.step_type is TaskLoopStepType.TOOL_REQUEST
-    assert result.step_result.status.value == "waiting_for_user"
-    assert "Bitte nenne mindestens den gewuenschten Blueprint" in result.visible_text
+    assert result.step_result.status.value == "completed"
+    assert result.step_result.next_action == "replan_recovery"
+    recovery_hint = next(
+        artifact
+        for artifact in result.step_result.verified_artifacts
+        if artifact.get("artifact_type") == "container_recovery_hint"
+    )
+    assert recovery_hint["next_tools"] == ["blueprint_list"]
 
 
 @pytest.mark.asyncio
-async def test_python_container_request_asks_for_python_specific_required_fields():
+async def test_python_container_request_uses_defaults_and_replans_blueprint_discovery():
     steps = build_task_loop_steps(
         PYTHON_CONTAINER_REQUEST,
         thinking_plan={
@@ -320,7 +330,12 @@ async def test_python_container_request_asks_for_python_specific_required_fields
     )
 
     assert result.step_result.step_type is TaskLoopStepType.TOOL_REQUEST
-    assert result.step_result.status.value == "waiting_for_user"
-    assert "Python-Version" in result.visible_text or "Python version" in result.visible_text
-    assert "requirements.txt" in result.visible_text or "Abhaengigkeiten" in result.visible_text
-    assert "Build" in result.visible_text or "Runtime" in result.visible_text
+    assert result.step_result.status.value == "completed"
+    assert result.step_result.next_action == "replan_recovery"
+    assert "verfuegbaren Blueprints" in result.visible_text
+    recovery_hint = next(
+        artifact
+        for artifact in result.step_result.verified_artifacts
+        if artifact.get("artifact_type") == "container_recovery_hint"
+    )
+    assert recovery_hint["next_tools"] == ["blueprint_list"]

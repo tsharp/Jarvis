@@ -238,7 +238,62 @@ async def test_execute_task_loop_step_waits_for_user_when_container_request_para
 
     assert result.step_result.status.value == "waiting_for_user"
     assert "Blueprint" in result.visible_text
-    assert "CPU" in result.visible_text or "RAM" in result.visible_text or "GPU" in result.visible_text
+
+
+@pytest.mark.asyncio
+async def test_execute_task_loop_step_replans_python_container_to_blueprint_discovery_before_user_prompt():
+    snapshot = TaskLoopSnapshot(
+        objective_id="obj-step-runtime-python",
+        conversation_id="conv-step-runtime-python",
+        plan_id="plan-step-runtime-python",
+        current_step_id="step-1",
+        current_step_type=TaskLoopStepType.TOOL_REQUEST,
+        current_plan=["Container-Anfrage zur Freigabe vorbereiten"],
+        plan_steps=[],
+        pending_step="Container-Anfrage zur Freigabe vorbereiten",
+        risk_level=RiskLevel.NEEDS_CONFIRMATION,
+        verified_artifacts=[],
+    )
+
+    result = await execute_task_loop_step(
+        "Container-Anfrage zur Freigabe vorbereiten",
+        {
+            "step_id": "step-1",
+            "title": "Container-Anfrage zur Freigabe vorbereiten",
+            "goal": "Die eigentliche Container-Anfrage fuer einen Python-Container vorbereiten.",
+            "done_criteria": "Die Anfrage ist als sichtbarer Freigabe-Schritt vorbereitet.",
+            "risk_level": "needs_confirmation",
+            "requires_user": True,
+            "suggested_tools": ["request_container"],
+            "task_kind": "implementation",
+            "objective": "Python-Container kontrolliert starten",
+            "step_type": TaskLoopStepType.TOOL_REQUEST.value,
+            "requested_capability": {
+                "capability_type": "container_manager",
+                "capability_target": "request_container",
+                "capability_action": "request_container",
+            },
+            "capability_context": {
+                "request_family": "python_container",
+                "known_fields": {},
+            },
+        },
+        snapshot,
+        control_layer=_Control(),
+        output_layer=None,
+        orchestrator_bridge=None,
+        fallback_fn=lambda *args, **kwargs: "fallback",
+    )
+
+    assert result.step_result.status.value == "completed"
+    assert result.step_result.next_action == "replan_recovery"
+    assert "verfuegbaren Blueprints" in result.visible_text
+    recovery_hint = next(
+        artifact
+        for artifact in result.step_result.verified_artifacts
+        if artifact.get("artifact_type") == "container_recovery_hint"
+    )
+    assert recovery_hint["next_tools"] == ["blueprint_list"]
 
 
 @pytest.mark.asyncio

@@ -136,7 +136,10 @@ def build_container_request_context(
         user_reply=user_reply,
         capability_context=capability_context,
     )
-    requires_user_choice = bool(discovered) and len(discovered) > 1 and not selected
+    # Pausieren wenn Blueprints bekannt aber keine eindeutige Auswahl:
+    # - mehrere Optionen und keine Auswahl → User soll wählen
+    # - genau eine Option aber kein Match (z.B. kein Python-Blueprint) → User informieren
+    requires_user_choice = bool(discovered) and not selected
     if requires_user_choice:
         options = ", ".join(
             label
@@ -146,10 +149,16 @@ def build_container_request_context(
             )
             if label
         )
-        waiting_message = (
-            "Ich habe mehrere verifizierte Blueprint-Optionen gefunden. "
-            f"Bitte waehle eine davon: {options}."
-        )
+        if len(discovered) > 1:
+            waiting_message = (
+                "Ich habe mehrere verifizierte Blueprint-Optionen gefunden. "
+                f"Bitte waehle eine davon: {options}."
+            )
+        else:
+            waiting_message = (
+                f"Verfuegbarer Blueprint: {options}. "
+                "Ich kann damit weiterarbeiten, wenn du willst, oder wir nehmen gemeinsam eine andere Option."
+            )
     else:
         waiting_message = ""
     return {

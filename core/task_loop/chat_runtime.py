@@ -296,13 +296,10 @@ def start_chat_task_loop(
         pending_step=next_step,
     )
     answer = (
-        "Task-Loop gestartet.\n\n"
-        "Plan:\n"
+        "Der Task-Loop laeuft jetzt.\n\n"
         f"{_format_plan(answered)}\n\n"
-        "Zwischenstand:\n"
-        f"Schritt 1 abgeschlossen: {completed_step}\n\n"
-        "Naechster Schritt:\n"
-        f"{next_step or 'kein weiterer sicherer Schritt offen'}"
+        f"Schritt 1 ist abgeschlossen: {completed_step}\n"
+        f"Als naechstes kommt: {next_step or 'kein weiterer sicherer Schritt offen'}"
     )
     answered = replace(answered, last_user_visible_answer=answer)
     events.append(make_task_loop_event(TaskLoopEventType.STEP_COMPLETED, answered))
@@ -314,7 +311,7 @@ def start_chat_task_loop(
             stop_reason=StopReason.USER_DECISION_REQUIRED,
         )
         events.append(make_task_loop_event(TaskLoopEventType.WAITING_FOR_USER, waiting))
-        answer += "\n\nIch warte auf `weiter`, `stoppen` oder eine Planaenderung."
+        answer += "\n\nIch warte jetzt auf `weiter`, `stoppen` oder eine Planaenderung."
         final_snapshot = replace(waiting, last_user_visible_answer=answer)
         done_reason = "task_loop_waiting_for_user"
     else:

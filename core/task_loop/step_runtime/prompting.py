@@ -13,6 +13,7 @@ from core.task_loop.step_runtime.render_contract import (
     claim_guard_block,
     focus_block,
     output_shape_block,
+    response_style_block,
 )
 
 
@@ -342,6 +343,7 @@ def build_task_loop_step_prompt(
     next_step_guard_block = _next_step_guard_block(step_title, snapshot)
     auto_clarify_block = _auto_clarify_block(step_request)
     system_addon_block = _system_addon_context_block(step_request)
+    response_style = response_style_block(step_type)
 
     return (
         f"Task-Loop Schritt {current_step_index}/{total_steps}\n\n"
@@ -358,7 +360,8 @@ def build_task_loop_step_prompt(
         f"{claim_guard_block(step_type=step_type)}"
         f"{focus_block(step_type, suggested_tools)}"
         f"{output_shape_block(step_type)}"
-        "Halte die Antwort knapp und beim aktuellen Schritt.\n"
+        f"{response_style}"
+        "Bleibe knapp und beim aktuellen Schritt.\n"
     )
 
 

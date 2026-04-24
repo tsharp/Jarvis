@@ -16,6 +16,7 @@ COPY maintenance /app/maintenance
 COPY utils /app/utils
 COPY mcp /app/mcp
 COPY config /app/config
+COPY CIM-skill_rag /app/CIM-skill_rag
 
 # Copy lobechat adapter (needed for chat endpoint)
 COPY adapters/lobechat /app/adapters/lobechat

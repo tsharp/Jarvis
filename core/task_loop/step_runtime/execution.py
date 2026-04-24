@@ -11,7 +11,12 @@ from core.task_loop.action_resolution.contracts import (
     ActionResolutionMode,
 )
 from core.task_loop.capabilities.container.parameter_policy import build_container_parameter_context
-from core.task_loop.capabilities.container.recovery import RECOVERY_ARTIFACT_TYPE
+from core.task_loop.capabilities.container.recovery import (
+    CONTAINER_INSPECT_STEP_TITLE,
+    DISCOVERY_STEP_TITLE,
+    RECOVERY_ARTIFACT_TYPE,
+    RUNTIME_DISCOVERY_STEP_TITLE,
+)
 from core.task_loop.capabilities.container.request_policy import build_container_request_context
 from core.task_loop.capabilities.container.replan_policy import build_container_recovery_hint
 from core.task_loop.capability_policy import requested_capability_from_tools
@@ -124,11 +129,39 @@ def check_tool_request_preconditions(
     Gibt (status, message) zurück wenn der Schritt pausieren muss, sonst (None, "").
     Muss sowohl im Stream-Pfad als auch im Sync/Async-Pfad aufgerufen werden.
     """
+    preconditions = _inspect_tool_request_preconditions(
+        snapshot,
+        step_request,
+        user_reply=user_reply,
+        resume_completed=resume_completed,
+    )
+    return preconditions["status"], preconditions["message"]
+
+
+def _inspect_tool_request_preconditions(
+    snapshot: TaskLoopSnapshot,
+    step_request: "TaskLoopStepRequest",
+    *,
+    user_reply: str = "",
+    resume_completed: bool = False,
+) -> Dict[str, Any]:
     if resume_completed:
-        return None, ""
+        return {
+            "status": None,
+            "message": "",
+            "reason": "",
+            "request_context": {},
+            "parameter_context": {},
+        }
     requested_capability = dict(step_request.requested_capability or {})
     if str(requested_capability.get("capability_action") or "").strip().lower() != "request_container":
-        return None, ""
+        return {
+            "status": None,
+            "message": "",
+            "reason": "",
+            "request_context": {},
+            "parameter_context": {},
+        }
     request_ctx = build_container_request_context(
         snapshot,
         requested_capability=requested_capability,
@@ -137,7 +170,13 @@ def check_tool_request_preconditions(
     )
     if request_ctx.get("requires_user_choice"):
         msg = str(request_ctx.get("waiting_message") or "").strip()
-        return TaskLoopStepStatus.WAITING_FOR_USER, msg
+        return {
+            "status": TaskLoopStepStatus.WAITING_FOR_USER,
+            "message": msg,
+            "reason": "blueprint_choice",
+            "request_context": request_ctx,
+            "parameter_context": {},
+        }
     selected_blueprint = request_ctx.get("selected_blueprint")
     if not isinstance(selected_blueprint, dict):
         selected_blueprint = {}
@@ -150,8 +189,86 @@ def check_tool_request_preconditions(
     )
     if parameter_ctx.get("requires_user_input"):
         msg = str(parameter_ctx.get("waiting_message") or "").strip()
-        return TaskLoopStepStatus.WAITING_FOR_USER, msg
-    return None, ""
+        return {
+            "status": TaskLoopStepStatus.WAITING_FOR_USER,
+            "message": msg,
+            "reason": "missing_parameters",
+            "request_context": request_ctx,
+            "parameter_context": parameter_ctx,
+        }
+    return {
+        "status": None,
+        "message": "",
+        "reason": "",
+        "request_context": request_ctx,
+        "parameter_context": parameter_ctx,
+    }
+
+
+def _runtime_result_from_tool_request_preconditions(
+    prepared: PreparedTaskLoopStepRuntime,
+    snapshot: TaskLoopSnapshot,
+    *,
+    user_reply: str = "",
+    resume_completed: bool = False,
+) -> TaskLoopStepRuntimeResult | None:
+    preconditions = _inspect_tool_request_preconditions(
+        snapshot,
+        prepared.step_request,
+        user_reply=user_reply,
+        resume_completed=resume_completed,
+    )
+    gate_status = preconditions.get("status")
+    if gate_status is None:
+        return None
+
+    capability_context = dict(prepared.step_request.capability_context or {})
+    request_family = str(capability_context.get("request_family") or "").strip().lower()
+    parameter_context = dict(preconditions.get("parameter_context") or {})
+    missing_fields = [
+        str(item or "").strip()
+        for item in list(parameter_context.get("missing_fields") or [])
+        if str(item or "").strip()
+    ]
+    if (
+        preconditions.get("reason") == "missing_parameters"
+        and request_family == "python_container"
+        and missing_fields == ["blueprint"]
+    ):
+        resolution = resolve_next_loop_action(
+            snapshot=snapshot,
+            step_request=prepared.step_request,
+        )
+        if (
+            resolution.action is not None
+            and resolution.action.mode in {
+                ActionResolutionMode.INSERT_DISCOVERY_STEP,
+                ActionResolutionMode.REPLAN_WITH_ACTION,
+            }
+        ):
+            resolved_runtime = _runtime_result_from_action_resolution(
+                prepared,
+                resolution,
+                trace_reason="task_loop_action_resolution_precondition_gate",
+            )
+            if resolved_runtime is not None:
+                return resolved_runtime
+
+    waiting_text = str(preconditions.get("message") or "").strip() or prepared.fallback_text
+    return TaskLoopStepRuntimeResult(
+        visible_text=waiting_text,
+        control_decision=prepared.control_decision,
+        verified_plan=prepared.verified_plan,
+        step_result=_step_result_from_text(
+            prepared,
+            visible_text=waiting_text,
+            source=TaskLoopStepExecutionSource.LOOP,
+            trace_reason="task_loop_tool_request_precondition_gate",
+            used_fallback=False,
+            status_override=gate_status,
+        ),
+        used_fallback=False,
+    )
 
 
 def _next_action_for_status(status: TaskLoopStepStatus) -> str:
@@ -164,6 +281,15 @@ def _next_action_for_status(status: TaskLoopStepStatus) -> str:
     if status is TaskLoopStepStatus.FAILED:
         return "analyze_failure"
     return "stop_blocked"
+
+
+def _looks_like_internal_resolution_detail(detail: str) -> bool:
+    compact = str(detail or "").strip()
+    if not compact:
+        return False
+    if " " not in compact and ":" in compact:
+        return True
+    return compact.startswith(("read_first:", "auto_clarify:", "domain_dispatch:"))
 
 
 def _replan_hint_from_resolution(
@@ -185,10 +311,29 @@ def _replan_hint_from_resolution(
     step_title = str(action.title or prepared.step_request.step_title or "Folgeschritt").strip() or "Folgeschritt"
     step_type = str(action.step_type or TaskLoopStepType.TOOL_EXECUTION.value).strip() or TaskLoopStepType.TOOL_EXECUTION.value
     detail = str(decision.detail or "").strip()
+    if _looks_like_internal_resolution_detail(detail):
+        if next_tools == ["blueprint_list"]:
+            step_title = DISCOVERY_STEP_TITLE
+            natural_goal = "Die passende Container-Basis oder Blueprint-Auswahl mit einem sicheren Query-Tool sichtbar pruefen."
+            natural_summary = "Ich pruefe zuerst die verfuegbaren Blueprints und nehme danach den passenden naechsten Schritt."
+        elif next_tools == ["container_list"]:
+            step_title = RUNTIME_DISCOVERY_STEP_TITLE
+            natural_goal = "Mit einem sicheren Query-Tool sichtbar pruefen, welche Container aktuell laufen oder bereits vorhanden sind."
+            natural_summary = "Ich pruefe zuerst, welche Container bereits vorhanden oder aktiv sind."
+        elif next_tools == ["container_inspect"]:
+            step_title = CONTAINER_INSPECT_STEP_TITLE
+            natural_goal = "Einen konkreten Container gezielt inspizieren, um den verifizierten Runtime-Zustand sichtbar zu klaeren."
+            natural_summary = "Ich pruefe zuerst den konkreten Zustand des betroffenen Containers."
+        else:
+            natural_goal = "Den naechsten sicheren Schritt fuer die Aufgabenfortsetzung sichtbar und verifiziert ausfuehren."
+            natural_summary = f"Ich pruefe zuerst den sicheren Folgeschritt `{step_title}`."
+    else:
+        natural_goal = detail or "Den naechsten sicheren Schritt fuer die Aufgabenfortsetzung sichtbar und verifiziert ausfuehren."
+        natural_summary = detail or f"Ich pruefe zuerst den sicheren Folgeschritt `{step_title}`."
     replan_step = {
         "step_id": f"{prepared.step_request.step_id}-resolved-next",
         "title": step_title,
-        "goal": detail or "Den naechsten sicheren Schritt fuer die Aufgabenfortsetzung sichtbar und verifiziert ausfuehren.",
+        "goal": natural_goal,
         "done_criteria": "Ein verifizierter Befund oder eine konkretisierte Folgeaktion liegt vor.",
         "risk_level": RiskLevel.SAFE.value,
         "requires_user": False,
@@ -206,7 +351,7 @@ def _replan_hint_from_resolution(
         "next_tools": next_tools,
         "replan_step_title": step_title,
         "replan_step": replan_step,
-        "summary": detail or f"Ich fuehre zuerst den sicheren Folgeschritt `{step_title}` aus.",
+        "summary": natural_summary,
     }
 
 
@@ -604,28 +749,14 @@ async def execute_task_loop_step(
         }
     )
     if step_type is TaskLoopStepType.TOOL_REQUEST:
-        gate_status, gate_msg = check_tool_request_preconditions(
+        precondition_runtime = _runtime_result_from_tool_request_preconditions(
+            prepared,
             snapshot,
-            prepared.step_request,
             user_reply=resume_user_text,
             resume_completed=tool_request_resume_completed,
         )
-        if gate_status is not None:
-            waiting_text = gate_msg or prepared.fallback_text
-            return TaskLoopStepRuntimeResult(
-                visible_text=waiting_text,
-                control_decision=prepared.control_decision,
-                verified_plan=prepared.verified_plan,
-                step_result=_step_result_from_text(
-                    prepared,
-                    visible_text=waiting_text,
-                    source=TaskLoopStepExecutionSource.LOOP,
-                    trace_reason="task_loop_tool_request_precondition_gate",
-                    used_fallback=False,
-                    status_override=gate_status,
-                ),
-                used_fallback=False,
-            )
+        if precondition_runtime is not None:
+            return precondition_runtime
     tool_request_status = (
         TaskLoopStepStatus.COMPLETED
         if tool_request_resume_completed

@@ -55,22 +55,22 @@ def build_container_recovery_hint(**kwargs: object) -> dict[str, object]:
     request_family = str(hint.get("request_family") or "generic_container").strip().lower()
     if next_tools == ["blueprint_list"]:
         summary = (
-            "Die direkte Python-Container-Anfrage lieferte noch keinen belastbaren Action-Pfad. "
-            "Ich pruefe zuerst verifizierte Blueprints oder Container-Basen, bevor ich denselben Anfrageschritt erneut versuche."
+            "Der Container-Start ist noch nicht sauber verifiziert. "
+            "Ich schaue mir deshalb zuerst die verfuegbaren Blueprints an und nehme danach den naechsten passenden Schritt."
             if request_family == "python_container"
             else
-            "Die direkte Container-Anfrage lieferte noch keinen belastbaren Action-Pfad. "
-            "Ich pruefe zuerst verifizierte Blueprints oder Container-Basen, bevor ich denselben Anfrageschritt erneut versuche."
+            "Der Container-Start ist noch nicht sauber verifiziert. "
+            "Ich schaue mir deshalb zuerst die verfuegbaren Blueprints an und nehme danach den naechsten passenden Schritt."
         )
     elif next_tools == ["container_list"]:
         summary = (
-            "Die direkte Container-Anfrage braucht erst einen verifizierten Runtime-Inventar-Befund. "
-            "Ich pruefe deshalb zuerst laufende oder vorhandene Container, bevor ich denselben Anfrageschritt erneut versuche."
+            "Ich brauche erst einen verifizierten Blick auf den aktuellen Container-Bestand. "
+            "Danach kann ich sicher sagen, wie wir weitermachen."
         )
     elif next_tools == ["container_inspect"]:
         summary = (
-            "Die direkte Container-Anfrage braucht erst einen verifizierten Zustand fuer einen konkreten Container. "
-            "Ich pruefe deshalb zuerst gezielt den Container-Zustand, bevor ich denselben Anfrageschritt erneut versuche."
+            "Ich brauche erst den konkreten Zustand des betroffenen Containers. "
+            "Danach kann ich den naechsten Schritt sauber ableiten."
         )
     else:
         summary = ""
