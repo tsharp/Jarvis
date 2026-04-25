@@ -12,15 +12,15 @@ Blueprint-Katalog, Runtime-Inventar und Binding niemals unmarkiert in denselben 
 Statische Profile oder Taxonomie duerfen erklaeren, aber keine Live-Bindung oder Runtime-Fakten erfinden.
 {required_tools_line}
 {truth_mode_line}
-Pflichtreihenfolge: `Aktiver Container`, dann `Binding/Status`, dann `Einordnung`.
+Bevorzugte Reihenfolge: `Aktiver Container`, dann `Binding/Status`, dann `Einordnung`.
 Im Abschnitt `Aktiver Container` nur den verifizierten aktiven oder gebundenen Container nennen, sonst explizit `nicht verifiziert` sagen.
 Im Abschnitt `Binding/Status` nur Session-Binding oder Runtime-Status des aktiven Ziels beschreiben.
 Keine Blueprint-Katalog-Liste und keine generische Capability-Liste als Ersatzhauptantwort geben.
 Statische Profiltexte duerfen erklaeren, aber keinen Bindungsbeweis ersetzen.
 Keine Zeitspannen, Fehlerdiagnosen, Ursachenvermutungen oder impliziten Neustart-/Startempfehlungen anfuegen, wenn diese nicht explizit belegt oder angefragt sind.
-Die Antwort MUSS mit dem Literal `Aktiver Container:` beginnen.
+Nutze klare Abschnittsueberschriften wie `Aktiver Container`, `Binding/Status` und `Einordnung`, wenn sie zur Frage passen; vermeide starre Satzanfangsformeln, wenn eine natuerlichere Antwort gleich klar bleibt.
 
-### VERPFLICHTENDES ANTWORTGERUEST:
-Aktiver Container: <verifizierter Binding-Befund oder explizites nicht verifiziert>.
-Binding/Status: <Session-Binding oder Runtime-Status des aktiven Ziels, ohne Blueprint-Katalogdrift>.
-Einordnung: <klare Trennung zwischen Binding, Runtime-Inventar und Blueprint-Katalog>.
+### EMPFOHLENE ANTWORTSTRUKTUR:
+- Aktiver Container: verifizierter Binding-Befund oder explizit nicht verifiziert.
+- Binding/Status: Session-Binding oder Runtime-Status des aktiven Ziels, ohne Blueprint-Katalogdrift.
+- Einordnung: klare Trennung zwischen Binding, Runtime-Inventar und Blueprint-Katalog.

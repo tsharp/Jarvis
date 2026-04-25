@@ -4,110 +4,16 @@ Shared helpers for control decision normalization and workspace summaries.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Optional
-import re
+from typing import Any, Dict, Optional
 
-
-DEFAULT_HARD_BLOCK_REASON_CODES = {
-    "malicious_intent",
-    "pii",
-    "critical_cim",
-    "hardware_self_protection",
-}
-
-
-def normalize_block_reason_code(value: Any) -> str:
-    code = str(value or "").strip().lower()
-    if not code:
-        return ""
-    code = re.sub(r"[^a-z0-9_]+", "_", code)
-    code = re.sub(r"_+", "_", code).strip("_")
-    return code
-
-
-def is_allowed_hard_block_reason_code(
-    code: str,
-    *,
-    allowed_codes: Optional[Iterable[str]] = None,
-) -> bool:
-    normalized = normalize_block_reason_code(code)
-    scope = {
-        normalize_block_reason_code(item)
-        for item in (allowed_codes or DEFAULT_HARD_BLOCK_REASON_CODES)
-        if normalize_block_reason_code(item)
-    }
-    return normalized in scope
-
-
-def make_hard_block_verification(
-    *,
-    reason_code: str,
-    warnings: Any = None,
-    final_instruction: str = "Request blocked",
-    reason: str = "",
-) -> Dict[str, Any]:
-    warning_list: List[str]
-    if isinstance(warnings, list):
-        warning_list = [str(item) for item in warnings if str(item).strip()]
-    elif warnings:
-        warning_list = [str(warnings)]
-    else:
-        warning_list = []
-    normalized_code = normalize_block_reason_code(reason_code) or "critical_cim"
-    return {
-        "approved": False,
-        "hard_block": True,
-        "decision_class": "hard_block",
-        "block_reason_code": normalized_code,
-        "reason": reason or normalized_code,
-        "corrections": {},
-        "warnings": warning_list,
-        "final_instruction": final_instruction,
-    }
-
-
-def is_control_hard_block_decision(
-    verification: Dict[str, Any],
-    *,
-    allowed_reason_codes: Optional[Iterable[str]] = None,
-) -> bool:
-    if not isinstance(verification, dict):
-        return False
-    if verification.get("approved") is not False:
-        return False
-
-    if bool(verification.get("hard_block")):
-        return True
-
-    decision_class = str(verification.get("decision_class") or "").strip().lower()
-    if decision_class == "hard_block":
-        return True
-
-    reason_code = str(verification.get("block_reason_code") or "").strip().lower()
-    if is_allowed_hard_block_reason_code(
-        reason_code,
-        allowed_codes=allowed_reason_codes,
-    ):
-        return True
-
-    reason_text = " ".join(
-        str(part or "")
-        for part in (
-            verification.get("reason"),
-            verification.get("final_instruction"),
-            " ".join(str(w) for w in (verification.get("warnings") or [])),
-        )
-    ).lower()
-    hard_markers = (
-        "dangerous keyword detected",
-        "sensitive content detected",
-        "email address detected",
-        "phone number detected",
-        "pii",
-        "malicious",
-        "policy guard",
-    )
-    return any(marker in reason_text for marker in hard_markers)
+from core.layers.control.policy.decision import (
+    DEFAULT_HARD_BLOCK_REASON_CODES,
+    is_allowed_hard_block_reason_code,
+    is_control_hard_block_decision,
+    make_hard_block_verification,
+    normalize_block_reason_code,
+    normalize_control_verification,
+)
 
 
 def soften_control_deny(
@@ -119,22 +25,8 @@ def soften_control_deny(
     ),
     fallback_reason: str = "soft_control_warning_auto_corrected",
 ) -> Dict[str, Any]:
-    if not isinstance(verification, dict):
-        return verification
-    if verification.get("approved") is not False:
-        return verification
-
-    warnings = verification.get("warnings")
-    if not isinstance(warnings, list):
-        warnings = [str(warnings)] if warnings else []
-    warnings.append(warning_message)
-    verification["warnings"] = warnings
-    verification["approved"] = True
-    verification["hard_block"] = False
-    verification["decision_class"] = "warn"
-    verification["block_reason_code"] = ""
-    verification["reason"] = str(verification.get("reason") or fallback_reason)
-    return verification
+    _ = warning_message, fallback_reason
+    return normalize_control_verification(verification)
 
 
 def build_control_workspace_summary(

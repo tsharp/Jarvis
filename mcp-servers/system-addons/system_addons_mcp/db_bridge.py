@@ -12,11 +12,11 @@ import sys
 from pathlib import Path
 from typing import Optional, List, Dict
 
-# Locate sql-memory relative to this file or via env override
-_SQL_MEMORY_ROOT = os.environ.get(
-    "SQL_MEMORY_ROOT",
-    str(Path(__file__).resolve().parents[3] / "sql-memory"),
-)
+# Locate sql-memory via env override first. The fallback is only for local
+# source-tree execution; container paths are shallower than the repository.
+_SQL_MEMORY_ROOT = os.environ.get("SQL_MEMORY_ROOT")
+if not _SQL_MEMORY_ROOT:
+    _SQL_MEMORY_ROOT = str(Path(__file__).resolve().parents[3] / "sql-memory")
 if _SQL_MEMORY_ROOT not in sys.path:
     sys.path.insert(0, _SQL_MEMORY_ROOT)
 

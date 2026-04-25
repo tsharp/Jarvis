@@ -32,6 +32,7 @@ from core.control_contract import (
     persist_execution_result,
     tool_allowed_by_control_decision,
 )
+from core.layers.control.policy.decision import normalize_control_verification
 from core.task_loop.context_writeback import build_background_loop_state, persist_context_only_turn
 from core.plan_runtime_bridge import (
     append_runtime_tool_results,
@@ -701,6 +702,7 @@ async def process_stream_with_events(
             full_context,
             response_mode=response_mode_stream,
         )
+        verification = normalize_control_verification(verification)
         try:
             verified_plan = orch.control.apply_corrections(
                 thinking_plan,
@@ -855,13 +857,21 @@ async def process_stream_with_events(
         yield ("", True, {"done_reason": "blocked"})
         return
     if verification.get("approved") == False:
-        soften_control_deny_fn(verification)
+        _ = soften_control_deny_fn
         control_decision = control_decision_from_plan(
             {"_control_decision": verification},
             default_approved=False,
         )
         persist_control_decision(verified_plan, control_decision)
-        log_warning_fn("[Orchestrator] Soft control deny converted to warning (stream path)")
+        log_warning_fn("[Orchestrator] Request denied by ControlLayer (stream path)")
+        reason = str(verification.get("reason") or "Control denied this request.")
+        warnings = verification.get("warnings", [])
+        msg = reason
+        if warnings:
+            msg += f"\n\n_{', '.join(str(w) for w in warnings)}_"
+        yield (msg, False, {"type": "content"})
+        yield ("", True, {"done_reason": "blocked"})
+        return
 
     yield (
         "",

@@ -4,6 +4,7 @@ from core.control_decision_utils import (
     is_control_hard_block_decision,
     make_hard_block_verification,
     normalize_block_reason_code,
+    normalize_control_verification,
     soften_control_deny,
 )
 
@@ -34,17 +35,29 @@ def test_is_control_hard_block_decision_false_for_soft_warning_shape():
     assert is_control_hard_block_decision(verification) is False
 
 
-def test_soften_control_deny_upgrades_to_warn_allow():
+def test_normalize_control_verification_keeps_deny_blocked():
     verification = {
         "approved": False,
         "reason": "",
         "warnings": [],
     }
-    out = soften_control_deny(verification)
-    assert out["approved"] is True
-    assert out["decision_class"] == "warn"
+    out = normalize_control_verification(verification)
+    assert out["approved"] is False
+    assert out["decision_class"] == "deny"
     assert out["hard_block"] is False
-    assert out["block_reason_code"] == ""
+    assert out["reason"] == "control_denied"
+
+
+def test_soften_control_deny_compat_no_longer_approves():
+    verification = {
+        "approved": False,
+        "reason": "needs clarification",
+        "warnings": ["ambiguous"],
+    }
+    out = soften_control_deny(verification)
+    assert out["approved"] is False
+    assert out["decision_class"] == "deny"
+    assert out["hard_block"] is False
 
 
 def test_workspace_summary_helpers_are_stable():

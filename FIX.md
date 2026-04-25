@@ -72,6 +72,27 @@ verification live in the linked Obsidian notes.
 
 ## Current Refactor Stand
 
+- Control deny handling was moved back under Control policy ownership:
+  `core/layers/control/policy/decision.py` now normalizes raw Control
+  verification results, and stream/sync orchestrator paths no longer convert
+  `approved=False` into a warning allow.
+  Source: local worktree diff after prompt centralization checkpoint
+- The Task-Loop tool-step stream hang was traced to `asyncio.to_thread(...)`
+  around the synchronous tool bridge. The tool-step runtime now calls the sync
+  bridge directly, which fixes pytest/asyncio teardown hangs in the runtime
+  resume path.
+  Source: local worktree diff after prompt centralization checkpoint
+- Current focused verification is green:
+  `26 passed in 5.96s` for Control decision, API facade, workspace sync, and
+  Task-Loop stream coverage; the formerly hanging resume test now exits cleanly
+  with `1 passed in 0.77s`.
+  Source: local worktree test run
+- A portability scan found no hardcoded productive host bridge/private IPs such
+  as `172.17.0.1`, `172.18.x.x`, `192.168.x.x`, or `10.x.x.x` in runtime code.
+  Remaining follow-up candidates are local fallback endpoints in
+  `mini_control_core`, `tool_executor/api.py`, and static CORS localhost
+  defaults.
+  Source: local worktree scan
 - Prompt text centralization was started as a bounded architecture step:
   `intelligence_modules/prompt_manager/` now loads Markdown templates from
   `intelligence_modules/prompts/`, while behavior and routing logic stay in
@@ -85,6 +106,33 @@ verification live in the linked Obsidian notes.
   `333 passed, 9 warnings` across the focused Prompt Manager, Output, Task
   Loop, Control, Thinking, and Persona test set.
   Source: [prompts.md](docs/obsidian/prompts.md)
+- Output contract prompts were softened after the migration: hard literal
+  answer starts and mandatory response skeletons in container / skill contract
+  Markdown files were replaced with preferred ordering and natural-language
+  guidance, so the Output layer stays less mechanical while retaining
+  grounding expectations.
+  Source: local worktree diff after prompt centralization checkpoint
+- A full `docker compose build` / recreate pass exposed and fixed two runtime
+  packaging issues from the prompt-manager migration:
+  `digest-worker` now receives `intelligence_modules` in both the
+  admin-api-derived image and its Compose mount, and `system-addons` no longer
+  eagerly computes a source-tree-only `sql-memory` path when `SQL_MEMORY_ROOT`
+  is provided.
+  Source: local Docker rebuild verification
+- `system-addons` now sets writable FastMCP cache locations (`HOME=/tmp`,
+  `XDG_DATA_HOME=/tmp/xdg-data`) inside the image, preventing restart loops
+  when the service runs as a non-root Compose user.
+  Source: local Docker rebuild verification
+- Current container verification after the runtime fixes: all Compose services
+  report `Up`; WebUI and Skill Server report `healthy`; Admin API `/health`
+  and Validator `/health` return `200`; `digest-worker` exits cleanly with
+  `DIGEST_RUN_MODE=off`.
+  Source: local Docker rebuild verification
+- `install.sh` was rechecked against the current Compose layout. `bash -n
+  install.sh` and `docker compose config` are green; no installer change was
+  required for the new `intelligence_modules`, `digest-worker`, or
+  `system-addons` wiring because those are covered by `docker-compose.yml`.
+  Source: local installer verification
 - The former root `config.py` monolith was split into the modular `config/`
   package (`infra`, `models`, `pipeline`, `output`, `autonomy`, `context`,
   `features`, `digest`, `skills`), and the legacy file was removed.

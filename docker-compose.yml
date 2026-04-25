@@ -324,6 +324,7 @@ services:
     volumes:
     - ./core:/app/core:ro
     - ./config:/app/config:ro
+    - ./intelligence_modules:/app/intelligence_modules:ro
     - ./mcp_registry.py:/app/mcp_registry.py:ro
     - ./utils:/app/utils:ro
     - ./scripts/digest_worker.py:/app/scripts/digest_worker.py:ro

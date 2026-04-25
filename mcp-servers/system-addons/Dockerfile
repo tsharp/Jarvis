@@ -19,6 +19,8 @@ RUN mkdir -p /app/data \
 ENV LOG_LEVEL=INFO
 ENV SQL_MEMORY_ROOT=/app/sql-memory
 ENV SQL_MEMORY_DB_PATH=/data/memory.db
+ENV HOME=/tmp
+ENV XDG_DATA_HOME=/tmp/xdg-data
 
 EXPOSE 8090
 

@@ -9,6 +9,7 @@ from core.control_contract import (
     persist_control_decision,
     persist_execution_result,
 )
+from core.layers.control.policy.decision import normalize_control_verification
 
 
 def initialize_pipeline_orchestrator(
@@ -630,6 +631,7 @@ async def execute_control_layer(
             memory_data,
             response_mode=response_mode,
         )
+        verification = normalize_control_verification(verification)
         log_info_fn(f"[Orchestrator-Control] approved={verification.get('approved')}")
         log_info_fn(f"[Orchestrator-Control] warnings={verification.get('warnings', [])}")
         try:

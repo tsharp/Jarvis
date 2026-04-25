@@ -611,8 +611,11 @@ async def _execute_orchestrator_step(
                 used_fallback=False,
             )
 
-    tool_context = await asyncio.to_thread(
-        orchestrator_bridge._execute_tools_sync,
+    # Keep this call synchronous inside the Task-Loop step runtime. The bridge
+    # method is already the sync execution surface, and offloading through
+    # asyncio's default executor can leave the event loop stuck during runner
+    # teardown in restricted runtimes.
+    tool_context = orchestrator_bridge._execute_tools_sync(
         resolved_tools,
         prepared.prompt,
         control_tool_decisions,

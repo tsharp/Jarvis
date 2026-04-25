@@ -353,13 +353,26 @@ async def process_request(
             memory_used=False,
         )
     if verification.get("approved") == False:
-        soften_control_deny_fn(verification)
+        _ = soften_control_deny_fn
         control_decision = control_decision_from_plan(
             {"_control_decision": verification},
             default_approved=False,
         )
         persist_control_decision(verified_plan, control_decision)
-        log_warning_fn("[Orchestrator] Soft control deny converted to warning (sync path)")
+        log_warning_fn("[Orchestrator] Request denied by ControlLayer (sync path)")
+        reason = str(verification.get("reason") or "Control denied this request.")
+        warnings = verification.get("warnings", [])
+        content = reason
+        if warnings:
+            content += f" ({', '.join(str(w) for w in warnings)})"
+        return core_chat_response_cls(
+            model=request.model,
+            content=content,
+            conversation_id=conversation_id,
+            done=True,
+            done_reason="blocked",
+            memory_used=False,
+        )
 
     routing_decision = decide_task_loop_routing(
         user_text,
