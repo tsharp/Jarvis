@@ -41,15 +41,20 @@ def build_task_loop_step_request(
         step_type = TaskLoopStepType.TOOL_EXECUTION
 
     requested_capability = dict(step_plan.get("requested_capability") or {})
+    raw_capability_context = dict(step_plan.get("capability_context") or step_meta.get("capability_context") or {})
+    request_capability_context = dict(raw_capability_context)
+    for key in ("_container_resolution", "_container_candidates"):
+        if key in step_plan:
+            request_capability_context[key] = step_plan.get(key)
     container_context = build_container_request_context(
         snapshot,
         requested_capability=requested_capability,
         user_reply=user_reply,
-        capability_context=dict(step_plan.get("capability_context") or step_meta.get("capability_context") or {}),
+        capability_context=request_capability_context,
     )
     selected_blueprint = container_context.get("selected_blueprint") if isinstance(container_context.get("selected_blueprint"), dict) else {}
     merged_capability_context = merge_container_context(
-        dict(step_plan.get("capability_context") or step_meta.get("capability_context") or {}),
+        request_capability_context,
         snapshot=snapshot,
         user_reply=user_reply,
         selected_blueprint=selected_blueprint,
@@ -77,6 +82,16 @@ def build_task_loop_step_request(
         "selected_blueprint_label": str(selected_blueprint.get("label") or "").strip(),
         "requires_blueprint_choice": bool(container_context.get("requires_user_choice")),
         "container_capability_context": capability_context,
+        "container_resolution": (
+            dict(request_capability_context.get("_container_resolution"))
+            if isinstance(request_capability_context.get("_container_resolution"), dict)
+            else {}
+        ),
+        "container_candidates": (
+            list(request_capability_context.get("_container_candidates"))
+            if isinstance(request_capability_context.get("_container_candidates"), list)
+            else []
+        ),
         "container_request_params": dict(parameter_context.get("params") or {}),
         "missing_container_fields": list(parameter_context.get("missing_fields") or []),
     }
