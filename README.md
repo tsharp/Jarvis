@@ -5,7 +5,11 @@
 
 Chaotic code, trial and error, and monolithic designs have technically demonstrated in the alpha version what works and what doesn't.
 
-The new, clean, functional trion 1.0 will be completely refactored and linked soon.
+the new clean version will start soon here: https://github.com/danny094/TRION-system
+
+**Note:**  Documents will be published first—before the code is posted—so that you can familiarize yourselves with the material.
+
+
 
 
 # TRION
